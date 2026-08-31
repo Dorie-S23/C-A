@@ -31,6 +31,23 @@
     #overlay h1 { margin: 0 0 0.5em; }
     #overlay p { margin: 0.2em; opacity: 0.8; }
     #overlay.hidden { display: none; }
+    #overlay.loading { cursor: default; }
+
+    #room-picker {
+      display: flex;
+      gap: 1em;
+      margin-top: 1em;
+    }
+    #room-picker button {
+      font-size: 1em;
+      padding: 0.6em 1.2em;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.4);
+      color: #fff;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #room-picker button:hover { background: rgba(255,255,255,0.2); }
 
     #crosshair {
       position: fixed;
@@ -84,9 +101,12 @@
 </head>
 <body>
   <div id="overlay">
-    <h1>Click to Play</h1>
-    <p>WASD / Arrow keys to move, mouse to look, Shift to sprint</p>
-    <p>Esc to release the mouse</p>
+    <h1 id="overlay-title">Choose a room</h1>
+    <p id="overlay-subtitle">WASD / Arrow keys to move, mouse to look, Shift to sprint &mdash; Esc to release the mouse</p>
+    <div id="room-picker">
+      <button data-room="pomni">Pomni's Room</button>
+      <button data-room="tadc">Amazing Digital Circus</button>
+    </div>
   </div>
   <div id="crosshair" hidden></div>
   <button id="credits-btn">Credits</button>
@@ -96,6 +116,8 @@
     <h2>Credits</h2>
     <ul>
       <li><a href="https://threejs.org/" target="_blank" rel="noopener">three.js</a> &mdash; MIT License</li>
+      <li>"Pomni's Room" 3D model &mdash; TODO: original creator/source and licence</li>
+      <li>"The Amazing Digital Circus" map/props model &mdash; TODO: original creator/source and licence</li>
     </ul>
   </div>
 
