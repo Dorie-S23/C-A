@@ -1,0 +1,4 @@
+Run the game locally:
+    npm install
+    npm run dev
+    
