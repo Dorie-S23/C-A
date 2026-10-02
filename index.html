@@ -84,6 +84,21 @@
       z-index: 5;
     }
 
+    #prompt {
+      position: fixed;
+      top: calc(50% + 1.5em);
+      left: 50%;
+      transform: translateX(-50%);
+      color: #fff;
+      background: rgba(0, 0, 0, 0.55);
+      border-radius: 4px;
+      padding: 0.3em 0.8em;
+      font-size: 0.9em;
+      pointer-events: none;
+      z-index: 5;
+    }
+    #prompt[hidden] { display: none; }
+
     #credits {
       position: fixed;
       inset: 0;
@@ -123,15 +138,16 @@
 <body>
   <div id="overlay">
     <h1 id="overlay-title">Choose a room</h1>
-    <p id="overlay-subtitle">WASD / Arrow keys to move, mouse to look, Shift to sprint &mdash; Esc to release the mouse</p>
+    <p id="overlay-subtitle">WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact &mdash; Esc to release the mouse</p>
     <div id="room-picker">
       <button data-room="pomni">Pomni's Room</button>
-      <button data-room="tadc">Amazing Digital Circus</button>
+      <button data-room="tadc">Circus Lobby</button>
       <button data-room="maze">Maze (Level 3)</button>
     </div>
   </div>
   <div id="crosshair" hidden></div>
   <div id="hint"></div>
+  <div id="prompt" hidden></div>
   <button id="credits-btn">Credits</button>
 
   <div id="credits" class="hidden">
@@ -140,7 +156,7 @@
     <ul>
       <li><a href="https://threejs.org/" target="_blank" rel="noopener">three.js</a> &mdash; MIT License</li>
       <li>"Pomni's Room" 3D model &mdash; TODO: original creator/source and licence</li>
-      <li>"The Amazing Digital Circus" map/props model &mdash; TODO: original creator/source and licence</li>
+      <li>"Circus Lobby V10" map model &mdash; TODO: original creator/source and licence</li>
     </ul>
   </div>
 

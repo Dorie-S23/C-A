@@ -24,6 +24,7 @@ const PROBE_HEIGHT = STEP_HEIGHT + 0.05; // height of the wall-probe ray above t
 const PROBE_LEAD = PLAYER_RADIUS / 0.35;
 const GROUND_RAY_FAR = 24; // how far below the player a floor still counts as "under" them
 const WALKABLE_NORMAL_Y = 0.6; // faces tilted further than this are ramps, not walls
+const INTERACT_DISTANCE = 4.5; // how far away a door etc. can be used from
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a1a1d);
@@ -55,6 +56,7 @@ const overlaySubtitle = document.getElementById('overlay-subtitle');
 const roomPicker = document.getElementById('room-picker');
 const crosshair = document.getElementById('crosshair');
 const hint = document.getElementById('hint');
+const interactPrompt = document.getElementById('prompt');
 
 let currentRoom = null;
 let readyToPlay = false;
@@ -104,6 +106,10 @@ function selectRoom(roomKey) {
   triggers = null;
   movers = [];
   hazards = [];
+  roomUpdate = null;
+  interactables = [];
+  focusedInteractable = null;
+  interactPrompt.hidden = true;
   foundJax = false;
   reachedExit = false;
   caught = false;
@@ -124,6 +130,8 @@ function selectRoom(roomKey) {
       triggers: roomTriggers,
       movers: roomMovers,
       hazards: roomHazards,
+      update: roomUpdateFn,
+      interactables: roomInteractables,
     }) => {
       currentRoom = group;
       scene.add(group);
@@ -143,10 +151,14 @@ function selectRoom(roomKey) {
         mesh: entry.mesh,
         box: entry.box,
         paddedBox: entry.box.clone().expandByScalar(PLAYER_RADIUS),
+        dynamic: entry.dynamic ?? false,
       }));
+      dynamicCollisionMeshes = collisionMeshes.filter((entry) => entry.dynamic);
       triggers = roomTriggers ?? null;
       movers = roomMovers ?? [];
       hazards = roomHazards ?? [];
+      roomUpdate = roomUpdateFn ?? null;
+      interactables = roomInteractables ?? [];
 
       controls.object.position.set(spawn.x, floorY + PLAYER_HEIGHT, spawn.z);
       controls.object.rotation.set(0, 0, 0);
@@ -154,7 +166,7 @@ function selectRoom(roomKey) {
       readyToPlay = true;
       overlay.classList.remove('loading');
       overlayTitle.textContent = 'Click to Play';
-      overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint — Esc to release the mouse';
+      overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
     })
     .catch((err) => {
       console.error('Failed to load room model', err);
@@ -191,7 +203,12 @@ document.getElementById('credits-close').addEventListener('click', () => {
 // --- Keyboard movement ---
 const move = { forward: false, back: false, left: false, right: false, sprint: false };
 
-window.addEventListener('keydown', (e) => setMove(e.code, true));
+window.addEventListener('keydown', (e) => {
+  setMove(e.code, true);
+  if (e.code === 'KeyE' && !e.repeat && controls.isLocked && focusedInteractable) {
+    focusedInteractable.interact();
+  }
+});
 window.addEventListener('keyup', (e) => setMove(e.code, false));
 
 function setMove(code, value) {
@@ -255,6 +272,15 @@ let collisionMeshes = [];
 let triggers = null;
 let movers = [];
 let hazards = [];
+// Per-frame hook for room-specific animation (e.g. Caine's idle in Pomni's room).
+let roomUpdate = null;
+// Moving collision meshes (e.g. swinging doors): their boxes are refreshed every frame.
+let dynamicCollisionMeshes = [];
+// Things the player can use with E: { objects: Mesh[], prompt(): string, interact() }.
+let interactables = [];
+let focusedInteractable = null;
+const interactRaycaster = new THREE.Raycaster();
+const SCREEN_CENTER = new THREE.Vector2(0, 0);
 let foundJax = false;
 let reachedExit = false;
 let caught = false;
@@ -564,6 +590,32 @@ function updateMovement(deltaSeconds) {
   checkTriggers(player);
 }
 
+function refreshDynamicColliders() {
+  for (const entry of dynamicCollisionMeshes) {
+    entry.box.setFromObject(entry.mesh);
+    entry.paddedBox.copy(entry.box).expandByScalar(PLAYER_RADIUS);
+  }
+}
+
+/**
+ * Finds the interactable under the crosshair, if it's within reach, and
+ * shows its prompt. Only interactables are tested, so a door behind a
+ * thin prop still counts — fine at this short range.
+ */
+function updateInteractionFocus() {
+  let focused = null;
+  if (controls.isLocked && interactables.length > 0) {
+    interactRaycaster.setFromCamera(SCREEN_CENTER, camera);
+    interactRaycaster.far = INTERACT_DISTANCE;
+    const hit = interactRaycaster.intersectObjects(interactables.flatMap((i) => i.objects), false)[0];
+    if (hit) focused = interactables.find((i) => i.objects.includes(hit.object));
+  }
+
+  focusedInteractable = focused;
+  interactPrompt.hidden = !focused;
+  if (focused) interactPrompt.textContent = `E — ${focused.prompt()}`;
+}
+
 // --- Resize ---
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -577,6 +629,9 @@ const clock = new THREE.Clock();
 function animate() {
   const delta = clock.getDelta();
   updateMovers(delta);
+  roomUpdate?.(delta);
+  refreshDynamicColliders();
+  updateInteractionFocus();
   if (controls.isLocked) updateMovement(delta);
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
