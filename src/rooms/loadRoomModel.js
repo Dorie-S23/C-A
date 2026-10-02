@@ -13,7 +13,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
  *
  * @param {string} url
  * @param {(ratio: number) => void} [onProgress] called with a 0-1 load ratio
- * @returns {Promise<{ group: THREE.Group, bounds: THREE.Box3, spawn: THREE.Vector3 }>}
+ * @returns {Promise<{ group: THREE.Group, bounds: THREE.Box3, spawn: THREE.Vector3,
+ *   collisionMeshes: Array<{ mesh: THREE.Mesh, box: THREE.Box3 }> }>}
  */
 export function loadRoomModel(url, onProgress) {
   const loader = new GLTFLoader();
@@ -34,10 +35,11 @@ export function loadRoomModel(url, onProgress) {
 
         const bounds = new THREE.Box3().setFromObject(group);
         const spawn = findSpawnPoint(group, bounds);
+        const collisionMeshes = collectCollisionMeshes(group, bounds, spawn);
 
         group.add(createRoomLighting(group, bounds, spawn));
 
-        resolve({ group, bounds, spawn });
+        resolve({ group, bounds, spawn, collisionMeshes });
       },
       (event) => {
         if (onProgress && event.total) onProgress(event.loaded / event.total);
@@ -85,6 +87,38 @@ function raycastFloorY(group, bounds, x, z) {
   // The lowest hit along a top-down ray is the floor (any dome/ceiling
   // shells above it get hit first and are skipped).
   return hits[hits.length - 1].point.y;
+}
+
+/**
+ * Gathers one entry per render mesh — the mesh plus its world-space
+ * bounding box — for main.js's wall probes and floor raycast. The boxes
+ * double as the per-frame prefilter that keeps those raycasts down to a
+ * handful of nearby meshes. The filter below drops huge enclosing shells
+ * (the TADC sky dome) that surround the spawn point: such a mesh would be
+ * a candidate for every raycast while no ray is ever meant to hit it, and
+ * unlike the walkable room inside it, it never legitimately blocks the
+ * player.
+ */
+function collectCollisionMeshes(group, bounds, spawn) {
+  const meshes = [];
+  group.traverse((child) => {
+    if (!child.isMesh || !child.geometry?.attributes?.position) return;
+    const box = new THREE.Box3().setFromObject(child);
+    if (box.isEmpty()) return;
+    meshes.push({ mesh: child, box });
+  });
+
+  const size = bounds.getSize(new THREE.Vector3());
+  return meshes.filter(({ box }) => {
+    const coversMostOfMap =
+      (box.max.x - box.min.x) * (box.max.z - box.min.z) >= 0.5 * size.x * size.z;
+    const surroundsSpawn =
+      box.min.y <= spawn.y - 5 &&
+      box.max.y >= spawn.y + 5 &&
+      box.min.x <= spawn.x && spawn.x <= box.max.x &&
+      box.min.z <= spawn.z && spawn.z <= box.max.z;
+    return !(coversMostOfMap && surroundsSpawn);
+  });
 }
 
 /**
