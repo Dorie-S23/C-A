@@ -13,8 +13,8 @@ const ROOM_LOADERS = {
 
 const PLAYER_HEIGHT = 1.7;
 const PLAYER_RADIUS = 0.35;
-const WALK_SPEED = 3.0;
-const SPRINT_MULTIPLIER = 3.0; // running speed = WALK_SPEED × this
+const WALK_SPEED = 6.0; // metres per second
+const SPRINT_MULTIPLIER = 2.5; // running speed = WALK_SPEED × this
 const WALL_MARGIN = 0.4; // keep the camera this far from any wall
 const STEP_HEIGHT = 0.4; // ledges up to this tall are stepped onto; taller ones block
 const PROBE_HEIGHT = STEP_HEIGHT + 0.05; // height of the wall-probe ray above the feet
