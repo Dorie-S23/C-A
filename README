@@ -1,4 +1,5 @@
 Run the game locally:
     npm install
     npm run dev
-    
+
+Project tracker: https://tadccgv.atlassian.net/jira/software/projects/KAN/summary 

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { loadPomniRoom } from './rooms/pomniRoom.js';
 import { loadTadcRoom } from './rooms/tadcRoom.js';
 import { loadMazeRoom } from './rooms/mazeRoom.js';
@@ -13,10 +14,23 @@ const ROOM_LOADERS = {
 const PLAYER_HEIGHT = 1.7;
 const PLAYER_RADIUS = 0.35;
 const WALK_SPEED = 3.0;
-const SPRINT_MULTIPLIER = 1.8;
+const SPRINT_MULTIPLIER = 3.0; // running speed = WALK_SPEED × this
 const WALL_MARGIN = 0.4; // keep the camera this far from any wall
 const STEP_HEIGHT = 0.4; // ledges up to this tall are stepped onto; taller ones block
 const PROBE_HEIGHT = STEP_HEIGHT + 0.05; // height of the wall-probe ray above the feet
+// Body-overlap rings, above the feet. Only the shin ring lets ramp-like
+// faces through: a ramp the player can really walk up is always further
+// than PLAYER_RADIUS away at chest/head height, so anything that close up
+// there is solid — like the steep lip around the lobby stage, which is
+// sloped enough to pass as a "ramp" but far too high to step onto.
+const BODY_RINGS = [
+  { height: PROBE_HEIGHT, skipRamps: true },
+  { height: 1.0, skipRamps: false },
+  { height: PLAYER_HEIGHT - 0.1, skipRamps: false },
+];
+// The wall probe holds the player exactly PLAYER_RADIUS off walls; anything
+// nearer than this means the body is overlapping geometry.
+const BODY_CLEARANCE = PLAYER_RADIUS * 0.8;
 // The wall probe must lead a full PLAYER_RADIUS of clearance *along its own
 // ray*; for an oblique approach that lead is PLAYER_RADIUS / |dir·normal|,
 // so this reach keeps everything down to about 70° off a wall's normal
@@ -45,6 +59,11 @@ document.body.appendChild(renderer.domElement);
 
 const ambient = new THREE.AmbientLight(0xffffff, 0.15);
 scene.add(ambient);
+
+// Generic studio reflections for rooms that ask for them (room.environment):
+// metallic materials render black with nothing to reflect.
+const environmentMap = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.6;
 
 // --- Pointer-lock first-person controls ---
 const controls = new PointerLockControls(camera, renderer.domElement);
@@ -132,6 +151,7 @@ function selectRoom(roomKey) {
       hazards: roomHazards,
       update: roomUpdateFn,
       interactables: roomInteractables,
+      environment: wantsEnvironment,
     }) => {
       currentRoom = group;
       scene.add(group);
@@ -159,6 +179,7 @@ function selectRoom(roomKey) {
       hazards = roomHazards ?? [];
       roomUpdate = roomUpdateFn ?? null;
       interactables = roomInteractables ?? [];
+      scene.environment = wantsEnvironment ? environmentMap : null;
 
       controls.object.position.set(spawn.x, floorY + PLAYER_HEIGHT, spawn.z);
       controls.object.rotation.set(0, 0, 0);
@@ -252,6 +273,14 @@ const groundRaycaster = new THREE.Raycaster();
 // A small ring of floor probes around the player position tolerates seams
 // between separate floor meshes; each entry is an XZ offset.
 const GROUND_PROBES = [[0, 0], [0.25, 0], [-0.25, 0], [0, 0.25], [0, -0.25]];
+// Body-overlap check (see acceptMove): rays fanned around the player.
+const BODY_RAY_DIRECTIONS = Array.from({ length: 8 }, (_, i) => {
+  const angle = (i / 8) * Math.PI * 2;
+  return new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle));
+});
+const bodyRaycaster = new THREE.Raycaster();
+const moveStart = new THREE.Vector3();
+const partDirection = new THREE.Vector3();
 
 // Populated once a room model has loaded and its real bounding box is known.
 let bounds = null;
@@ -492,6 +521,68 @@ function settleOnGround(player) {
   return false;
 }
 
+/**
+ * Finishes a GLB-room step: clamps to the room, follows the floor, and
+ * checks the whole body is clear of geometry. The wall probe is a single
+ * ray at shin height, so on its own it lets the player's sides squeeze
+ * into gaps narrower than they are (between the toy blocks by the stage),
+ * or drop from a ledge into geometry — and these rooms' double-sided
+ * meshes then wall them in from every side. A step that leaves the body
+ * overlapping something is refused — unless the player already overlapped
+ * (a door swung into them) and the step doesn't make it worse, so they can
+ * always walk back out.
+ */
+function acceptMove(player, startClearance) {
+  if (bounds) {
+    player.position.x = THREE.MathUtils.clamp(player.position.x, bounds.minX, bounds.maxX);
+    player.position.z = THREE.MathUtils.clamp(player.position.z, bounds.minZ, bounds.maxZ);
+  }
+  // No floor anywhere under the new position: the walkable surface itself
+  // keeps the player in bounds.
+  if (!settleOnGround(player)) return false;
+
+  const clearance = bodyClearance(player);
+  return clearance >= BODY_CLEARANCE || clearance >= startClearance - 1e-3;
+}
+
+/**
+ * How close the player's body is to any non-floor geometry: the shortest
+ * hit of rings of short horizontal rays at shin, chest and head height, or
+ * Infinity when nothing is within PLAYER_RADIUS.
+ */
+function bodyClearance(player) {
+  const feetY = player.position.y - PLAYER_HEIGHT;
+  const { x, z } = player.position;
+
+  const candidates = [];
+  for (const entry of collisionMeshes) {
+    const box = entry.paddedBox;
+    if (x < box.min.x || x > box.max.x || z < box.min.z || z > box.max.z) continue;
+    if (box.max.y < feetY + PROBE_HEIGHT || box.min.y > feetY + PLAYER_HEIGHT) continue;
+    candidates.push(entry.mesh);
+  }
+  if (candidates.length === 0) return Infinity;
+
+  let closest = Infinity;
+  bodyRaycaster.far = PLAYER_RADIUS;
+  for (const { height, skipRamps } of BODY_RINGS) {
+    probeOrigin.set(x, feetY + height, z);
+    for (const direction of BODY_RAY_DIRECTIONS) {
+      bodyRaycaster.set(probeOrigin, direction);
+      for (const hit of bodyRaycaster.intersectObjects(candidates, false)) {
+        if (skipRamps) {
+          normalMatrix.getNormalMatrix(hit.object.matrixWorld);
+          faceNormal.copy(hit.face.normal).applyMatrix3(normalMatrix).normalize();
+          if (Math.abs(faceNormal.y) > WALKABLE_NORMAL_Y) continue; // floor/ramp, not a wall
+        }
+        closest = Math.min(closest, hit.distance);
+        break;
+      }
+    }
+  }
+  return closest;
+}
+
 function endLevel(title, subtitle) {
   readyToPlay = false;
   controls.unlock();
@@ -557,21 +648,27 @@ function updateMovement(deltaSeconds) {
     const distance = moveDelta.length();
     if (distance > 1e-6) {
       moveDelta.divideScalar(distance);
-      const prevX = player.position.x;
-      const prevZ = player.position.z;
+      moveStart.copy(player.position);
+      const startClearance = bodyClearance(player);
 
       moveWithCollisions(player, moveDelta, distance);
-
-      if (bounds) {
-        player.position.x = THREE.MathUtils.clamp(player.position.x, bounds.minX, bounds.maxX);
-        player.position.z = THREE.MathUtils.clamp(player.position.z, bounds.minZ, bounds.maxZ);
-      }
-
-      if (!settleOnGround(player)) {
-        // No floor anywhere under the new position — undo the step so the
-        // walkable surface itself keeps the player in bounds.
-        player.position.x = prevX;
-        player.position.z = prevZ;
+      if (!acceptMove(player, startClearance)) {
+        // Blocked as a whole: try the X and Z parts on their own, so the
+        // player still slides past instead of sticking.
+        moveDelta.subVectors(player.position, moveStart).setY(0);
+        const parts = [[moveDelta.x, 0], [0, moveDelta.z]];
+        let accepted = false;
+        for (const [dx, dz] of parts) {
+          const length = Math.hypot(dx, dz);
+          if (length < 1e-6) continue;
+          player.position.copy(moveStart);
+          moveWithCollisions(player, partDirection.set(dx / length, 0, dz / length), length);
+          if (acceptMove(player, startClearance)) {
+            accepted = true;
+            break;
+          }
+        }
+        if (!accepted) player.position.copy(moveStart);
       }
     }
   } else {
