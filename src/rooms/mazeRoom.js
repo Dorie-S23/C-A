@@ -39,7 +39,8 @@ function createCheckerTexture() {
  * network fetch to await.
  *
  * @returns {Promise<{ group: THREE.Group, bounds: THREE.Box3, spawn: THREE.Vector3,
- *   colliders: THREE.Box3[], triggers: { jax: THREE.Box3, exit: THREE.Box3 },
+ *   spawnFacing: number, colliders: THREE.Box3[],
+ *   triggers: { jax: THREE.Box3, exit: THREE.Box3 },
  *   movers: Array<{ mesh: THREE.Object3D, waypoints: THREE.Vector3[], speed: number,
  *     targetIndex: number, direction: number, spin?: boolean }>,
  *   hazards: Array<{ mesh: THREE.Object3D, radius: number }> }>}
@@ -109,13 +110,19 @@ function buildMaze() {
     }
   }
 
-  // Dark, moody atmosphere overall — just enough skylight to make walls and
-  // corridors faintly readable by silhouette — with one bright, warm pool
-  // of light over the maze's center that fades out with distance (inverse-
-  // square falloff) rather than reaching the corners. The point light's
-  // shadows are what actually carve out the light pool: walls a cell or two
-  // from center block it and go dark, same as the rest of the maze.
-  const fill = new THREE.HemisphereLight(0x2a2a3a, 0x07070a, 0.16);
+  // Dark, moody atmosphere overall — enough skylight that walls and
+  // corridors are always readable, even far from any point light — with
+  // one bright, warm pool over the maze's center that fades out with
+  // distance (inverse-square falloff) rather than reaching the corners.
+  // The center light's shadows are what carve out that pool: walls a cell
+  // or two away block it and go back to just the ambient fill.
+  //
+  // An earlier, dimmer version of this fill (0.16) left the spawn corner —
+  // which can be many cells from center — reading as near-solid black with
+  // no readable detail at all (measured ~49/7/9 average RGB), indistinguishable
+  // from the game being frozen. This level keeps the same moody character
+  // while staying clearly readable at the point farthest from any light.
+  const fill = new THREE.HemisphereLight(0x3d3d52, 0x16161e, 0.32);
   group.add(fill);
 
   const centerLight = new THREE.PointLight(0xfff2c2, 10, cellSize * 6, 2);
@@ -128,6 +135,31 @@ function buildMaze() {
 
   const spawnCenter = cellCenter(maze.start.r, maze.start.c);
   const spawn = new THREE.Vector3(spawnCenter.x, 0, spawnCenter.z);
+
+  // A small, dim lantern right at the entrance — distinct from the big
+  // center pool — so the spawn cell itself has some directional light to
+  // read shapes by, not just the flat hemisphere fill.
+  const spawnLight = new THREE.PointLight(0xffe2b0, 2.5, cellSize * 2.2, 2);
+  spawnLight.position.set(spawnCenter.x, wallHeight * 0.75, spawnCenter.z);
+  group.add(spawnLight);
+
+  // Face the player down whichever side of the start cell is actually open,
+  // instead of a fixed world direction — a maze start cell often has a wall
+  // on its "default forward" (-Z) side, which previously left new players
+  // staring at a flat, close-up wall with no sense that movement was doing
+  // anything.
+  const START_FACING_DIRECTIONS = [
+    { wall: 'top', dx: 0, dz: -1 },
+    { wall: 'right', dx: 1, dz: 0 },
+    { wall: 'bottom', dx: 0, dz: 1 },
+    { wall: 'left', dx: -1, dz: 0 },
+  ];
+  const openDir = START_FACING_DIRECTIONS.find(({ wall }) => !maze.start.walls[wall])
+    ?? START_FACING_DIRECTIONS[0];
+  // Derived from PointLockControls' convention that yaw 0 faces -Z: rotating
+  // yaw by theta sends that forward vector to (-sin theta, -cos theta) in
+  // (x, z), so solving for the desired (dx, dz) gives this atan2.
+  const spawnFacing = Math.atan2(-openDir.dx, -openDir.dz);
 
   // Placeholder markers stand in for the real Jax model / exit dressing
   // until the team has those assets — swap the meshes, keep the triggers.
@@ -214,5 +246,5 @@ function buildMaze() {
     new THREE.Vector3(width / 2, wallHeight, depth / 2),
   );
 
-  return { group, bounds, spawn, colliders, triggers, movers, hazards };
+  return { group, bounds, spawn, spawnFacing, colliders, triggers, movers, hazards };
 }

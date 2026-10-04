@@ -164,6 +164,7 @@ function selectRoom(roomKey, { onReady } = {}) {
       group,
       bounds: box,
       spawn,
+      spawnFacing,
       colliders: roomColliders,
       collisionMeshes: roomCollisionMeshes,
       triggers: roomTriggers,
@@ -194,7 +195,10 @@ function selectRoom(roomKey, { onReady } = {}) {
       hazards = roomHazards ?? [];
 
       controls.object.position.set(spawn.x, floorY + PLAYER_HEIGHT, spawn.z);
-      controls.object.rotation.set(0, 0, 0);
+      // Rooms can request a starting yaw (the maze points the player down
+      // whichever side of the start cell is actually open); anything that
+      // doesn't specify one keeps the previous default of facing -Z.
+      controls.object.rotation.set(0, spawnFacing ?? 0, 0);
 
       readyToPlay = true;
       overlay.classList.remove('loading');
