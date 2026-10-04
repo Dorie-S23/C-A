@@ -3,6 +3,13 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 import { loadPomniRoom } from './rooms/pomniRoom.js';
 import { loadTadcRoom } from './rooms/tadcRoom.js';
 import { loadMazeRoom } from './rooms/mazeRoom.js';
+import { createDialogueUI } from './ui/DialogueUI.js';
+import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue } from './data/dialogues.js';
+
+const DIALOGUE_SCRIPTS = {
+  preLevel1: preLevel1Dialogue,
+  level1Open: level1OpenDialogue,
+};
 
 const ROOM_LOADERS = {
   pomni: loadPomniRoom,
@@ -53,8 +60,11 @@ const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlaySubtitle = document.getElementById('overlay-subtitle');
 const roomPicker = document.getElementById('room-picker');
+const dialoguePicker = document.getElementById('dialogue-picker');
 const crosshair = document.getElementById('crosshair');
 const hint = document.getElementById('hint');
+
+const dialogueUI = createDialogueUI({ speakers: SPEAKERS });
 
 let currentRoom = null;
 let readyToPlay = false;
@@ -87,7 +97,41 @@ roomPicker.querySelectorAll('button').forEach((button) => {
   });
 });
 
-function selectRoom(roomKey) {
+dialoguePicker.querySelectorAll('button').forEach((button) => {
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    playDialoguePreview(button.dataset.dialogue);
+  });
+});
+
+/**
+ * Loads the TADC map as a backdrop (both scripts are set in the main tent)
+ * and plays a dialogue script over it instead of the usual "Click to Play"
+ * prompt. The pointer is never locked during this, so WASD/mouse-look stay
+ * inert for free — the same "locks movement" behaviour the plan calls for
+ * NPC interaction, achieved without a separate guard.
+ */
+function playDialoguePreview(key) {
+  const script = DIALOGUE_SCRIPTS[key];
+  if (!script) return;
+
+  selectRoom('tadc', {
+    onReady: () => {
+      overlay.classList.add('hidden');
+      readyToPlay = false;
+      dialogueUI.play(script, {
+        onComplete: () => {
+          readyToPlay = true;
+          overlay.classList.remove('hidden');
+          overlayTitle.textContent = 'Click to Play';
+          overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint — Esc to release the mouse';
+        },
+      });
+    },
+  });
+}
+
+function selectRoom(roomKey, { onReady } = {}) {
   const loadRoom = ROOM_LOADERS[roomKey];
   if (!loadRoom) return;
 
@@ -108,6 +152,7 @@ function selectRoom(roomKey) {
   reachedExit = false;
   caught = false;
   roomPicker.hidden = true;
+  dialoguePicker.hidden = true;
   overlay.classList.add('loading');
   overlayTitle.textContent = 'Loading…';
   overlaySubtitle.textContent = 'Fetching room model (0%)';
@@ -153,14 +198,19 @@ function selectRoom(roomKey) {
 
       readyToPlay = true;
       overlay.classList.remove('loading');
-      overlayTitle.textContent = 'Click to Play';
-      overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint — Esc to release the mouse';
+      if (onReady) {
+        onReady();
+      } else {
+        overlayTitle.textContent = 'Click to Play';
+        overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint — Esc to release the mouse';
+      }
     })
     .catch((err) => {
       console.error('Failed to load room model', err);
       overlayTitle.textContent = 'Failed to load room';
       overlaySubtitle.textContent = 'Check the browser console for details.';
       roomPicker.hidden = false;
+      dialoguePicker.hidden = false;
       overlay.classList.remove('loading');
     });
 }
@@ -472,6 +522,7 @@ function endLevel(title, subtitle) {
   overlayTitle.textContent = title;
   overlaySubtitle.textContent = subtitle;
   roomPicker.hidden = false;
+  dialoguePicker.hidden = false;
 }
 
 function checkTriggers(player) {
