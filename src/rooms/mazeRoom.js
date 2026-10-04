@@ -6,7 +6,7 @@ import { generateMaze } from '../maze/generateMaze.js';
 export const MAZE = {
   cols: 9,
   rows: 9,
-  cellSize: 3,
+  cellSize: 4.5, // clear corridor width = cellSize - wallThickness (~4.3 units)
   wallHeight: 3,
   wallThickness: 0.2,
 };
@@ -109,11 +109,22 @@ function buildMaze() {
     }
   }
 
-  const fill = new THREE.HemisphereLight(0xfff4e0, 0x3a3226, 0.7);
+  // Dark, moody atmosphere overall — just enough skylight to make walls and
+  // corridors faintly readable by silhouette — with one bright, warm pool
+  // of light over the maze's center that fades out with distance (inverse-
+  // square falloff) rather than reaching the corners. The point light's
+  // shadows are what actually carve out the light pool: walls a cell or two
+  // from center block it and go dark, same as the rest of the maze.
+  const fill = new THREE.HemisphereLight(0x2a2a3a, 0x07070a, 0.16);
   group.add(fill);
-  const sun = new THREE.DirectionalLight(0xffffff, 0.9);
-  sun.position.set(width * 0.3, wallHeight * 5, depth * 0.3);
-  group.add(sun);
+
+  const centerLight = new THREE.PointLight(0xfff2c2, 10, cellSize * 6, 2);
+  centerLight.position.set(0, wallHeight * 0.85, 0);
+  centerLight.castShadow = true;
+  centerLight.shadow.mapSize.set(1024, 1024);
+  centerLight.shadow.camera.near = 0.1;
+  centerLight.shadow.camera.far = cellSize * 6;
+  group.add(centerLight);
 
   const spawnCenter = cellCenter(maze.start.r, maze.start.c);
   const spawn = new THREE.Vector3(spawnCenter.x, 0, spawnCenter.z);
