@@ -1,11 +1,22 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 import { loadPomniRoom } from './rooms/pomniRoom.js';
 import { loadTadcRoom } from './rooms/tadcRoom.js';
 import { loadMazeRoom } from './rooms/mazeRoom.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
 import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue } from './data/dialogues.js';
+
+// Collision fires dozens of short rays a frame (wall probe, floor probes,
+// body-overlap rings). Plain three.js tests a ray against every triangle of
+// each candidate mesh, which makes walking crawl in dense rooms like Pomni's
+// (~120k triangles, almost all of it around the player). A BVH per mesh lets
+// each ray test only the handful of triangles near it. Meshes without one
+// (skinned meshes) fall back to the regular raycast.
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 const DIALOGUE_SCRIPTS = {
   preLevel1: preLevel1Dialogue,
@@ -220,6 +231,10 @@ function selectRoom(roomKey, { onReady } = {}) {
         dynamic: entry.dynamic ?? false,
       }));
       dynamicCollisionMeshes = collisionMeshes.filter((entry) => entry.dynamic);
+      for (const { mesh } of collisionMeshes) {
+        // BVHs are in the mesh's local space, so swinging doors keep theirs.
+        if (!mesh.isSkinnedMesh && !mesh.geometry.boundsTree) mesh.geometry.computeBoundsTree();
+      }
       triggers = roomTriggers ?? null;
       movers = roomMovers ?? [];
       hazards = roomHazards ?? [];
@@ -232,6 +247,11 @@ function selectRoom(roomKey, { onReady } = {}) {
       // whichever side of the start cell is actually open); anything that
       // doesn't specify one keeps the previous default of facing -Z.
       controls.object.rotation.set(0, spawnFacing ?? 0, 0);
+
+      // three.js compiles each material's shader the first time it comes
+      // into view, which hitches mid-walk; compile them all up front instead,
+      // now that the room's lights and environment are in place.
+      renderer.compile(scene, camera);
 
       readyToPlay = true;
       overlay.classList.remove('loading');
@@ -255,6 +275,7 @@ function selectRoom(roomKey, { onReady } = {}) {
 function disposeObject3D(root) {
   root.traverse((child) => {
     if (!child.isMesh) return;
+    child.geometry?.disposeBoundsTree();
     child.geometry?.dispose();
     const materials = Array.isArray(child.material) ? child.material : [child.material];
     for (const material of materials) {

@@ -54,6 +54,10 @@
       gap: 1em;
       margin-top: 0.75em;
     }
+    /* `display: flex` above would otherwise override the hidden attribute,
+       leaving both menus on the pause overlay mid-game. */
+    #room-picker[hidden],
+    #dialogue-picker[hidden] { display: none; }
     #dialogue-picker button {
       font-size: 0.9em;
       padding: 0.5em 1em;
