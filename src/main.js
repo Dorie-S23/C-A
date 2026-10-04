@@ -120,6 +120,15 @@ controls.addEventListener('lock', () => {
 controls.addEventListener('unlock', () => {
   overlay.classList.remove('hidden');
   crosshair.hidden = true;
+  // Esc mid-game is a pause: offer the menus so the player can switch rooms
+  // without reloading. (endLevel clears readyToPlay before unlocking, so its
+  // own title and subtitle are left alone.)
+  if (readyToPlay) {
+    overlayTitle.textContent = 'Paused';
+    overlaySubtitle.textContent = 'Click to resume, or choose a room below';
+    roomPicker.hidden = false;
+    dialoguePicker.hidden = false;
+  }
 });
 
 roomPicker.querySelectorAll('button').forEach((button) => {
@@ -275,6 +284,7 @@ function selectRoom(roomKey, { onReady } = {}) {
 function disposeObject3D(root) {
   root.traverse((child) => {
     if (!child.isMesh) return;
+    child.dispose?.(); // e.g. a mirror's Reflector frees its render target
     child.geometry?.disposeBoundsTree();
     child.geometry?.dispose();
     const materials = Array.isArray(child.material) ? child.material : [child.material];

@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 
-const url = 'http://localhost:4175/';
+const url = 'http://localhost:4175/game%20screens/roomselection.html';
 const shotDir = 'C:\\Users\\dorsa\\AppData\\Local\\Temp\\claude\\c--Users-dorsa-OneDrive-Documents-COMS-3-CGV-Game-C-A\\3faeb38b-153e-45a6-9828-1e3ece15b82b\\scratchpad';
 
 async function checkRoom(roomKey, label) {

@@ -3,7 +3,7 @@ import { createDialogueEngine } from '../dialogue/dialogueEngine.js';
 const TYPE_SPEED_MS = 22;
 
 /**
- * Drives the #dialogue overlay in index.html from a script (see
+ * Drives the #dialogue overlay in game screens/roomselection.html from a script (see
  * src/data/dialogues.js for the node shapes). One instance is created
  * once and reused for every script played during the session — `play()`
  * resets its state each time.

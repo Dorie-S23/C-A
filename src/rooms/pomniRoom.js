@@ -1,15 +1,23 @@
 import * as THREE from 'three';
 import { loadRoomModel } from './loadRoomModel.js';
 import { loadCaine, createCaineIdle } from '../characters/caine.js';
+import { addMirrorReflections } from './mirrors.js';
 
 const CAINE_DISTANCE = 3; // how far in front of the spawn point Caine stands
 const CAINE_WALL_GAP = 0.8; // keep him at least this far off any wall in the way
 
+// Exported from "Pomnis Room V3.blend" by tools/blender/export_pomnis_room_v3.py,
+// which converts the materials the glTF exporter can't read — re-run it
+// after editing the .blend.
 export function loadPomniRoom(onProgress) {
   return Promise.all([
-    loadRoomModel('./models/character%20rooms/pomnis-room.glb', onProgress),
+    loadRoomModel('../models/character%20rooms/pomnis-room-v3.glb', onProgress),
     loadCaine(),
   ]).then(([room, { caine, collider }]) => {
+    // Its metal trim needs something to reflect.
+    room.environment = true;
+    // The vanity and the standing mirror reflect the room for real.
+    addMirrorReflections(room.group, room.spawn);
     placeInFrontOfSpawn(caine, room);
     room.group.add(caine);
     caine.updateMatrixWorld(true);

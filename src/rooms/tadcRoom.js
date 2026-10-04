@@ -6,7 +6,7 @@ import { setupLobbyDoors } from './lobbyDoors.js';
 // The castle's brick walls (arched windows, battlements), taken from the
 // Sketchfab "The Digital Circus" model. The lobby's own export only has a
 // single unrepeated segment of each, with the brick texture missing.
-const CASTLE_WALLS_URL = './models/world/castle-brick-walls.glb';
+const CASTLE_WALLS_URL = '../models/world/castle-brick-walls.glb';
 const CASTLE_WALL_MATERIALS = /^(RandomCol|RandomCol3)$/;
 // The lobby's rainbow arches are flat and stand 0.1 m behind the front of
 // the Sketchfab wall (whose own arches are thicker), so push the wall back.
@@ -14,7 +14,7 @@ const CASTLE_WALL_SETBACK = 0.2;
 
 export function loadTadcRoom(onProgress) {
   return Promise.all([
-    loadRoomModel('./models/world/Circus%20Lobby%20V10%20colored.glb', onProgress),
+    loadRoomModel('../models/world/Circus%20Lobby%20V10%20colored.glb', onProgress),
     new GLTFLoader().loadAsync(CASTLE_WALLS_URL),
   ]).then(([room, castleWalls]) => {
     replaceCastleWalls(room, castleWalls.scene);

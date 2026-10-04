@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 // Everything (geometry, skins, textures) is embedded in the .gltf itself,
 // so the sibling textures/ folder from the download is not needed.
-const CAINE_URL = './models/characters/caine-the-amazing-digital-circus/source/CAINE.gltf';
+const CAINE_URL = '../models/characters/caine-the-amazing-digital-circus/source/CAINE.gltf';
 
 // The ringmaster towers over the cast, so he's scaled taller than the
 // player (PLAYER_HEIGHT in main.js is 1.7).
