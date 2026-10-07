@@ -31,8 +31,10 @@ const ROOM_LOADERS = {
 
 const PLAYER_HEIGHT = 1.7;
 const PLAYER_RADIUS = 0.35;
-const WALK_SPEED = 6.0; // metres per second
-const SPRINT_MULTIPLIER = 2.5; // running speed = WALK_SPEED × this
+// Kept close to the speeds Pomni's Walk/Run clips are authored at (see
+// WALK_CLIP_SPEED/RUN_CLIP_SPEED) so her feet don't skate or blur.
+const WALK_SPEED = 2.0; // metres per second
+const SPRINT_MULTIPLIER = 2.0; // running speed = WALK_SPEED × this
 const WALL_MARGIN = 0.4; // keep the camera this far from any wall
 const STEP_HEIGHT = 0.4; // ledges up to this tall are stepped onto; taller ones block
 const PROBE_HEIGHT = STEP_HEIGHT + 0.05; // height of the wall-probe ray above the feet
@@ -90,10 +92,19 @@ const player = new THREE.Object3D();
 scene.add(player);
 
 let pomni = null;
-const pomniReady = loadPomni().then(({ pomni: model }) => {
+let pomniMixer = null;
+const pomniActions = {}; // lower-cased clip name -> AnimationAction
+let currentAction = null;
+const pomniReady = loadPomni().then(({ pomni: model, animations }) => {
   pomni = model;
   pomni.position.y = -PLAYER_HEIGHT; // feet on the floor
   player.add(pomni);
+
+  if (animations.length > 0) {
+    pomniMixer = new THREE.AnimationMixer(pomni);
+    for (const clip of animations) pomniActions[clip.name.toLowerCase()] = pomniMixer.clipAction(clip);
+    playAction('idle');
+  }
 });
 
 const overlay = document.getElementById('overlay');
@@ -385,8 +396,16 @@ const cameraHitPoint = new THREE.Vector3();
 const cameraRaycaster = new THREE.Raycaster();
 let currentCameraDistance = CAMERA_DISTANCE;
 
-// Pomni turning and her fake walk cycle (see updatePomniWalk).
+// Pomni turning and her walk animation (see updatePomniWalk).
 const TURN_SHARPNESS = 14;     // higher = snappier turning
+// Ground speed each clip's feet move at, measured at POMNI_HEIGHT; the clip
+// is sped up/slowed down by actual speed ÷ this so her feet stay planted.
+const WALK_CLIP_SPEED = 1.1;
+const RUN_CLIP_SPEED = 2.85;
+const RUN_THRESHOLD = WALK_SPEED * 1.4; // above this she's sprinting
+const ACTION_FADE = 0.2;       // seconds to cross-fade between clips
+let animSpeed = 0;             // smoothed ground speed, so clips don't flicker
+// Fallback hop-and-waddle for a model without clips (e.g. the placeholder).
 const STEPS_PER_METRE = 1.4;
 const WALK_BOB_HEIGHT = 0.06;  // metres of hop per step
 const WALK_SWAY = 0.08;        // radians of side-to-side waddle
@@ -840,16 +859,41 @@ function dampAngle(current, target, sharpness, dt) {
 }
 
 /**
- * Pomni's model has no skeleton or animation clips, so walking is faked:
- * a small hop per step plus a side-to-side waddle, faded in and out with
- * her real speed. Swap this for an AnimationMixer if a rigged model lands.
+ * Plays Idle/Walk/Run from her real ground speed, scaling the clip's
+ * playback so her feet match how fast she's actually moving. Without
+ * clips (the placeholder), walking is faked: a small hop per step plus a
+ * side-to-side waddle, faded in and out with her speed.
  */
 function updatePomniWalk(dt, speed) {
+  if (pomniMixer) {
+    animSpeed = THREE.MathUtils.damp(animSpeed, speed, 12, dt);
+    if (animSpeed < 0.2) {
+      playAction('idle');
+    } else if (animSpeed > RUN_THRESHOLD && pomniActions.run) {
+      playAction('run');
+      pomniActions.run.timeScale = animSpeed / RUN_CLIP_SPEED;
+    } else {
+      playAction('walk');
+      pomniActions.walk.timeScale = animSpeed / WALK_CLIP_SPEED;
+    }
+    pomniMixer.update(dt);
+    return;
+  }
+
   walkAmount = THREE.MathUtils.damp(walkAmount, speed > 0.1 ? 1 : 0, 10, dt);
   walkPhase += speed * dt * STEPS_PER_METRE * Math.PI;
 
   pomni.position.y = -PLAYER_HEIGHT + Math.abs(Math.sin(walkPhase)) * WALK_BOB_HEIGHT * walkAmount;
   pomni.rotation.z = Math.sin(walkPhase) * WALK_SWAY * walkAmount;
+}
+
+/** Cross-fades from whatever Pomni is playing to the named clip. */
+function playAction(name) {
+  const next = pomniActions[name];
+  if (!next || next === currentAction) return;
+  next.reset().fadeIn(ACTION_FADE).play();
+  currentAction?.fadeOut(ACTION_FADE);
+  currentAction = next;
 }
 
 // --- Third-person follow camera ---
