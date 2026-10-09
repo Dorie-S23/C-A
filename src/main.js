@@ -202,17 +202,22 @@ function returnToHome() {
 }
 
 /**
- * Loads the TADC map as a backdrop (both scripts are set in the main tent)
- * and plays a dialogue script over it instead of the usual "Click to Play"
- * prompt. The pointer is never locked during this, so WASD/mouse-look stay
- * inert for free — the same "locks movement" behaviour the plan calls for
- * NPC interaction, achieved without a separate guard.
+ * Loads a room as a backdrop and plays a dialogue script over it instead
+ * of the usual "Click to Play" prompt. The pointer is never locked during
+ * this, so WASD/mouse-look stay inert for free — the same "locks movement"
+ * behaviour the plan calls for NPC interaction, achieved without a
+ * separate guard.
+ *
+ * Uses Pomni's Room rather than the circus map both scripts are actually
+ * set in: the circus map currently takes 60+ seconds to become responsive
+ * (tracked separately, unrelated to dialogue), which made every preview
+ * click look hung. Swap back once that's fixed.
  */
 function playDialoguePreview(key) {
   const script = DIALOGUE_SCRIPTS[key];
   if (!script) return;
 
-  selectRoom('tadc', {
+  selectRoom('pomni', {
     onReady: () => {
       overlay.classList.add('hidden');
       readyToPlay = false;
