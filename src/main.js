@@ -1,11 +1,22 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 import { loadPomniRoom } from './rooms/pomniRoom.js';
 import { loadTadcRoom } from './rooms/tadcRoom.js';
 import { loadMazeRoom } from './rooms/mazeRoom.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
 import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue } from './data/dialogues.js';
+
+// Collision fires dozens of short rays a frame (wall probe, floor probes,
+// body-overlap rings). Plain three.js tests a ray against every triangle of
+// each candidate mesh, which makes walking crawl in dense rooms like Pomni's
+// (~120k triangles, almost all of it around the player). A BVH per mesh lets
+// each ray test only the handful of triangles near it. Meshes without one
+// (skinned meshes) fall back to the regular raycast.
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 const DIALOGUE_SCRIPTS = {
   preLevel1: preLevel1Dialogue,
@@ -81,6 +92,9 @@ const overlayTitle = document.getElementById('overlay-title');
 const overlaySubtitle = document.getElementById('overlay-subtitle');
 const roomPicker = document.getElementById('room-picker');
 const dialoguePicker = document.getElementById('dialogue-picker');
+const pauseMenu = document.getElementById('pause-menu');
+const btnResume = document.getElementById('btn-resume');
+const btnHome = document.getElementById('btn-home');
 const crosshair = document.getElementById('crosshair');
 const hint = document.getElementById('hint');
 const interactPrompt = document.getElementById('prompt');
@@ -98,17 +112,28 @@ function showHint(text, durationMs = 3000) {
   hintTimeout = setTimeout(() => hint.classList.remove('visible'), durationMs);
 }
 
-overlay.addEventListener('click', () => {
+overlay.addEventListener('click', (e) => {
+  // Only resume when clicking the overlay background itself (not a button inside it)
+  if (e.target !== overlay && e.target !== overlayTitle && e.target !== overlaySubtitle) return;
   if (!readyToPlay) return;
+  if (!currentRoom) return; // on home screen, must pick a room first
   controls.lock();
 });
 controls.addEventListener('lock', () => {
   overlay.classList.add('hidden');
+  pauseMenu.hidden = true;
   crosshair.hidden = false;
 });
 controls.addEventListener('unlock', () => {
-  overlay.classList.remove('hidden');
   crosshair.hidden = true;
+  if (!currentRoom || !readyToPlay) return; // home screen or loading — handled elsewhere
+  // Show pause menu
+  overlay.classList.remove('hidden');
+  overlayTitle.textContent = 'Paused';
+  overlaySubtitle.textContent = 'Press Esc or click Resume to continue';
+  roomPicker.hidden = true;
+  dialoguePicker.hidden = true;
+  pauseMenu.hidden = false;
 });
 
 roomPicker.querySelectorAll('button').forEach((button) => {
@@ -125,18 +150,74 @@ dialoguePicker.querySelectorAll('button').forEach((button) => {
   });
 });
 
+btnResume.addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (readyToPlay && currentRoom) controls.lock();
+});
+
+btnHome.addEventListener('click', (event) => {
+  event.stopPropagation();
+  returnToHome();
+});
+
 /**
- * Loads the TADC map as a backdrop (both scripts are set in the main tent)
- * and plays a dialogue script over it instead of the usual "Click to Play"
- * prompt. The pointer is never locked during this, so WASD/mouse-look stay
- * inert for free — the same "locks movement" behaviour the plan calls for
- * NPC interaction, achieved without a separate guard.
+ * Tears down the current room and returns to the home (room-picker) screen.
+ */
+function returnToHome() {
+  if (controls.isLocked) controls.unlock();
+
+  if (currentRoom) {
+    scene.remove(currentRoom);
+    disposeObject3D(currentRoom);
+    currentRoom = null;
+    bounds = null;
+  }
+
+  // Reset all room state
+  readyToPlay = false;
+  colliders = [];
+  collisionMeshes = [];
+  dynamicCollisionMeshes = [];
+  triggers = null;
+  movers = [];
+  hazards = [];
+  roomUpdate = null;
+  interactables = [];
+  focusedInteractable = null;
+  interactPrompt.hidden = true;
+  foundJax = false;
+  reachedExit = false;
+  caught = false;
+  scene.environment = null;
+
+  // Show home screen
+  overlay.classList.remove('hidden');
+  overlay.classList.remove('loading');
+  overlayTitle.textContent = 'Choose a room';
+  overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
+  roomPicker.hidden = false;
+  dialoguePicker.hidden = false;
+  pauseMenu.hidden = true;
+  crosshair.hidden = true;
+}
+
+/**
+ * Loads a room as a backdrop and plays a dialogue script over it instead
+ * of the usual "Click to Play" prompt. The pointer is never locked during
+ * this, so WASD/mouse-look stay inert for free — the same "locks movement"
+ * behaviour the plan calls for NPC interaction, achieved without a
+ * separate guard.
+ *
+ * Uses Pomni's Room rather than the circus map both scripts are actually
+ * set in: the circus map currently takes 60+ seconds to become responsive
+ * (tracked separately, unrelated to dialogue), which made every preview
+ * click look hung. Swap back once that's fixed.
  */
 function playDialoguePreview(key) {
   const script = DIALOGUE_SCRIPTS[key];
   if (!script) return;
 
-  selectRoom('tadc', {
+  selectRoom('pomni', {
     onReady: () => {
       overlay.classList.add('hidden');
       readyToPlay = false;
@@ -178,6 +259,7 @@ function selectRoom(roomKey, { onReady } = {}) {
   caught = false;
   roomPicker.hidden = true;
   dialoguePicker.hidden = true;
+  pauseMenu.hidden = true;
   overlay.classList.add('loading');
   overlayTitle.textContent = 'Loading…';
   overlaySubtitle.textContent = 'Fetching room model (0%)';
@@ -220,6 +302,10 @@ function selectRoom(roomKey, { onReady } = {}) {
         dynamic: entry.dynamic ?? false,
       }));
       dynamicCollisionMeshes = collisionMeshes.filter((entry) => entry.dynamic);
+      for (const { mesh } of collisionMeshes) {
+        // BVHs are in the mesh's local space, so swinging doors keep theirs.
+        if (!mesh.isSkinnedMesh && !mesh.geometry.boundsTree) mesh.geometry.computeBoundsTree();
+      }
       triggers = roomTriggers ?? null;
       movers = roomMovers ?? [];
       hazards = roomHazards ?? [];
@@ -232,6 +318,11 @@ function selectRoom(roomKey, { onReady } = {}) {
       // whichever side of the start cell is actually open); anything that
       // doesn't specify one keeps the previous default of facing -Z.
       controls.object.rotation.set(0, spawnFacing ?? 0, 0);
+
+      // three.js compiles each material's shader the first time it comes
+      // into view, which hitches mid-walk; compile them all up front instead,
+      // now that the room's lights and environment are in place.
+      renderer.compile(scene, camera);
 
       readyToPlay = true;
       overlay.classList.remove('loading');
@@ -255,6 +346,7 @@ function selectRoom(roomKey, { onReady } = {}) {
 function disposeObject3D(root) {
   root.traverse((child) => {
     if (!child.isMesh) return;
+    child.geometry?.disposeBoundsTree();
     child.geometry?.dispose();
     const materials = Array.isArray(child.material) ? child.material : [child.material];
     for (const material of materials) {
@@ -640,10 +732,12 @@ function bodyClearance(player) {
 function endLevel(title, subtitle) {
   readyToPlay = false;
   controls.unlock();
+  overlay.classList.remove('hidden');
   overlayTitle.textContent = title;
   overlaySubtitle.textContent = subtitle;
   roomPicker.hidden = false;
   dialoguePicker.hidden = false;
+  pauseMenu.hidden = true;
 }
 
 function checkTriggers(player) {
