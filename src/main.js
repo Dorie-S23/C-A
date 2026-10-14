@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 import { loadPomniRoom } from './rooms/pomniRoom.js';
+import { loadDormHallRoom } from './rooms/dormHallRoom.js';
 import { loadTadcRoom } from './rooms/tadcRoom.js';
 import { loadMazeRoom } from './rooms/mazeRoom.js';
 import { loadPomni } from './characters/pomni.js';
@@ -26,6 +27,7 @@ const DIALOGUE_SCRIPTS = {
 const ROOM_LOADERS = {
   pomni: loadPomniRoom,
   tadc: loadTadcRoom,
+  dorm: loadDormHallRoom,
   maze: loadMazeRoom,
 };
 
@@ -111,6 +113,7 @@ const interactPrompt = document.getElementById('prompt');
 const dialogueUI = createDialogueUI({ speakers: SPEAKERS });
 
 let currentRoom = null;
+let currentRoomKey = null;
 let readyToPlay = false;
 let hintTimeout = null;
 
@@ -168,6 +171,7 @@ function returnToHome() {
   hazards = [];
   roomUpdate = null;
   interactables = [];
+  portals = [];
   focusedInteractable = null;
   interactPrompt.hidden = true;
   foundJax = false;
@@ -218,7 +222,7 @@ function playDialoguePreview(key) {
   });
 }
 
-function selectRoom(roomKey, { onReady } = {}) {
+function selectRoom(roomKey, { onReady, from } = {}) {
   const loadRoom = ROOM_LOADERS[roomKey];
   if (!loadRoom) return;
 
@@ -237,6 +241,7 @@ function selectRoom(roomKey, { onReady } = {}) {
   hazards = [];
   roomUpdate = null;
   interactables = [];
+  portals = [];
   focusedInteractable = null;
   interactPrompt.hidden = true;
   foundJax = false;
@@ -246,13 +251,15 @@ function selectRoom(roomKey, { onReady } = {}) {
   dialoguePicker.hidden = true;
   pauseMenu.hidden = true;
   overlay.classList.add('loading');
+  // Otherwise she stands alone in the void behind the loading screen.
+  player.visible = false;
   overlayTitle.textContent = 'Loading…';
   overlaySubtitle.textContent = 'Fetching room model (0%)';
 
   Promise.all([
     loadRoom((ratio) => {
       overlaySubtitle.textContent = `Fetching room model (${Math.round(ratio * 100)}%)`;
-    }),
+    }, { from }),
     pomniReady,
   ])
     .then(([{
@@ -267,9 +274,12 @@ function selectRoom(roomKey, { onReady } = {}) {
       hazards: roomHazards,
       update: roomUpdateFn,
       interactables: roomInteractables,
+      portals: roomPortals,
       environment: wantsEnvironment,
     }]) => {
       currentRoom = group;
+      currentRoomKey = roomKey;
+      player.visible = true;
       scene.add(group);
 
       floorY = spawn.y;
@@ -299,6 +309,7 @@ function selectRoom(roomKey, { onReady } = {}) {
       hazards = roomHazards ?? [];
       roomUpdate = roomUpdateFn ?? null;
       interactables = roomInteractables ?? [];
+      portals = roomPortals ?? [];
       scene.environment = wantsEnvironment ? environmentMap : null;
 
       player.position.set(spawn.x, floorY + PLAYER_HEIGHT, spawn.z);
@@ -507,6 +518,8 @@ let roomUpdate = null;
 let dynamicCollisionMeshes = [];
 // Things the player can use with E: { objects: Mesh[], prompt(): string, interact() }.
 let interactables = [];
+// Archways that lead to another room: { box, to } (see rooms/portals.js).
+let portals = [];
 let focusedInteractable = null;
 const interactRaycaster = new THREE.Raycaster();
 const SCREEN_CENTER = new THREE.Vector2(0, 0);
@@ -794,6 +807,34 @@ function endLevel(title, subtitle) {
   pauseMenu.hidden = true;
 }
 
+/** Walking into an archway's portal loads the room it leads to. */
+function checkPortals() {
+  if (portals.length === 0) return;
+  // Her actual feet, not floorY: the dorm arch stands on a few steps.
+  triggerProbe.set(player.position.x, player.position.y - PLAYER_HEIGHT + 0.5, player.position.z);
+  const portal = portals.find((p) => p.box.containsPoint(triggerProbe));
+  if (portal) travelTo(portal.to);
+}
+
+/**
+ * Switches rooms mid-game, keeping the mouse captured: the loading screen
+ * shows over the game and play carries straight on once the room is in.
+ */
+function travelTo(roomKey) {
+  overlay.classList.remove('hidden');
+  selectRoom(roomKey, {
+    from: currentRoomKey,
+    onReady: () => {
+      if (isLocked) {
+        overlay.classList.add('hidden');
+      } else {
+        overlayTitle.textContent = 'Click to Play';
+        overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
+      }
+    },
+  });
+}
+
 function checkTriggers(player) {
   if (reachedExit || caught) return;
 
@@ -899,6 +940,7 @@ function updateMovement(deltaSeconds) {
   updatePomniWalk(deltaSeconds, deltaSeconds > 0 ? moved / deltaSeconds : 0);
 
   checkTriggers(player);
+  checkPortals();
 }
 
 /** Frame-rate-independent turn toward `target`, always taking the short way round. */
@@ -1012,7 +1054,8 @@ function animate() {
   roomUpdate?.(delta);
   refreshDynamicColliders();
   if (pomni) {
-    if (isLocked) updateMovement(delta);
+    // No walking while the next room loads.
+    if (isLocked && readyToPlay) updateMovement(delta);
     else updatePomniWalk(delta, 0); // settle the waddle while paused
     updateCamera(delta);
   }

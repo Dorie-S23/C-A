@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { loadRoomModel } from './loadRoomModel.js';
 import { setupLobbyDoors } from './lobbyDoors.js';
+import { createCurtainPortal } from './portals.js';
 
 // The castle's brick walls (arched windows, battlements), taken from the
 // Sketchfab "The Digital Circus" model. The lobby's own export only has a
@@ -11,8 +12,11 @@ const CASTLE_WALL_MATERIALS = /^(RandomCol|RandomCol3)$/;
 // The lobby's rainbow arches are flat and stand 0.1 m behind the front of
 // the Sketchfab wall (whose own arches are thicker), so push the wall back.
 const CASTLE_WALL_SETBACK = 0.2;
+// The red curtained arch by the toy blocks leads to the Dorm Hall. It opens
+// toward +Z, into the lobby.
+const DORM_ARCH_CURTAIN = 'Plane081';
 
-export function loadTadcRoom(onProgress) {
+export function loadTadcRoom(onProgress, { from } = {}) {
   return Promise.all([
     loadRoomModel('./models/world/Circus%20Lobby%20V10%20colored.glb', onProgress),
     new GLTFLoader().loadAsync(CASTLE_WALLS_URL),
@@ -24,6 +28,15 @@ export function loadTadcRoom(onProgress) {
     room.update = doors.update;
     // The lobby's real metals (railings, stage trim) need something to reflect.
     room.environment = true;
+
+    const dormArch = createCurtainPortal(room.group, DORM_ARCH_CURTAIN, 1, 'dorm');
+    if (dormArch) {
+      room.portals = [dormArch];
+      if (from === 'dorm') {
+        room.spawn = dormArch.arrival.spawn;
+        room.spawnFacing = dormArch.arrival.facing;
+      }
+    }
     return room;
   });
 }
