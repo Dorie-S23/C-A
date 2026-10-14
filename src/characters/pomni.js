@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
-const POMNI_URL = '../models/characters/pomni/pomni.glb';
+const POMNI_URL = './models/characters/pomni/pomni.glb';
 const POMNI_HEIGHT = 1.6; // Caine is 2.6; agree on this with the team
 
 // The Sketchfab export carries two stray untextured meshes that aren't part

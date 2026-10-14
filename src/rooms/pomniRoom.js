@@ -11,7 +11,7 @@ const CAINE_WALL_GAP = 0.8; // keep him at least this far off any wall in the wa
 // after editing the .blend.
 export function loadPomniRoom(onProgress) {
   return Promise.all([
-    loadRoomModel('../models/character%20rooms/pomnis-room-v3.glb', onProgress),
+    loadRoomModel('./models/character%20rooms/pomnis-room-v3.glb', onProgress),
     loadCaine(),
   ]).then(([room, { caine, collider }]) => {
     // Its metal trim needs something to reflect.
