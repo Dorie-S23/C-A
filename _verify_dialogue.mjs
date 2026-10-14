@@ -1,7 +1,7 @@
 // Node verification harness for the dialogue engine's branching logic.
 // Run with `node _verify_dialogue.mjs`.
 import { createDialogueEngine } from './src/dialogue/dialogueEngine.js';
-import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue } from './src/data/dialogues.js';
+import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue } from './src/data/dialogues.js';
 import { SPRITES, MOODS } from './src/ui/portraitSprites.js';
 
 let failures = 0;
@@ -45,6 +45,71 @@ for (const [name, script] of [['preLevel1', preLevel1Dialogue], ['level1Open', l
     && (!n.mood || !MOODS.includes(n.mood)));
   check(`${name}: every sprite-speaker line has a recognized mood`, !badMood,
     badMood ? `node text "${badMood.text.slice(0, 30)}..." has mood "${badMood.mood}"` : '');
+}
+
+// 1b) a branching real script (level2Opening): walk every path through its
+// choice nodes (branching breadth-first at the first unresolved choice per
+// path) and run the same content checks across every node reachable by any
+// combination of choices, not just whichever one a single playthrough hits.
+function collectAllReachableNodes(script, maxPaths = 64) {
+  const visited = new Set();
+  const queue = [[]];
+  let pathsExplored = 0;
+  while (queue.length > 0 && pathsExplored < maxPaths) {
+    const choices = queue.shift();
+    pathsExplored++;
+    const engine = createDialogueEngine(script);
+    let cursor = 0;
+    while (!engine.done) {
+      const node = engine.current;
+      visited.add(node);
+      if (node.type === 'choice') {
+        if (cursor < choices.length) {
+          engine.choose(choices[cursor]);
+          cursor++;
+        } else {
+          for (let i = 0; i < node.options.length; i++) queue.push([...choices, i]);
+          break;
+        }
+      } else {
+        engine.advance();
+      }
+    }
+  }
+  return [...visited];
+}
+
+{
+  const name = 'level2Opening';
+  let seen = [];
+  let threw = null;
+  try {
+    seen = collectAllReachableNodes(level2OpeningDialogue);
+  } catch (e) {
+    threw = e;
+  }
+  check(`${name}: every branch resolves without an unknown-id error`, !threw, threw?.message);
+
+  const choiceCount = seen.filter((n) => n.type === 'choice').length;
+  check(`${name}: both choice points are reachable`, choiceCount === 2, `found=${choiceCount}`);
+
+  const missingSpeaker = seen.find((n) => n.type === 'line' && !SPEAKERS[n.speaker]);
+  check(`${name}: every line's speaker exists in SPEAKERS`, !missingSpeaker,
+    missingSpeaker ? `unknown speaker "${missingSpeaker.speaker}"` : '');
+
+  const missingSide = seen.find((n) => n.type === 'line' && n.side !== 'left' && n.side !== 'right');
+  check(`${name}: every line has a left/right side`, !missingSide);
+
+  const emptyText = seen.find((n) => (n.type === 'line' || n.type === 'beat') && !n.text?.trim());
+  check(`${name}: no node has empty text`, !emptyText);
+
+  const badMood = seen.find((n) => n.type === 'line' && SPRITES[n.speaker]
+    && (!n.mood || !MOODS.includes(n.mood)));
+  check(`${name}: every sprite-speaker line has a recognized mood`, !badMood,
+    badMood ? `node text "${badMood.text.slice(0, 30)}..." has mood "${badMood.mood}"` : '');
+
+  const emptyOption = seen.find((n) => n.type === 'choice' && n.options.some((o) => !o.text?.trim()));
+  check(`${name}: every choice option has text`, !emptyOption);
 }
 
 // 2) a synthetic branching script: choice nodes only advance via choose(),

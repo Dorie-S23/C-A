@@ -30,6 +30,7 @@ export function createDialogueUI({ speakers }) {
   let engine = null;
   let onComplete = null;
   let onChoice = null;
+  let onCancel = null;
   let leftSpeaker = null;
   let rightSpeaker = null;
   let leftMood = 'neutral';
@@ -37,6 +38,8 @@ export function createDialogueUI({ speakers }) {
   let typeTimer = null;
   let typing = false;
   let fullText = '';
+  let optionButtons = [];
+  let highlightedIndex = 0;
 
   /**
    * Fills a portrait slot with whichever speaker last occupied that side.
@@ -88,16 +91,30 @@ export function createDialogueUI({ speakers }) {
     }, TYPE_SPEED_MS);
   }
 
+  function highlightOption(i) {
+    highlightedIndex = i;
+    optionButtons.forEach((button, idx) => {
+      button.classList.toggle('dialogue-option-highlighted', idx === i);
+    });
+  }
+
   function renderOptions(options) {
     optionsEl.innerHTML = '';
-    options.forEach((option, i) => {
+    optionButtons = options.map((option, i) => {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'dialogue-option';
       button.textContent = option.text;
       button.addEventListener('click', () => selectOption(i));
+      button.addEventListener('focus', () => highlightOption(i));
       optionsEl.appendChild(button);
+      return button;
     });
+    highlightOption(0);
+    // Keyboard users land on an already-focused option instead of needing
+    // an extra Tab press; mouse users are unaffected since this only moves
+    // the invisible focus ring until something is clicked.
+    optionButtons[0]?.focus();
   }
 
   function renderNode() {
@@ -177,11 +194,62 @@ export function createDialogueUI({ speakers }) {
     engine = null;
     onComplete = null;
     onChoice = null;
+    onCancel = null;
+    if (callback) callback();
+  }
+
+  /**
+   * Stops the script early (Escape) without treating it as a finished
+   * conversation: no onComplete, so a caller can't mistake a bailed-out
+   * script for one that actually resolved. onCancel lets the caller
+   * restore whatever state it suspended for the dialogue (e.g. return to
+   * the home screen) instead of leaving the game stuck with no overlay.
+   */
+  function cancelDialogue() {
+    if (!engine) return;
+    root.classList.add('hidden');
+    stopTyping();
+    const callback = onCancel;
+    engine = null;
+    onComplete = null;
+    onChoice = null;
+    onCancel = null;
     if (callback) callback();
   }
 
   function handleKeydown(event) {
     if (root.classList.contains('hidden')) return;
+
+    if (event.code === 'Escape') {
+      event.preventDefault();
+      cancelDialogue();
+      return;
+    }
+
+    const choosing = engine?.current?.type === 'choice';
+    if (choosing) {
+      const count = optionButtons.length;
+      if (event.code === 'ArrowDown' || event.code === 'ArrowRight') {
+        event.preventDefault();
+        highlightOption((highlightedIndex + 1) % count);
+        optionButtons[highlightedIndex].focus();
+      } else if (event.code === 'ArrowUp' || event.code === 'ArrowLeft') {
+        event.preventDefault();
+        highlightOption((highlightedIndex - 1 + count) % count);
+        optionButtons[highlightedIndex].focus();
+      } else if (event.code === 'Enter' || event.code === 'Space') {
+        event.preventDefault();
+        selectOption(highlightedIndex);
+      } else {
+        const digit = Number(event.key);
+        if (Number.isInteger(digit) && digit >= 1 && digit <= count) {
+          event.preventDefault();
+          selectOption(digit - 1);
+        }
+      }
+      return;
+    }
+
     if (event.code === 'Space' || event.code === 'Enter') {
       event.preventDefault();
       advance();
@@ -194,12 +262,13 @@ export function createDialogueUI({ speakers }) {
   return {
     /**
      * @param {Array} script - see src/data/dialogues.js for node shapes
-     * @param {{ onComplete?: () => void, onChoice?: (option, nextNode) => void }} [handlers]
+     * @param {{ onComplete?: () => void, onChoice?: (option, nextNode) => void, onCancel?: () => void }} [handlers]
      */
-    play(script, { onComplete: complete, onChoice: choice } = {}) {
+    play(script, { onComplete: complete, onChoice: choice, onCancel: cancel } = {}) {
       engine = createDialogueEngine(script);
       onComplete = complete ?? null;
       onChoice = choice ?? null;
+      onCancel = cancel ?? null;
       leftSpeaker = null;
       rightSpeaker = null;
       leftMood = 'neutral';
@@ -207,6 +276,9 @@ export function createDialogueUI({ speakers }) {
       root.classList.remove('hidden');
       renderNode();
     },
+    // Lets a caller bail out of a conversation it started (e.g. the room
+    // unloading from under it) without faking a normal completion.
+    cancel: cancelDialogue,
     get isActive() {
       return engine !== null;
     },

@@ -5,10 +5,11 @@ import { loadPomniRoom } from './rooms/pomniRoom.js';
 import { loadDormHallRoom } from './rooms/dormHallRoom.js';
 import { loadTadcRoom } from './rooms/tadcRoom.js';
 import { loadMazeRoom } from './rooms/mazeRoom.js';
+import { loadKaufmoRoom } from './rooms/kaufmoRoom.js';
 import { loadPomni } from './characters/pomni.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
 import { createTitleScreen } from './ui/titleScreen.js';
-import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue } from './data/dialogues.js';
+import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue } from './data/dialogues.js';
 
 // Collision fires dozens of short rays a frame (wall probe, floor probes,
 // body-overlap rings). Plain three.js tests a ray against every triangle of
@@ -20,9 +21,11 @@ THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
+// Each preview plays over whichever room backdrop its own scene is set in.
 const DIALOGUE_SCRIPTS = {
-  preLevel1: preLevel1Dialogue,
-  level1Open: level1OpenDialogue,
+  preLevel1: { script: preLevel1Dialogue, room: 'pomni' },
+  level1Open: { script: level1OpenDialogue, room: 'pomni' },
+  level2Opening: { script: level2OpeningDialogue, room: 'kaufmo' },
 };
 
 const ROOM_LOADERS = {
@@ -30,6 +33,7 @@ const ROOM_LOADERS = {
   tadc: loadTadcRoom,
   dorm: loadDormHallRoom,
   maze: loadMazeRoom,
+  kaufmo: loadKaufmoRoom,
 };
 
 const PLAYER_HEIGHT = 1.7;
@@ -62,6 +66,11 @@ const PROBE_LEAD = PLAYER_RADIUS / 0.35;
 const GROUND_RAY_FAR = 24; // how far below the player a floor still counts as "under" them
 const WALKABLE_NORMAL_Y = 0.6; // faces tilted further than this are ramps, not walls
 const INTERACT_DISTANCE = 4.5; // how far away a door etc. can be used from
+// A stalled tab or a slow asset decode can hand the next frame a multi-second
+// delta; letting movement/collision use that raw value lets the player (or a
+// hazard) cross a whole wall in one step. Clamping the step length is the
+// standard fix — it trades perfect timing during a stall for never tunnelling.
+const MAX_DELTA = 1 / 15;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a1a1d);
@@ -129,6 +138,14 @@ let currentRoom = null;
 let currentRoomKey = null;
 let readyToPlay = false;
 let hintTimeout = null;
+// True only while the pause menu is actually up (pointer unlocked mid-room).
+// Dialogue previews also run unlocked but aren't "paused" — their room's
+// ambient animation (e.g. Caine's idle) should keep going.
+let paused = false;
+// Bumped on every selectRoom()/returnToHome() call so a load that finishes
+// after the player has already moved on (or started another load) can tell
+// it's stale and dispose itself instead of overwriting newer state.
+let loadToken = 0;
 
 function showHint(text, durationMs = 3000) {
   hint.textContent = text;
@@ -264,6 +281,10 @@ function showRoomPicker() {
  */
 function returnToHome() {
   if (isLocked) document.exitPointerLock();
+  if (dialogueUI.isActive) dialogueUI.cancel();
+  loadToken++; // discard any load still in flight for the room we're leaving
+  paused = false;
+  resetMoveState();
 
   if (currentRoom) {
     scene.remove(currentRoom);
@@ -303,19 +324,21 @@ function returnToHome() {
  * behaviour the plan calls for NPC interaction, achieved without a
  * separate guard.
  *
- * Uses Pomni's Room rather than the circus map both scripts are actually
- * set in: the circus map currently takes 60+ seconds to become responsive
- * (tracked separately, unrelated to dialogue), which made every preview
- * click look hung. Swap back once that's fixed.
+ * The Pre-Level-1/Level-1 scripts preview over Pomni's Room rather than the
+ * circus map they're actually set in: the circus map currently takes 60+
+ * seconds to become responsive (tracked separately, unrelated to dialogue),
+ * which made every preview click look hung. Swap back once that's fixed.
  */
 function playDialoguePreview(key) {
-  const script = DIALOGUE_SCRIPTS[key];
-  if (!script) return;
+  const entry = DIALOGUE_SCRIPTS[key];
+  if (!entry) return;
+  const { script, room } = entry;
 
-  selectRoom('pomni', {
+  selectRoom(room, {
     onReady: () => {
       overlay.classList.add('hidden');
       readyToPlay = false;
+      resetMoveState();
       dialogueUI.play(script, {
         onComplete: () => {
           readyToPlay = true;
@@ -323,14 +346,38 @@ function playDialoguePreview(key) {
           overlayTitle.textContent = 'Click to Play';
           overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
         },
+        // Escape mid-preview: don't leave the player stuck with both the
+        // dialogue and the home overlay hidden — bail all the way out.
+        onCancel: () => returnToHome(),
       });
     },
   });
 }
 
+/**
+ * Plays a dialogue script as an in-world NPC conversation, triggered by a
+ * room's own interactable (see kaufmoRoom.js). Unlike playDialoguePreview,
+ * the pointer stays locked the whole time — movement and look are frozen
+ * by the dialogueUI.isActive checks in animate()/updateInteractionFocus()/
+ * the mousemove listener instead of actually releasing the pointer, so
+ * control comes back the instant the conversation ends or is cancelled
+ * with no extra state to restore.
+ */
+function playRoomDialogue(key) {
+  const entry = DIALOGUE_SCRIPTS[key];
+  if (!entry || dialogueUI.isActive) return;
+  resetMoveState();
+  dialogueUI.play(entry.script, {});
+}
+
 function selectRoom(roomKey, { onReady, from } = {}) {
   const loadRoom = ROOM_LOADERS[roomKey];
   if (!loadRoom) return;
+
+  if (dialogueUI.isActive) dialogueUI.cancel();
+  const myToken = ++loadToken; // any older in-flight load becomes stale the instant this fires
+  paused = false;
+  resetMoveState();
 
   if (currentRoom) {
     scene.remove(currentRoom);
@@ -365,84 +412,23 @@ function selectRoom(roomKey, { onReady, from } = {}) {
 
   Promise.all([
     loadRoom((ratio) => {
+      if (myToken !== loadToken) return; // a newer selectRoom()/returnToHome() superseded this one
       overlaySubtitle.textContent = `Fetching room model (${Math.round(ratio * 100)}%)`;
-    }, { from }),
+    }, { from, playDialogue: playRoomDialogue }),
     pomniReady,
   ])
-    .then(([{
-      group,
-      bounds: box,
-      spawn,
-      spawnFacing,
-      colliders: roomColliders,
-      collisionMeshes: roomCollisionMeshes,
-      triggers: roomTriggers,
-      movers: roomMovers,
-      hazards: roomHazards,
-      update: roomUpdateFn,
-      interactables: roomInteractables,
-      portals: roomPortals,
-      environment: wantsEnvironment,
-    }]) => {
-      currentRoom = group;
-      currentRoomKey = roomKey;
-      player.visible = true;
-      scene.add(group);
-
-      floorY = spawn.y;
-      bounds = {
-        minX: box.min.x + WALL_MARGIN,
-        maxX: box.max.x - WALL_MARGIN,
-        minZ: box.min.z + WALL_MARGIN,
-        maxZ: box.max.z - WALL_MARGIN,
-      };
-      colliders = roomColliders ?? [];
-      // GLB rooms' meshes: the wall probes and floor raycast only test the
-      // few entries whose boxes the query overlaps, padded by the player
-      // radius so a mesh the player is touching is never skipped.
-      collisionMeshes = (roomCollisionMeshes ?? []).map((entry) => ({
-        mesh: entry.mesh,
-        box: entry.box,
-        paddedBox: entry.box.clone().expandByScalar(PLAYER_RADIUS),
-        dynamic: entry.dynamic ?? false,
-      }));
-      dynamicCollisionMeshes = collisionMeshes.filter((entry) => entry.dynamic);
-      for (const { mesh } of collisionMeshes) {
-        // BVHs are in the mesh's local space, so swinging doors keep theirs.
-        if (!mesh.isSkinnedMesh && !mesh.geometry.boundsTree) mesh.geometry.computeBoundsTree();
+    .then(([result]) => {
+      if (myToken !== loadToken) {
+        // Something else was picked (or Home was hit) before this load
+        // finished. Attaching it now would silently resurrect a room over
+        // whatever the player actually asked for, so throw it away instead.
+        disposeObject3D(result.group);
+        return;
       }
-      triggers = roomTriggers ?? null;
-      movers = roomMovers ?? [];
-      hazards = roomHazards ?? [];
-      roomUpdate = roomUpdateFn ?? null;
-      interactables = roomInteractables ?? [];
-      portals = roomPortals ?? [];
-      scene.environment = wantsEnvironment ? environmentMap : null;
-
-      player.position.set(spawn.x, floorY + PLAYER_HEIGHT, spawn.z);
-      // Rooms can request a starting yaw (the maze points the player down
-      // whichever side of the start cell is actually open); anything that
-      // doesn't specify one keeps the default of facing -Z.
-      cameraYaw = spawnFacing ?? 0;
-      pomni.rotation.y = cameraYaw + Math.PI; // her model faces +Z
-      cameraPitch = DEFAULT_PITCH;
-      currentCameraDistance = CAMERA_DISTANCE;
-
-      // three.js compiles each material's shader the first time it comes
-      // into view, which hitches mid-walk; compile them all up front instead,
-      // now that the room's lights and environment are in place.
-      renderer.compile(scene, camera);
-
-      readyToPlay = true;
-      overlay.classList.remove('loading');
-      if (onReady) {
-        onReady();
-      } else {
-        overlayTitle.textContent = 'Click to Play';
-        overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
-      }
+      applyLoadedRoom(result, onReady, roomKey);
     })
     .catch((err) => {
+      if (myToken !== loadToken) return; // superseded — the active room already shows its own state
       console.error('Failed to load room model', err);
       overlayTitle.textContent = 'Failed to load room';
       overlaySubtitle.textContent = 'Check the browser console for details.';
@@ -451,6 +437,80 @@ function selectRoom(roomKey, { onReady, from } = {}) {
       btnTitle.hidden = false;
       overlay.classList.remove('loading');
     });
+}
+
+function applyLoadedRoom({
+  group,
+  bounds: box,
+  spawn,
+  spawnFacing,
+  colliders: roomColliders,
+  collisionMeshes: roomCollisionMeshes,
+  triggers: roomTriggers,
+  movers: roomMovers,
+  hazards: roomHazards,
+  update: roomUpdateFn,
+  interactables: roomInteractables,
+  portals: roomPortals,
+  environment: wantsEnvironment,
+}, onReady, roomKey) {
+  currentRoom = group;
+  currentRoomKey = roomKey;
+  player.visible = true;
+  scene.add(group);
+
+  floorY = spawn.y;
+  bounds = {
+    minX: box.min.x + WALL_MARGIN,
+    maxX: box.max.x - WALL_MARGIN,
+    minZ: box.min.z + WALL_MARGIN,
+    maxZ: box.max.z - WALL_MARGIN,
+  };
+  colliders = roomColliders ?? [];
+  // GLB rooms' meshes: the wall probes and floor raycast only test the
+  // few entries whose boxes the query overlaps, padded by the player
+  // radius so a mesh the player is touching is never skipped.
+  collisionMeshes = (roomCollisionMeshes ?? []).map((entry) => ({
+    mesh: entry.mesh,
+    box: entry.box,
+    paddedBox: entry.box.clone().expandByScalar(PLAYER_RADIUS),
+    dynamic: entry.dynamic ?? false,
+  }));
+  dynamicCollisionMeshes = collisionMeshes.filter((entry) => entry.dynamic);
+  for (const { mesh } of collisionMeshes) {
+    // BVHs are in the mesh's local space, so swinging doors keep theirs.
+    if (!mesh.isSkinnedMesh && !mesh.geometry.boundsTree) mesh.geometry.computeBoundsTree();
+  }
+  triggers = roomTriggers ?? null;
+  movers = roomMovers ?? [];
+  hazards = roomHazards ?? [];
+  roomUpdate = roomUpdateFn ?? null;
+  interactables = roomInteractables ?? [];
+  portals = roomPortals ?? [];
+  scene.environment = wantsEnvironment ? environmentMap : null;
+
+  player.position.set(spawn.x, floorY + PLAYER_HEIGHT, spawn.z);
+  // Rooms can request a starting yaw (the maze points the player down
+  // whichever side of the start cell is actually open); anything that
+  // doesn't specify one keeps the default of facing -Z.
+  cameraYaw = spawnFacing ?? 0;
+  pomni.rotation.y = cameraYaw + Math.PI; // her model faces +Z
+  cameraPitch = DEFAULT_PITCH;
+  currentCameraDistance = CAMERA_DISTANCE;
+
+  // three.js compiles each material's shader the first time it comes
+  // into view, which hitches mid-walk; compile them all up front instead,
+  // now that the room's lights and environment are in place.
+  renderer.compile(scene, camera);
+
+  readyToPlay = true;
+  overlay.classList.remove('loading');
+  if (onReady) {
+    onReady();
+  } else {
+    overlayTitle.textContent = 'Click to Play';
+    overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
+  }
 }
 
 function disposeObject3D(root) {
@@ -488,6 +548,19 @@ window.addEventListener('keydown', (e) => {
   }
 });
 window.addEventListener('keyup', (e) => setMove(e.code, false));
+// A keyup can be missed entirely (Alt-tabbing away, the OS eating a key
+// combo), which leaves that direction stuck "held" until the same key is
+// pressed again. Clear all of them on blur and on every transition that
+// suspends normal play, so a stale flag never survives into the next state.
+window.addEventListener('blur', resetMoveState);
+
+function resetMoveState() {
+  move.forward = false;
+  move.back = false;
+  move.left = false;
+  move.right = false;
+  move.sprint = false;
+}
 
 function setMove(code, value) {
   switch (code) {
@@ -594,10 +667,16 @@ document.addEventListener('pointerlockchange', () => {
   if (isLocked) {
     overlay.classList.add('hidden');
     pauseMenu.hidden = true;
+    paused = false;
     return;
   }
+  // A keyup can be missed while the pointer is unlocked (e.g. the browser
+  // ate the key combo that released it), so clear held movement here too,
+  // not just on blur.
+  resetMoveState();
   if (!currentRoom || !readyToPlay) return; // home screen, loading or endLevel — handled elsewhere
   // Esc mid-game: show the pause menu
+  paused = true;
   overlay.classList.remove('hidden');
   overlayTitle.textContent = 'Paused';
   overlaySubtitle.textContent = 'Press Esc or click Resume to continue';
@@ -607,7 +686,10 @@ document.addEventListener('pointerlockchange', () => {
   pauseMenu.hidden = false;
 });
 document.addEventListener('mousemove', (e) => {
-  if (!isLocked) return;
+  // Frozen during an in-room conversation (e.g. talking to Kaufmo), same as
+  // movement below — looking around while portraits/text are up is just
+  // disorienting, and nothing stops the mouse once the pointer is locked.
+  if (!isLocked || dialogueUI.isActive) return;
   const sensitivity = MOUSE_SENSITIVITY * mouseSensitivityScale;
   cameraYaw -= e.movementX * sensitivity;
   cameraPitch = THREE.MathUtils.clamp(
@@ -1167,7 +1249,7 @@ function refreshDynamicColliders() {
  */
 function updateInteractionFocus() {
   let focused = null;
-  if (isLocked && interactables.length > 0) {
+  if (isLocked && !dialogueUI.isActive && interactables.length > 0) {
     // The crosshair ray starts behind Pomni, so reach is measured from her.
     interactRaycaster.setFromCamera(SCREEN_CENTER, camera);
     interactRaycaster.far = INTERACT_DISTANCE + currentCameraDistance;
@@ -1194,14 +1276,20 @@ window.addEventListener('resize', () => {
 const clock = new THREE.Clock();
 
 function animate() {
-  const delta = clock.getDelta();
-  updateMovers(delta);
-  roomUpdate?.(delta);
-  refreshDynamicColliders();
+  const delta = Math.min(clock.getDelta(), MAX_DELTA);
+  // Hazards/doors/room idle animation stay live through a dialogue preview
+  // (the pointer is unlocked there too, but it's not a pause) — only the
+  // actual pause menu freezes them, so a patrolling hazard can't close in
+  // on a player who is sitting in the pause menu.
+  if (!paused) {
+    updateMovers(delta);
+    roomUpdate?.(delta);
+    refreshDynamicColliders();
+  }
   if (pomni) {
-    // No walking while the next room loads.
-    if (isLocked && readyToPlay) updateMovement(delta);
-    else updatePomniWalk(delta, 0); // settle the waddle while paused
+    // No walking while the next room loads, or mid-conversation.
+    if (isLocked && readyToPlay && !dialogueUI.isActive) updateMovement(delta);
+    else updatePomniWalk(delta, 0); // settle the waddle while paused/talking
     updateCamera(delta);
   }
   updateInteractionFocus();

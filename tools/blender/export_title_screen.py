@@ -23,7 +23,7 @@ in memory; the .blend file itself is never saved or modified):
   next to the GLB as its own image.
 
 Run from the repo root:
-    blender -b "public/models/game screens/TADC Intro Animation V2.blend" \
+    blender -b "assets-src/TADC Intro Animation V2.blend" \
         --python tools/blender/export_title_screen.py -- \
         "public/models/game screens/title-screen.glb"
 """
