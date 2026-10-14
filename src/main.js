@@ -15,8 +15,6 @@ import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue } from './data/dialogue
 // (~120k triangles, almost all of it around the player). A BVH per mesh lets
 // each ray test only the handful of triangles near it. Meshes without one
 // (skinned meshes) fall back to the regular raycast.
-THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
-THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 const DIALOGUE_SCRIPTS = {
@@ -302,7 +300,9 @@ function selectRoom(roomKey, { onReady, from } = {}) {
       dynamicCollisionMeshes = collisionMeshes.filter((entry) => entry.dynamic);
       for (const { mesh } of collisionMeshes) {
         // BVHs are in the mesh's local space, so swinging doors keep theirs.
-        if (!mesh.isSkinnedMesh && !mesh.geometry.boundsTree) mesh.geometry.computeBoundsTree();
+        if (!mesh.isSkinnedMesh && !mesh.geometry.boundsTree) {
+          computeBoundsTree.call(mesh.geometry);
+        }
       }
       triggers = roomTriggers ?? null;
       movers = roomMovers ?? [];
@@ -349,8 +349,10 @@ function disposeObject3D(root) {
   root.traverse((child) => {
     if (!child.isMesh) return;
     child.dispose?.(); // e.g. a mirror's Reflector frees its render target
-    child.geometry?.disposeBoundsTree();
-    child.geometry?.dispose();
+    if (child.geometry) {
+      disposeBoundsTree.call(child.geometry);
+      child.geometry.dispose();
+    }
     const materials = Array.isArray(child.material) ? child.material : [child.material];
     for (const material of materials) {
       for (const key of Object.keys(material)) {
