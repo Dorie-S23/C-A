@@ -24,6 +24,7 @@ export const preLevel1Dialogue = [
     speaker: 'pomni',
     side: 'left',
     direction: 'internal, muttered to herself',
+    mood: 'annoyed',
     text: 'Another day trapped in a nightmare circus run by a sentient cartoon. Same as yesterday.',
   },
   {
@@ -36,6 +37,7 @@ export const preLevel1Dialogue = [
     type: 'line',
     speaker: 'pomni',
     side: 'left',
+    mood: 'neutral',
     text: 'As okay as it gets in here.',
   },
   {
@@ -49,6 +51,7 @@ export const preLevel1Dialogue = [
     speaker: 'pomni',
     side: 'left',
     direction: 'deadpan',
+    mood: 'annoyed',
     text: 'Thrilling. Another one of his "brilliant" ideas.',
   },
   {
@@ -66,6 +69,7 @@ export const preLevel1Dialogue = [
     type: 'line',
     speaker: 'pomni',
     side: 'left',
+    mood: 'neutral',
     text: "He's always like that.",
   },
   {
@@ -79,6 +83,7 @@ export const preLevel1Dialogue = [
     speaker: 'pomni',
     side: 'left',
     direction: 'pause, uneasy',
+    mood: 'worried',
     text: "Guess I should go find out what Caine wants before it becomes my problem too.",
     next: null,
   },
@@ -91,6 +96,7 @@ export const level1OpenDialogue = [
     speaker: 'caine',
     side: 'right',
     direction: 'bursting in, too cheerful at first',
+    mood: 'happy',
     text: 'POMNI! Just the digital being I wanted to see!',
   },
   {
@@ -98,12 +104,14 @@ export const level1OpenDialogue = [
     speaker: 'pomni',
     side: 'left',
     direction: 'flat',
+    mood: 'annoyed',
     text: 'What do you want, Caine.',
   },
   {
     type: 'line',
     speaker: 'caine',
     side: 'right',
+    mood: 'happy',
     text: "Rude, but fair. Listen — this is going to sound like a normal circus update, and then it's going to stop sounding like that.",
   },
   {
@@ -111,18 +119,21 @@ export const level1OpenDialogue = [
     speaker: 'caine',
     side: 'right',
     direction: 'his tone shifts, energy dims slightly',
+    mood: 'worried',
     text: "Jax and Ribbit had... words. Bad ones. And Jax has been Jax-ing harder than usual ever since. More bite, less bit, if you know what I mean.",
   },
   {
     type: 'line',
     speaker: 'pomni',
     side: 'left',
+    mood: 'annoyed',
     text: "Jax is always a jerk, that's not exactly breaking news—",
   },
   {
     type: 'line',
     speaker: 'caine',
     side: 'right',
+    mood: 'worried',
     text: "This is different! He's on edge. Snapping at anyone who breathes near him. And Ribbit—",
   },
   {
@@ -130,18 +141,21 @@ export const level1OpenDialogue = [
     speaker: 'caine',
     side: 'right',
     direction: 'pause — first real crack in the showman act',
+    mood: 'worried',
     text: "Ribbit's not doing so hot. She's been quiet. Withdrawn. And you know what happens when one of us gets stuck in that headspace too long.",
   },
   {
     type: 'line',
     speaker: 'pomni',
     side: 'left',
+    mood: 'shocked',
     text: '...Abstraction.',
   },
   {
     type: 'line',
     speaker: 'caine',
     side: 'right',
+    mood: 'shocked',
     text: "Abstraction! There it is! The A-word! The one I don't like saying out loud because saying it makes it feel closer!",
   },
   {
@@ -149,18 +163,21 @@ export const level1OpenDialogue = [
     speaker: 'caine',
     side: 'right',
     direction: 'beat, quieter, almost pleading under the performance',
+    mood: 'sad',
     text: "If she tips over, she's not coming back as herself, Pomni. Whatever's left afterward — that's not Ribbit anymore. That's just... noise wearing her shape.",
   },
   {
     type: 'line',
     speaker: 'pomni',
     side: 'left',
+    mood: 'annoyed',
     text: "So what, you want me to fix a fight I wasn't even part of?",
   },
   {
     type: 'line',
     speaker: 'caine',
     side: 'right',
+    mood: 'happy',
     text: "I want you to go be the reason she doesn't have to fight it alone! That's slightly different and much more heroic-sounding!",
   },
   {
@@ -168,6 +185,7 @@ export const level1OpenDialogue = [
     speaker: 'pomni',
     side: 'left',
     direction: 'sighing, already walking off',
+    mood: 'sad',
     text: "...Fine. But if this goes badly I'm blaming you.",
   },
   {
@@ -175,6 +193,7 @@ export const level1OpenDialogue = [
     speaker: 'caine',
     side: 'right',
     direction: 'to the audience/camera, grin snapping back too fast',
+    mood: 'happy',
     text: 'She always says that! She never does!',
     next: null,
   },

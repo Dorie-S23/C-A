@@ -2,6 +2,7 @@
 // Run with `node _verify_dialogue.mjs`.
 import { createDialogueEngine } from './src/dialogue/dialogueEngine.js';
 import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue } from './src/data/dialogues.js';
+import { SPRITES, MOODS } from './src/ui/portraitSprites.js';
 
 let failures = 0;
 function check(label, ok, detail = '') {
@@ -36,6 +37,14 @@ for (const [name, script] of [['preLevel1', preLevel1Dialogue], ['level1Open', l
 
   const emptyText = seen.find((n) => (n.type === 'line' || n.type === 'beat') && !n.text?.trim());
   check(`${name}: no node has empty text`, !emptyText);
+
+  // Every line whose speaker has a sprite should carry a recognized mood,
+  // so DialogueUI never silently falls back to 'neutral' by typo. Lines for
+  // speakers without a sprite (Ragatha) aren't required to set one.
+  const badMood = seen.find((n) => n.type === 'line' && SPRITES[n.speaker]
+    && (!n.mood || !MOODS.includes(n.mood)));
+  check(`${name}: every sprite-speaker line has a recognized mood`, !badMood,
+    badMood ? `node text "${badMood.text.slice(0, 30)}..." has mood "${badMood.mood}"` : '');
 }
 
 // 2) a synthetic branching script: choice nodes only advance via choose(),

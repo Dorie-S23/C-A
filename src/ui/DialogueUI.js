@@ -1,4 +1,5 @@
 import { createDialogueEngine } from '../dialogue/dialogueEngine.js';
+import { SPRITES } from './portraitSprites.js';
 
 const TYPE_SPEED_MS = 22;
 
@@ -31,24 +32,40 @@ export function createDialogueUI({ speakers }) {
   let onChoice = null;
   let leftSpeaker = null;
   let rightSpeaker = null;
+  let leftMood = 'neutral';
+  let rightMood = 'neutral';
   let typeTimer = null;
   let typing = false;
   let fullText = '';
 
-  function renderPortrait(el, speakerId, active) {
+  /**
+   * Fills a portrait slot with whichever speaker last occupied that side.
+   * Characters with an entry in SPRITES (currently Pomni and Caine) get a
+   * drawn face that swaps per line's mood; anyone else falls back to the
+   * plain initials circle this already had.
+   */
+  function renderPortrait(el, speakerId, mood, active) {
     const speaker = speakerId ? speakers[speakerId] : null;
     el.classList.toggle('dialogue-portrait-empty', !speaker);
     el.classList.toggle('dialogue-portrait-active', !!speaker && active);
     el.innerHTML = '';
     if (!speaker) return;
     el.style.setProperty('--portrait-color', speaker.color);
-    const initials = document.createElement('div');
-    initials.className = 'dialogue-portrait-initials';
-    initials.textContent = speaker.initials;
+
+    const sprite = SPRITES[speakerId];
+    const face = document.createElement('div');
+    face.className = 'dialogue-portrait-initials';
+    if (sprite) {
+      face.classList.add('dialogue-portrait-sprite');
+      face.innerHTML = sprite(mood ?? 'neutral');
+    } else {
+      face.textContent = speaker.initials;
+    }
+
     const label = document.createElement('div');
     label.className = 'dialogue-portrait-label';
     label.textContent = speaker.name;
-    el.append(initials, label);
+    el.append(face, label);
   }
 
   function stopTyping() {
@@ -91,13 +108,18 @@ export function createDialogueUI({ speakers }) {
     }
 
     if (node.type === 'line' && node.side) {
-      if (node.side === 'left') leftSpeaker = node.speaker;
-      else rightSpeaker = node.speaker;
+      if (node.side === 'left') {
+        leftSpeaker = node.speaker;
+        leftMood = node.mood ?? 'neutral';
+      } else {
+        rightSpeaker = node.speaker;
+        rightMood = node.mood ?? 'neutral';
+      }
     }
 
     const activeSide = node.type === 'line' ? node.side : null;
-    renderPortrait(portraitLeft, leftSpeaker, activeSide === 'left');
-    renderPortrait(portraitRight, rightSpeaker, activeSide === 'right');
+    renderPortrait(portraitLeft, leftSpeaker, leftMood, activeSide === 'left');
+    renderPortrait(portraitRight, rightSpeaker, rightMood, activeSide === 'right');
 
     box.classList.toggle('dialogue-box-beat', node.type === 'beat');
     optionsEl.hidden = true;
@@ -180,6 +202,8 @@ export function createDialogueUI({ speakers }) {
       onChoice = choice ?? null;
       leftSpeaker = null;
       rightSpeaker = null;
+      leftMood = 'neutral';
+      rightMood = 'neutral';
       root.classList.remove('hidden');
       renderNode();
     },
