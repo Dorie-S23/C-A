@@ -352,6 +352,11 @@
                 gap: 0.5em;
                 margin-top: 0.6em;
             }
+            /* display: flex above would otherwise override the hidden
+               attribute, leaving a choice's options up after it's made. */
+            #dialogue-options[hidden] {
+                display: none;
+            }
             .dialogue-option {
                 text-align: left;
                 padding: 0.6em 0.9em;
