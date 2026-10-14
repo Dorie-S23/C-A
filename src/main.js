@@ -3,13 +3,16 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 import { loadPomniRoom } from './rooms/pomniRoom.js';
 import { loadDormHallRoom } from './rooms/dormHallRoom.js';
+import { loadRibbitRoom } from './rooms/ribbitRoom.js';
 import { loadTadcRoom } from './rooms/tadcRoom.js';
 import { loadMazeRoom } from './rooms/mazeRoom.js';
 import { loadKaufmoRoom } from './rooms/kaufmoRoom.js';
 import { loadPomni } from './characters/pomni.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
 import { createTitleScreen } from './ui/titleScreen.js';
-import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue } from './data/dialogues.js';
+import {
+  SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, ribbitTalkDialogue,
+} from './data/dialogues.js';
 
 // Collision fires dozens of short rays a frame (wall probe, floor probes,
 // body-overlap rings). Plain three.js tests a ray against every triangle of
@@ -26,12 +29,14 @@ const DIALOGUE_SCRIPTS = {
   preLevel1: { script: preLevel1Dialogue, room: 'pomni' },
   level1Open: { script: level1OpenDialogue, room: 'pomni' },
   level2Opening: { script: level2OpeningDialogue, room: 'kaufmo' },
+  ribbitTalk: { script: ribbitTalkDialogue, room: 'ribbit' },
 };
 
 const ROOM_LOADERS = {
   pomni: loadPomniRoom,
   tadc: loadTadcRoom,
   dorm: loadDormHallRoom,
+  ribbit: loadRibbitRoom,
   maze: loadMazeRoom,
   kaufmo: loadKaufmoRoom,
 };
@@ -362,12 +367,28 @@ function playDialoguePreview(key) {
  * the mousemove listener instead of actually releasing the pointer, so
  * control comes back the instant the conversation ends or is cancelled
  * with no extra state to restore.
+ *
+ * With `lookAt` (the NPC's position), Pomni turns to face whoever she's
+ * talking to, with the camera swung round behind her. The callbacks pass
+ * straight through to DialogueUI: onComplete for a finished conversation,
+ * onCancel for one abandoned with Escape, onChoice for each option picked.
+ *
+ * @param {string} key a DIALOGUE_SCRIPTS key
+ * @param {{ lookAt?: THREE.Vector3, onChoice?: (option, nextNode) => void,
+ *   onComplete?: () => void, onCancel?: () => void }} [options]
  */
-function playRoomDialogue(key) {
+function playRoomDialogue(key, { lookAt, onChoice, onComplete, onCancel } = {}) {
   const entry = DIALOGUE_SCRIPTS[key];
   if (!entry || dialogueUI.isActive) return;
   resetMoveState();
-  dialogueUI.play(entry.script, {});
+  if (lookAt) {
+    const dx = lookAt.x - player.position.x;
+    const dz = lookAt.z - player.position.z;
+    pomni.rotation.y = Math.atan2(dx, dz); // her model faces +Z
+    cameraYaw = Math.atan2(-dx, -dz);       // camera behind her, looking the same way
+    cameraPitch = DEFAULT_PITCH;
+  }
+  dialogueUI.play(entry.script, { onChoice, onComplete, onCancel });
 }
 
 function selectRoom(roomKey, { onReady, from } = {}) {
@@ -544,7 +565,7 @@ const move = { forward: false, back: false, left: false, right: false, sprint: f
 window.addEventListener('keydown', (e) => {
   setMove(e.code, true);
   if (e.code === 'KeyE' && !e.repeat && isLocked && focusedInteractable) {
-    focusedInteractable.interact();
+    focusedInteractable.interact(interactionContext);
   }
 });
 window.addEventListener('keyup', (e) => setMove(e.code, false));
@@ -716,8 +737,21 @@ let hazards = [];
 let roomUpdate = null;
 // Moving collision meshes (e.g. swinging doors): their boxes are refreshed every frame.
 let dynamicCollisionMeshes = [];
-// Things the player can use with E: { objects: Mesh[], prompt(): string, interact() }.
+// Things the player can use with E: { objects: Mesh[], prompt(): string,
+// interact(context), anchor?: Object3D, radius?: number }. Aiming at
+// `objects` focuses one; anchored ones (NPCs) also focus when Pomni stands
+// within `radius` of the anchor (see nearestInRange). interact() gets
+// interactionContext, e.g. so an NPC can turn toward Pomni as she talks.
 let interactables = [];
+const interactionContext = { playerPosition: player.position };
+const NPC_TALK_RADIUS = 2.5;  // metres from an NPC's feet that "close enough to talk" means
+const STOREY_TOLERANCE = 1.5; // ignore NPCs on a different floor level
+const anchorPosition = new THREE.Vector3();
+const sightOrigin = new THREE.Vector3();
+const sightTarget = new THREE.Vector3();
+const sightDirection = new THREE.Vector3();
+const sightRaycaster = new THREE.Raycaster();
+const sightCandidates = [];
 // Archways that lead to another room: { box, to } (see rooms/portals.js).
 let portals = [];
 let focusedInteractable = null;
@@ -1246,6 +1280,10 @@ function refreshDynamicColliders() {
  * Finds the interactable under the crosshair, if it's within reach, and
  * shows its prompt. Only interactables are tested, so a door behind a
  * thin prop still counts — fine at this short range.
+ *
+ * Interactables with an `anchor` (NPCs) are also usable just by standing
+ * near them: talking to someone shouldn't need pixel-aiming at them. The
+ * crosshair still wins, so pointing at a door beside an NPC uses the door.
  */
 function updateInteractionFocus() {
   let focused = null;
@@ -1257,11 +1295,60 @@ function updateInteractionFocus() {
     if (hit && hit.point.distanceTo(player.position) <= INTERACT_DISTANCE) {
       focused = interactables.find((i) => i.objects.includes(hit.object));
     }
+    focused ??= nearestInRange();
   }
 
   focusedInteractable = focused;
   interactPrompt.hidden = !focused;
   if (focused) interactPrompt.textContent = `E — ${focused.prompt()}`;
+}
+
+/**
+ * The closest anchored interactable within its `radius` of Pomni (on the
+ * floor plane, and roughly the same storey) that she can actually see —
+ * so an NPC on the far side of a wall never offers to talk.
+ */
+function nearestInRange() {
+  let nearest = null;
+  let nearestDistance = Infinity;
+  for (const interactable of interactables) {
+    if (!interactable.anchor) continue;
+    interactable.anchor.getWorldPosition(anchorPosition);
+    const feetY = player.position.y - PLAYER_HEIGHT;
+    if (Math.abs(anchorPosition.y - feetY) > STOREY_TOLERANCE) continue;
+    const distance = Math.hypot(anchorPosition.x - player.position.x, anchorPosition.z - player.position.z);
+    const radius = interactable.radius ?? NPC_TALK_RADIUS;
+    if (distance > radius || distance >= nearestDistance) continue;
+    if (!hasLineOfSight(interactable)) continue;
+    nearest = interactable;
+    nearestDistance = distance;
+  }
+  return nearest;
+}
+
+/** Chest-height ray from Pomni to anchorPosition, ignoring the target's own meshes. */
+function hasLineOfSight(interactable) {
+  sightOrigin.set(player.position.x, player.position.y - 0.5, player.position.z);
+  sightTarget.set(anchorPosition.x, anchorPosition.y + PLAYER_HEIGHT - 0.5, anchorPosition.z);
+  sightDirection.subVectors(sightTarget, sightOrigin);
+  const distance = sightDirection.length();
+  if (distance < 1e-6) return true;
+  sightDirection.divideScalar(distance);
+  sightRaycaster.set(sightOrigin, sightDirection);
+  sightRaycaster.far = distance;
+
+  sightCandidates.length = 0;
+  for (const entry of collisionMeshes) {
+    if (interactable.objects.includes(entry.mesh)) continue;
+    if (sightRaycaster.ray.intersectsBox(entry.box)) sightCandidates.push(entry.mesh);
+  }
+  if (sightRaycaster.intersectObjects(sightCandidates, false).length > 0) return false;
+  for (const box of colliders) {
+    if (sightRaycaster.ray.intersectBox(box, cameraHitPoint) && cameraHitPoint.distanceTo(sightOrigin) < distance) {
+      return false;
+    }
+  }
+  return true;
 }
 
 // --- Resize ---

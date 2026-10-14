@@ -1,7 +1,9 @@
 // Node verification harness for the dialogue engine's branching logic.
 // Run with `node _verify_dialogue.mjs`.
 import { createDialogueEngine } from './src/dialogue/dialogueEngine.js';
-import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue } from './src/data/dialogues.js';
+import {
+  SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, ribbitTalkDialogue,
+} from './src/data/dialogues.js';
 import { SPRITES, MOODS } from './src/ui/portraitSprites.js';
 
 let failures = 0;
@@ -171,6 +173,36 @@ function collectAllReachableNodes(script, maxPaths = 64) {
 {
   const engine = createDialogueEngine([]);
   check('empty script starts done', engine.done && engine.current === null);
+}
+
+// the real branching script (talking to Ribbit): every option path
+// plays to the end without throwing (so every `next` id resolves), stays
+// in the registry's speakers, and passes along its option's `points`.
+{
+  const choiceIndex = ribbitTalkDialogue.findIndex((n) => n.type === 'choice');
+  const choice = ribbitTalkDialogue[choiceIndex];
+  check('ribbitTalk: has a choice node with options', choiceIndex >= 0 && choice.options.length >= 2);
+
+  choice.options.forEach((option, i) => {
+    const engine = createDialogueEngine(ribbitTalkDialogue);
+    const seen = [];
+    let picked = null;
+    let threw = null;
+    try {
+      for (let steps = 0; !engine.done && steps < 100; steps++) {
+        seen.push(engine.current);
+        if (engine.current.type === 'choice') picked = engine.choose(i);
+        else engine.advance();
+      }
+    } catch (e) {
+      threw = e.message;
+    }
+    check(`ribbitTalk option ${i + 1}: plays to the end`, !threw && engine.done, threw ?? '');
+    check(`ribbitTalk option ${i + 1}: choose() hands back its points`,
+      picked === option && typeof picked.points === 'number');
+    const missing = seen.find((n) => n.type === 'line' && !SPEAKERS[n.speaker]);
+    check(`ribbitTalk option ${i + 1}: every speaker exists`, !missing, missing?.speaker ?? '');
+  });
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
