@@ -370,6 +370,21 @@ document.getElementById('credits-close').addEventListener('click', () => {
   creditsPanel.classList.add('hidden');
 });
 
+// --- Controls panel ---
+const controlsPanel = document.getElementById('controls');
+document.getElementById('controls-btn').addEventListener('click', () => {
+  controlsPanel.hidden = false;
+});
+document.getElementById('controls-close').addEventListener('click', () => {
+  controlsPanel.hidden = true;
+});
+controlsPanel.addEventListener('click', (e) => {
+  if (e.target === controlsPanel) controlsPanel.hidden = true; // clicked the backdrop
+});
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape') controlsPanel.hidden = true;
+});
+
 // --- Keyboard movement ---
 const move = { forward: false, back: false, left: false, right: false, sprint: false };
 
