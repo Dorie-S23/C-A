@@ -8,6 +8,7 @@ import { loadMazeRoom } from './rooms/mazeRoom.js';
 import { loadKaufmoRoom } from './rooms/kaufmoRoom.js';
 import { loadPomni } from './characters/pomni.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
+import { createTitleScreen } from './ui/titleScreen.js';
 import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue } from './data/dialogues.js';
 
 // Collision fires dozens of short rays a frame (wall probe, floor probes,
@@ -35,8 +36,10 @@ const ROOM_LOADERS = {
 
 const PLAYER_HEIGHT = 1.7;
 const PLAYER_RADIUS = 0.35;
-const WALK_SPEED = 6.0; // metres per second
-const SPRINT_MULTIPLIER = 2.5; // running speed = WALK_SPEED × this
+// Kept close to the speeds Pomni's Walk/Run clips are authored at (see
+// WALK_CLIP_SPEED/RUN_CLIP_SPEED) so her feet don't skate or blur.
+const WALK_SPEED = 2.0; // metres per second
+const SPRINT_MULTIPLIER = 2.0; // running speed = WALK_SPEED × this
 const WALL_MARGIN = 0.4; // keep the camera this far from any wall
 const STEP_HEIGHT = 0.4; // ledges up to this tall are stepped onto; taller ones block
 const PROBE_HEIGHT = STEP_HEIGHT + 0.05; // height of the wall-probe ray above the feet
@@ -99,10 +102,19 @@ const player = new THREE.Object3D();
 scene.add(player);
 
 let pomni = null;
-const pomniReady = loadPomni().then(({ pomni: model }) => {
+let pomniMixer = null;
+const pomniActions = {}; // lower-cased clip name -> AnimationAction
+let currentAction = null;
+const pomniReady = loadPomni().then(({ pomni: model, animations }) => {
   pomni = model;
   pomni.position.y = -PLAYER_HEIGHT; // feet on the floor
   player.add(pomni);
+
+  if (animations.length > 0) {
+    pomniMixer = new THREE.AnimationMixer(pomni);
+    for (const clip of animations) pomniActions[clip.name.toLowerCase()] = pomniMixer.clipAction(clip);
+    playAction('idle');
+  }
 });
 
 const overlay = document.getElementById('overlay');
@@ -113,6 +125,7 @@ const dialoguePicker = document.getElementById('dialogue-picker');
 const pauseMenu = document.getElementById('pause-menu');
 const btnResume = document.getElementById('btn-resume');
 const btnHome = document.getElementById('btn-home');
+const btnTitle = document.getElementById('btn-title');
 const crosshair = document.getElementById('crosshair');
 const hint = document.getElementById('hint');
 const interactPrompt = document.getElementById('prompt');
@@ -163,8 +176,106 @@ btnHome.addEventListener('click', (event) => {
   returnToHome();
 });
 
+btnTitle.addEventListener('click', (event) => {
+  event.stopPropagation();
+  returnToHome();
+});
+
+// --- Title screen ---
+const titleOptions = document.getElementById('title-options');
+const titleQuit = document.getElementById('title-quit');
+const sensitivityInput = document.getElementById('sensitivity');
+const sensitivityValue = document.getElementById('sensitivity-value');
+const SENSITIVITY_KEY = 'tadc.mouseSensitivity';
+
+const titleScreen = createTitleScreen({
+  renderer,
+  // Keys shouldn't drive the menu hidden behind an open panel.
+  isBlocked: () => !titleOptions.hidden || !titleQuit.hidden || !creditsPanel.classList.contains('hidden'),
+  onAction: (action) => {
+    if (action === 'play') {
+      titleScreen.hide();
+      showRoomPicker();
+    } else if (action === 'options') {
+      titleOptions.hidden = false;
+    } else if (action === 'quit') {
+      // Browsers only let a page close a tab that a script opened, so this
+      // usually does nothing — the panel below is the real "quit" screen.
+      window.close();
+      titleQuit.hidden = false;
+    }
+  },
+});
+titleScreen.resize(window.innerWidth, window.innerHeight);
+
+// Multiplies MOUSE_SENSITIVITY in the mouse-look handler.
+let mouseSensitivityScale = 1;
+
+function setSensitivity(value) {
+  mouseSensitivityScale = value;
+  sensitivityInput.value = value;
+  sensitivityValue.textContent = `${value.toFixed(1)}×`;
+}
+try {
+  setSensitivity(Number(localStorage.getItem(SENSITIVITY_KEY)) || 1);
+} catch {
+  setSensitivity(1);
+}
+sensitivityInput.addEventListener('input', () => {
+  setSensitivity(Number(sensitivityInput.value));
+  try {
+    localStorage.setItem(SENSITIVITY_KEY, sensitivityInput.value);
+  } catch {
+    // Storage blocked (private window etc.) — the setting just won't persist.
+  }
+});
+document.getElementById('btn-replay-intro').addEventListener('click', () => {
+  titleOptions.hidden = true;
+  titleScreen.show({ playIntro: true });
+});
+document.getElementById('btn-options-credits').addEventListener('click', () => {
+  creditsPanel.classList.remove('hidden');
+});
+document.getElementById('btn-options-back').addEventListener('click', () => {
+  titleOptions.hidden = true;
+});
+document.getElementById('btn-quit-back').addEventListener('click', () => {
+  titleQuit.hidden = true;
+});
+
+// Start on the title screen; fall back to the room picker if it can't load.
+overlay.classList.add('loading');
+overlayTitle.textContent = 'Loading…';
+overlaySubtitle.textContent = '';
+roomPicker.hidden = true;
+dialoguePicker.hidden = true;
+btnTitle.hidden = true;
+titleScreen.ready
+  .then(() => {
+    overlay.classList.add('hidden');
+    overlay.classList.remove('loading');
+    titleScreen.show({ playIntro: true });
+  })
+  .catch((err) => {
+    console.error('Failed to load title screen', err);
+    showRoomPicker();
+  });
+
+/** The room/dialogue picker the PLAY button leads to. */
+function showRoomPicker() {
+  overlay.classList.remove('hidden');
+  overlay.classList.remove('loading');
+  overlayTitle.textContent = 'Choose a room';
+  overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
+  roomPicker.hidden = false;
+  dialoguePicker.hidden = false;
+  btnTitle.hidden = false;
+  pauseMenu.hidden = true;
+  crosshair.hidden = true;
+}
+
 /**
- * Tears down the current room and returns to the home (room-picker) screen.
+ * Tears down the current room and returns to the title screen.
  */
 function returnToHome() {
   if (isLocked) document.exitPointerLock();
@@ -198,15 +309,10 @@ function returnToHome() {
   caught = false;
   scene.environment = null;
 
-  // Show home screen
-  overlay.classList.remove('hidden');
-  overlay.classList.remove('loading');
-  overlayTitle.textContent = 'Choose a room';
-  overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
-  roomPicker.hidden = false;
-  dialoguePicker.hidden = false;
+  overlay.classList.add('hidden');
   pauseMenu.hidden = true;
   crosshair.hidden = true;
+  titleScreen.show({ playIntro: false });
 }
 
 /**
@@ -294,6 +400,7 @@ function selectRoom(roomKey, { onReady, from } = {}) {
   caught = false;
   roomPicker.hidden = true;
   dialoguePicker.hidden = true;
+  btnTitle.hidden = true;
   pauseMenu.hidden = true;
   overlay.classList.add('loading');
   // Otherwise she stands alone in the void behind the loading screen.
@@ -325,6 +432,7 @@ function selectRoom(roomKey, { onReady, from } = {}) {
       overlaySubtitle.textContent = 'Check the browser console for details.';
       roomPicker.hidden = false;
       dialoguePicker.hidden = false;
+      btnTitle.hidden = false;
       overlay.classList.remove('loading');
     });
 }
@@ -529,8 +637,16 @@ const cameraHitPoint = new THREE.Vector3();
 const cameraRaycaster = new THREE.Raycaster();
 let currentCameraDistance = CAMERA_DISTANCE;
 
-// Pomni turning and her fake walk cycle (see updatePomniWalk).
+// Pomni turning and her walk animation (see updatePomniWalk).
 const TURN_SHARPNESS = 14;     // higher = snappier turning
+// Ground speed each clip's feet move at, measured at POMNI_HEIGHT; the clip
+// is sped up/slowed down by actual speed ÷ this so her feet stay planted.
+const WALK_CLIP_SPEED = 1.1;
+const RUN_CLIP_SPEED = 2.85;
+const RUN_THRESHOLD = WALK_SPEED * 1.4; // above this she's sprinting
+const ACTION_FADE = 0.2;       // seconds to cross-fade between clips
+let animSpeed = 0;             // smoothed ground speed, so clips don't flicker
+// Fallback hop-and-waddle for a model without clips (e.g. the placeholder).
 const STEPS_PER_METRE = 1.4;
 const WALK_BOB_HEIGHT = 0.06;  // metres of hop per step
 const WALK_SWAY = 0.08;        // radians of side-to-side waddle
@@ -566,6 +682,7 @@ document.addEventListener('pointerlockchange', () => {
   overlaySubtitle.textContent = 'Press Esc or click Resume to continue';
   roomPicker.hidden = true;
   dialoguePicker.hidden = true;
+  btnTitle.hidden = true;
   pauseMenu.hidden = false;
 });
 document.addEventListener('mousemove', (e) => {
@@ -573,9 +690,10 @@ document.addEventListener('mousemove', (e) => {
   // movement below — looking around while portraits/text are up is just
   // disorienting, and nothing stops the mouse once the pointer is locked.
   if (!isLocked || dialogueUI.isActive) return;
-  cameraYaw -= e.movementX * MOUSE_SENSITIVITY;
+  const sensitivity = MOUSE_SENSITIVITY * mouseSensitivityScale;
+  cameraYaw -= e.movementX * sensitivity;
   cameraPitch = THREE.MathUtils.clamp(
-    cameraPitch + e.movementY * MOUSE_SENSITIVITY, PITCH_MIN, PITCH_MAX,
+    cameraPitch + e.movementY * sensitivity, PITCH_MIN, PITCH_MAX,
   );
 });
 
@@ -886,6 +1004,7 @@ function endLevel(title, subtitle) {
   overlaySubtitle.textContent = subtitle;
   roomPicker.hidden = false;
   dialoguePicker.hidden = false;
+  btnTitle.hidden = false;
   pauseMenu.hidden = true;
 }
 
@@ -1032,16 +1151,41 @@ function dampAngle(current, target, sharpness, dt) {
 }
 
 /**
- * Pomni's model has no skeleton or animation clips, so walking is faked:
- * a small hop per step plus a side-to-side waddle, faded in and out with
- * her real speed. Swap this for an AnimationMixer if a rigged model lands.
+ * Plays Idle/Walk/Run from her real ground speed, scaling the clip's
+ * playback so her feet match how fast she's actually moving. Without
+ * clips (the placeholder), walking is faked: a small hop per step plus a
+ * side-to-side waddle, faded in and out with her speed.
  */
 function updatePomniWalk(dt, speed) {
+  if (pomniMixer) {
+    animSpeed = THREE.MathUtils.damp(animSpeed, speed, 12, dt);
+    if (animSpeed < 0.2) {
+      playAction('idle');
+    } else if (animSpeed > RUN_THRESHOLD && pomniActions.run) {
+      playAction('run');
+      pomniActions.run.timeScale = animSpeed / RUN_CLIP_SPEED;
+    } else {
+      playAction('walk');
+      pomniActions.walk.timeScale = animSpeed / WALK_CLIP_SPEED;
+    }
+    pomniMixer.update(dt);
+    return;
+  }
+
   walkAmount = THREE.MathUtils.damp(walkAmount, speed > 0.1 ? 1 : 0, 10, dt);
   walkPhase += speed * dt * STEPS_PER_METRE * Math.PI;
 
   pomni.position.y = -PLAYER_HEIGHT + Math.abs(Math.sin(walkPhase)) * WALK_BOB_HEIGHT * walkAmount;
   pomni.rotation.z = Math.sin(walkPhase) * WALK_SWAY * walkAmount;
+}
+
+/** Cross-fades from whatever Pomni is playing to the named clip. */
+function playAction(name) {
+  const next = pomniActions[name];
+  if (!next || next === currentAction) return;
+  next.reset().fadeIn(ACTION_FADE).play();
+  currentAction?.fadeOut(ACTION_FADE);
+  currentAction = next;
 }
 
 // --- Third-person follow camera ---
@@ -1125,6 +1269,7 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  titleScreen.resize(window.innerWidth, window.innerHeight);
 });
 
 // --- Main loop ---
@@ -1148,7 +1293,12 @@ function animate() {
     updateCamera(delta);
   }
   updateInteractionFocus();
-  renderer.render(scene, camera);
+  if (titleScreen.active) {
+    titleScreen.update(delta);
+    titleScreen.render();
+  } else {
+    renderer.render(scene, camera);
+  }
   requestAnimationFrame(animate);
 }
 

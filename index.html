@@ -212,6 +212,73 @@
                 cursor: pointer;
             }
 
+            /* --- Title screen panels (Options / Quit) --- */
+            .title-panel {
+                position: fixed;
+                inset: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: rgba(0, 0, 0, 0.55);
+                z-index: 12;
+            }
+            .title-panel[hidden] {
+                display: none;
+            }
+            .title-panel-box {
+                min-width: min(360px, 86vw);
+                max-width: 86vw;
+                box-sizing: border-box;
+                padding: 1.5em 1.8em;
+                background: rgba(10, 8, 30, 0.92);
+                border: 2px solid #1a56e8;
+                border-radius: 10px;
+                color: #fff;
+                text-align: center;
+                display: flex;
+                flex-direction: column;
+                gap: 0.9em;
+            }
+            .title-panel-box h2 {
+                margin: 0;
+            }
+            .title-panel-box p {
+                margin: 0;
+                opacity: 0.8;
+            }
+            .title-panel-box label {
+                display: flex;
+                flex-direction: column;
+                gap: 0.4em;
+                text-align: left;
+            }
+            .title-panel-box button {
+                font-size: 1em;
+                padding: 0.6em 1.2em;
+                background: rgba(255, 255, 255, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.4);
+                color: #fff;
+                border-radius: 6px;
+                cursor: pointer;
+                font-family: inherit;
+            }
+            .title-panel-box button:hover {
+                background: rgba(255, 255, 255, 0.22);
+            }
+            #btn-title {
+                margin-top: 1.2em;
+                font-size: 0.9em;
+                padding: 0.4em 1em;
+                background: transparent;
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                color: #fff;
+                border-radius: 4px;
+                cursor: pointer;
+            }
+            #btn-title[hidden] {
+                display: none;
+            }
+
             /* --- Persona-style dialogue overlay --- */
             #dialogue {
                 position: fixed;
@@ -272,6 +339,21 @@
                 width: 100%;
                 height: 100%;
                 display: block;
+            }
+            /* The 2D icons bring their own badge and outline, so drop the circle. */
+            .dialogue-portrait-icon {
+                width: 120px;
+                height: 120px;
+                background: none;
+                border: none;
+                border-radius: 0;
+                box-shadow: none;
+            }
+            .dialogue-portrait-icon img {
+                width: 100%;
+                height: 100%;
+                object-fit: contain;
+                filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5));
             }
             .dialogue-portrait-label {
                 font-size: 0.85em;
@@ -337,6 +419,11 @@
                 gap: 0.5em;
                 margin-top: 0.6em;
             }
+            /* display: flex above would otherwise override the hidden
+               attribute, leaving a choice's options up after it's made. */
+            #dialogue-options[hidden] {
+                display: none;
+            }
             .dialogue-option {
                 text-align: left;
                 padding: 0.6em 0.9em;
@@ -386,9 +473,35 @@
                     &#9654; Level 2: Missing Pieces
                 </button>
             </div>
+            <button id="btn-title">&larr; Title screen</button>
             <div id="pause-menu" hidden>
                 <button id="btn-resume">&#9654; Resume</button>
                 <button id="btn-home">&#8962; Back to Home</button>
+            </div>
+        </div>
+        <div id="title-options" class="title-panel" hidden>
+            <div class="title-panel-box">
+                <h2>Options</h2>
+                <label>
+                    <span>Mouse sensitivity: <span id="sensitivity-value"></span></span>
+                    <input
+                        id="sensitivity"
+                        type="range"
+                        min="0.2"
+                        max="3"
+                        step="0.1"
+                    />
+                </label>
+                <button id="btn-replay-intro">&#9654; Replay intro</button>
+                <button id="btn-options-credits">Credits</button>
+                <button id="btn-options-back">Back</button>
+            </div>
+        </div>
+        <div id="title-quit" class="title-panel" hidden>
+            <div class="title-panel-box">
+                <h2>Thanks for playing!</h2>
+                <p>You can close this tab now.</p>
+                <button id="btn-quit-back">Back to title</button>
             </div>
         </div>
         <div id="crosshair" hidden></div>
