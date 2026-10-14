@@ -369,7 +369,7 @@ function applyLoadedRoom({
   dynamicCollisionMeshes = collisionMeshes.filter((entry) => entry.dynamic);
   for (const { mesh } of collisionMeshes) {
     // BVHs are in the mesh's local space, so swinging doors keep theirs.
-    if (!mesh.isSkinnedMesh && !mesh.geometry.boundsTree) mesh.geometry.computeBoundsTree();
+    if (!mesh.isSkinnedMesh && !mesh.geometry.boundsTree) computeBoundsTree.call(mesh.geometry);
   }
   triggers = roomTriggers ?? null;
   movers = roomMovers ?? [];
