@@ -4,6 +4,7 @@ import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-
 import { loadPomniRoom } from './rooms/pomniRoom.js';
 import { loadTadcRoom } from './rooms/tadcRoom.js';
 import { loadMazeRoom } from './rooms/mazeRoom.js';
+import { loadKaufmoRoom } from './rooms/kaufmoRoom.js';
 import { loadPomni } from './characters/pomni.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
 import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue } from './data/dialogues.js';
@@ -27,6 +28,7 @@ const ROOM_LOADERS = {
   pomni: loadPomniRoom,
   tadc: loadTadcRoom,
   maze: loadMazeRoom,
+  kaufmo: loadKaufmoRoom,
 };
 
 const PLAYER_HEIGHT = 1.7;
