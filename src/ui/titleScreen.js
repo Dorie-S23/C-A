@@ -1,7 +1,19 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
-const TITLE_URL = './models/game%20screens/TADC%20Intro%20Animation%20V2.glb';
+// Exported from "TADC Intro Animation V2.blend" by
+// tools/blender/export_title_screen.py — re-run that after editing the .blend.
+const TITLE_URL = './models/game%20screens/title-screen.glb';
+const SKY_URL = './models/game%20screens/title-sky.jpg';
+
+// The .blend's timeline (24 fps) is one continuous sequence: the logo and
+// menu assemble, Kinger's glove comes to rest on PLAY, clicks it, and the
+// camera flies down the hill into the tent. The game plays it in two parts,
+// holding at HOLD_TIME while the menu is live and finishing the rest only
+// once PLAY is chosen.
+const FPS = 24;
+const HOLD_TIME = 175 / FPS;
+const END_TIME = 275 / FPS;
 
 // The three blocks of the menu stack, top to bottom. Each block's label is
 // a separate mesh, so both are hit-tested.
@@ -10,87 +22,45 @@ const BUTTONS = [
   { action: 'options', block: 'Cube011', label: 'Text002' },
   { action: 'quit', block: 'Cube012', label: 'Text001' },
 ];
+const GLOVE = 'Cursor_Rig';
+const HOVER_SCALE = 1.08;
+const HOVER_EASE = 12; // per second; how quickly a block grows/shrinks and the glove moves
 
-// The PLAY and OPTIONS labels were exported 3 cm *inside* their blocks
-// (QUIT's sits just in front of its own), so they never render. Pull them
-// forward to the block faces.
-const BURIED_LABELS = ['Text', 'Text002'];
-const LABEL_NUDGE_Z = 0.15;
-const HOVER_SCALE = 1.2;
-const HOVER_EASE = 12; // per second; how quickly a block grows/shrinks
-
-// "CIRCUS" was laid out by a Lattice modifier, which glTF can't export: the
-// six letter meshes arrive stacked on one spot at scale 0, all plain white.
-// They're placed here instead, styled after the show's logo: big glossy
-// red/yellow/blue balloon letters with white polka dots, bunched together
-// and overlapping the bottom of DIGITAL. The meshes aren't in spelling
-// order (two C's, then I R U S), hence the names list.
-const CIRCUS_LETTERS = [
-  { name: 'Text013_Remeshed_Remeshed', color: 0xe8141c }, // C
-  { name: 'Text013_Remeshed001_Remeshed', color: 0xffd400 }, // I
-  { name: 'Text013_Remeshed002_Remeshed', color: 0xe8141c }, // R
-  { name: 'Text013_Remeshed_Remeshed001', color: 0xffd400 }, // C
-  { name: 'Text013_Remeshed004_Remeshed', color: 0x1f63e0 }, // U
-  { name: 'Text013_Remeshed005_Remeshed', color: 0x1f63e0 }, // S
-];
-const CIRCUS_CENTER = new THREE.Vector3(0, 35.8, 201.9);
-const CIRCUS_SCALE = 0.9;
-const CIRCUS_GAP = -0.22; // between letters, in world units after scaling; negative = overlapping
-const CIRCUS_ARC = 0.35; // how much higher the end letters sit than the middle
-const CIRCUS_TILTS = [0.12, -0.08, 0.06, -0.1, 0.07, -0.12]; // playful per-letter roll, radians
-const CIRCUS_BOUNCE = [0, 0.12, -0.08, 0.06, -0.1, 0.08]; // per-letter height jitter, world units
-// Polka dots, in the letter meshes' own units (a letter is ~1.8 tall).
-const DOT_SPACING = 0.42;
-const DOT_RADIUS = 0.3; // as a fraction of DOT_SPACING
-// The letters pop in one after another, starting as DIGITAL finishes.
-const CIRCUS_POP_START = 7.2; // seconds into the intro
-const CIRCUS_POP_STAGGER = 0.09;
-const CIRCUS_POP_DURATION = 0.45;
-
-// The logo — THE AMAZING, DIGITAL and CIRCUS — is gathered into one group
-// so it can be enlarged and lifted clear of the menu as a whole. Scaling is
-// about the bottom-centre of DIGITAL.
-const DIGITAL_ROOT = 'Empty004'; // parent of the seven DIGITAL letters
-const AMAZING_LETTERS = ['Text003', 'Text004', 'Text005', 'Text006', 'Text007',
-  'Text008', 'Text009', 'Text010', 'Text011', 'Text012'];
-const LOGO_SCALE = 1.35;
-const LOGO_LIFT = 1.9; // world units upward, after scaling
-// THE AMAZING was exported small and far behind DIGITAL; it's brought
-// forward to sit on DIGITAL's top edge, like the show's logo.
-const AMAZING_WIDTH = 0.62; // as a fraction of DIGITAL's width
-const AMAZING_OVERLAP = 1.65; // how far its bounding box dips into DIGITAL (the box runs well above the visible text), logo units
-
-// The Blender camera wasn't exported, so this framing is reconstructed:
-// high enough that "THE AMAZING" sits above "DIGITAL", with the menu below.
-const CAMERA_POSITION = new THREE.Vector3(0, 41.5, 216);
-const CAMERA_TARGET = new THREE.Vector3(0, 36, 199);
-const CAMERA_FOV = 46;
-// Horizontal angle that must always stay on screen (the DIGITAL logo), so
-// portrait windows widen the vertical FOV instead of cropping the logo.
-const MIN_HORIZONTAL_FOV = 72;
+// Lighting, matched to the .blend: one sun (strength 6.22, aimed as below
+// after converting Blender's Z-up to three's Y-up) plus the world's dim
+// white fill (0.07) for everything that isn't a camera ray. three's ambient
+// light is divided by π in the shader, Blender's world colour isn't.
+const SUN_STRENGTH = 6.22;
+const SUN_DIRECTION = new THREE.Vector3(-0.57, -0.532, -0.626).normalize();
+const AMBIENT_STRENGTH = 0.07 * Math.PI;
 
 /**
- * The animated title screen: plays the intro from the GLB once, then turns
- * the PLAY / OPTIONS / QUIT blocks into buttons (mouse hover + click, or
- * arrow keys + Enter); the selected block grows. Clicking or pressing a
- * key during the intro skips it.
+ * The animated title screen: plays the intro from the GLB, then holds with
+ * PLAY / OPTIONS / QUIT live (mouse hover + click, or arrow keys + Enter);
+ * Kinger's glove points at the selected button. Clicking or pressing a key
+ * during the intro skips it. Choosing PLAY plays the rest of the animation
+ * — the glove's click and the fly-in to the tent — before reporting it.
  *
- * Owns its own scene and camera; main.js renders it while `active`.
+ * Owns its own scene and camera; main.js calls render() while `active`.
  *
  * @param {{ renderer: THREE.WebGLRenderer, onAction: (action: string) => void,
  *   isBlocked?: () => boolean }} options  isBlocked: true while a panel covers the menu
  */
 export function createTitleScreen({ renderer, onAction, isBlocked = () => false }) {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x07072e);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2));
-  const sun = new THREE.DirectionalLight(0xffffff, 2);
-  sun.position.set(0, 50, 300);
+  scene.add(new THREE.AmbientLight(0xffffff, AMBIENT_STRENGTH));
+  const sun = new THREE.DirectionalLight(0xffffff, SUN_STRENGTH);
+  sun.position.copy(SUN_DIRECTION).multiplyScalar(-100);
   scene.add(sun);
 
-  const camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.1, 2000);
-  camera.position.copy(CAMERA_POSITION);
-  camera.lookAt(CAMERA_TARGET);
+  // Replaced by the GLB's own camera once loaded.
+  let camera = new THREE.PerspectiveCamera(31.4, 4 / 3, 0.1, 1000);
+  let authoredFov = camera.fov;
+  let authoredAspect = camera.aspect;
+  let viewport = { width: 4, height: 3 };
+
+  const sky = createSkyBackdrop();
+  scene.add(sky);
 
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
@@ -98,34 +68,24 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
 
   let mixer = null;
   let actions = [];
-  let introDuration = 0;
-  let introTime = 0;
-  let introDone = false;
+  let state = 'intro'; // 'intro' → 'menu' → 'outro' (after PLAY)
+  let time = 0;
   let buttons = [];
-  let selected = -1;
+  let selected = 0;
+  let glove = null;
+  const gloveRest = new THREE.Vector3(); // its position at HOLD_TIME, pointing at PLAY
+  const gloveTarget = new THREE.Vector3();
   let active = false;
-  let buriedLabels = [];
-  let labelsNudged = false;
-  let circusLetters = [];
-  let circusTime = 0; // on the intro's clock; drives the letters' pop-in
-
-  /**
-   * Advances the intro to `time` (absolute) or by `delta`. The label
-   * positions have animation tracks, which may or may not rewrite them on
-   * a given step, so the nudge is taken off before stepping and put back
-   * after — it never compounds either way.
-   */
-  function stepIntro({ time, delta }) {
-    if (labelsNudged) for (const label of buriedLabels) label.position.z -= LABEL_NUDGE_Z;
-    if (time !== undefined) mixer.setTime(time);
-    else mixer.update(delta);
-    for (const label of buriedLabels) label.position.z += LABEL_NUDGE_Z;
-    labelsNudged = true;
-  }
 
   const ready = new GLTFLoader().loadAsync(TITLE_URL).then((gltf) => {
     scene.add(gltf.scene);
-    buriedLabels = BURIED_LABELS.map((name) => gltf.scene.getObjectByName(name)).filter(Boolean);
+
+    if (gltf.cameras.length > 0) {
+      camera = gltf.cameras[0];
+      authoredFov = camera.fov;
+      authoredAspect = camera.aspect;
+      resize(viewport.width, viewport.height);
+    }
 
     mixer = new THREE.AnimationMixer(gltf.scene);
     actions = gltf.animations.map((clip) => {
@@ -133,7 +93,6 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
       action.setLoop(THREE.LoopOnce, 1);
       action.clampWhenFinished = true;
       action.play();
-      introDuration = Math.max(introDuration, clip.duration);
       return action;
     });
 
@@ -142,130 +101,67 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
       block: gltf.scene.getObjectByName(block),
       objects: [block, label].map((name) => gltf.scene.getObjectByName(name)).filter(Boolean),
       baseScales: [],
+      offset: new THREE.Vector3(), // from PLAY's centre to this button's, for the glove
       hover: 0,
     })).filter((button) => button.block);
+    glove = gltf.scene.getObjectByName(GLOVE);
 
-    circusLetters = CIRCUS_LETTERS.map(({ name, color }, i) => {
-      const letter = gltf.scene.getObjectByName(name);
-      if (letter) letter.material = createPolkaDotMaterial(letter.material, color, i);
-      return letter;
-    }).filter(Boolean);
-    layOutCircus();
-    groupLogo(gltf.scene);
-
+    seek(0);
     renderer.compile(scene, camera);
   });
 
   /**
-   * Moves THE AMAZING onto DIGITAL's top edge and puts the whole logo in a
-   * group that's scaled up and lifted. The letters keep their animation:
-   * the mixer writes their local transforms, which the groups then carry.
+   * Poses everything at `t` seconds on the .blend's timeline. The clips'
+   * keyframes keep their absolute times, so every clip is simply set to the
+   * same moment (clamped to its own length).
    */
-  function groupLogo(root) {
-    const digital = root.getObjectByName(DIGITAL_ROOT);
-    const amazing = AMAZING_LETTERS.map((name) => root.getObjectByName(name)).filter(Boolean);
-    if (!digital) return;
-
-    // Measure the logo as it looks at the end of the intro. show() rewinds
-    // the intro afterwards, so this leaves no trace.
-    mixer.setTime(introDuration);
-    root.updateMatrixWorld(true);
-    const digitalBox = new THREE.Box3().setFromObject(digital);
-    const amazingBox = new THREE.Box3();
-    for (const letter of amazing) amazingBox.expandByObject(letter);
-
-    // The letters were root nodes and the GLB root has no transform, so
-    // their local coordinates are already world coordinates; a group's
-    // transform is a straight remap of them.
-    const logo = new THREE.Group();
-    root.add(logo);
-    logo.add(digital, ...circusLetters);
-
-    if (amazing.length > 0 && !amazingBox.isEmpty()) {
-      const amazingGroup = new THREE.Group();
-      logo.add(amazingGroup);
-      amazingGroup.add(...amazing);
-      const from = amazingBox.getCenter(new THREE.Vector3());
-      const size = amazingBox.getSize(new THREE.Vector3());
-      const scale = (AMAZING_WIDTH * (digitalBox.max.x - digitalBox.min.x)) / size.x;
-      const to = new THREE.Vector3(
-        (digitalBox.min.x + digitalBox.max.x) / 2,
-        digitalBox.max.y - AMAZING_OVERLAP + (size.y * scale) / 2,
-        digitalBox.max.z,
-      );
-      amazingGroup.scale.setScalar(scale);
-      amazingGroup.position.copy(to).addScaledVector(from, -scale);
-    }
-
-    const pivot = new THREE.Vector3(
-      (digitalBox.min.x + digitalBox.max.x) / 2,
-      digitalBox.min.y,
-      (digitalBox.min.z + digitalBox.max.z) / 2,
-    );
-    logo.scale.setScalar(LOGO_SCALE);
-    logo.position.copy(pivot).multiplyScalar(1 - LOGO_SCALE).add(new THREE.Vector3(0, LOGO_LIFT, 0));
-  }
-
-  /** Places the CIRCUS letters side by side, centred on CIRCUS_CENTER. */
-  function layOutCircus() {
-    const size = new THREE.Vector3();
-    const widths = circusLetters.map((letter) => {
-      letter.geometry.computeBoundingBox();
-      return letter.geometry.boundingBox.getSize(size).x * CIRCUS_SCALE;
-    });
-    const total = widths.reduce((sum, w) => sum + w, 0) + CIRCUS_GAP * (widths.length - 1);
-    let x = -total / 2;
-    circusLetters.forEach((letter, i) => {
-      // Each letter's geometry is centred on its own origin.
-      const centerX = x + widths[i] / 2;
-      const along = centerX / (total / 2); // -1 at the left end, 1 at the right
-      letter.position.set(
-        CIRCUS_CENTER.x + centerX,
-        CIRCUS_CENTER.y + CIRCUS_ARC * along * along + (CIRCUS_BOUNCE[i] ?? 0),
-        // Alternate depth slightly so overlapping neighbours don't z-fight.
-        CIRCUS_CENTER.z + (i % 2) * 0.15,
-      );
-      // Lean with the arc, plus a little individual wobble.
-      letter.rotation.set(0, 0, -along * CIRCUS_ARC * 0.5 + (CIRCUS_TILTS[i] ?? 0));
-      letter.scale.setScalar(0);
-      x += widths[i] + CIRCUS_GAP;
-    });
-  }
-
-  /** Scales each CIRCUS letter in with a small overshoot, staggered. */
-  function updateCircus() {
-    circusLetters.forEach((letter, i) => {
-      const t = THREE.MathUtils.clamp(
-        (circusTime - CIRCUS_POP_START - i * CIRCUS_POP_STAGGER) / CIRCUS_POP_DURATION,
-        0,
-        1,
-      );
-      letter.scale.setScalar(CIRCUS_SCALE * easeOutBack(t));
-    });
-  }
-
-  /** Jumps to the intro's last frame and switches the menu on. */
-  function finishIntro() {
-    if (introDone || !mixer) return;
-    // Not mixer.setTime(): it rewinds every action to 0 before advancing,
-    // and clips that already finished are paused, so they'd stay rewound.
+  function seek(t) {
     for (const action of actions) {
+      action.enabled = true;
       action.paused = false;
-      action.time = action.getClip().duration;
+      action.time = Math.min(t, action.getClip().duration);
     }
-    stepIntro({ delta: 0 });
-    introDone = true;
-    // The mixer is never updated again, so every animated transform stays
-    // at its final value and the hover effects below can take over.
-    for (const button of buttons) button.baseScales = button.objects.map((object) => object.scale.clone());
-    selected = 0;
-    // Skipping the intro still lets CIRCUS pop in, just straight away.
-    circusTime = Math.max(circusTime, CIRCUS_POP_START);
+    mixer.update(0);
+  }
+
+  /** Holds on the menu pose and switches the buttons on. */
+  function enterMenu() {
+    time = HOLD_TIME;
+    seek(HOLD_TIME);
+    state = 'menu';
+    scene.updateMatrixWorld(true);
+    const playCenter = blockCenter(buttons[0]);
+    for (const button of buttons) {
+      button.baseScales = button.objects.map((object) => object.scale.clone());
+      button.offset.subVectors(blockCenter(button), playCenter);
+      button.hover = 0;
+    }
+    if (glove) gloveRest.copy(glove.position);
+    select(0);
+  }
+
+  function blockCenter(button) {
+    return new THREE.Box3().setFromObject(button.block).getCenter(new THREE.Vector3());
+  }
+
+  function select(index) {
+    selected = index;
+    // The glove is a root node, so its position is in world space.
+    if (glove) gloveTarget.copy(gloveRest).add(buttons[index].offset);
   }
 
   function activate(index) {
     const button = buttons[index];
-    if (button) onAction(button.action);
+    if (!button) return;
+    if (button.action === 'play') {
+      // The rest of the timeline is the glove clicking PLAY and the camera
+      // flying into the tent; report PLAY once it's over.
+      select(0);
+      state = 'outro';
+      canvas.style.cursor = '';
+      return;
+    }
+    onAction(button.action);
   }
 
   function buttonAt(clientX, clientY) {
@@ -280,36 +176,38 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
   }
 
   function onPointerMove(event) {
-    if (!active || !introDone) return;
+    if (!active || state !== 'menu') return;
     const index = buttonAt(event.clientX, event.clientY);
     canvas.style.cursor = index >= 0 ? 'pointer' : '';
-    if (index >= 0) selected = index;
+    if (index >= 0 && index !== selected) select(index);
   }
 
   function onClick(event) {
-    if (!active) return;
-    if (!introDone) {
-      finishIntro();
+    if (!active || !mixer) return;
+    if (state === 'intro') {
+      enterMenu();
       return;
     }
+    if (state !== 'menu') return;
     const index = buttonAt(event.clientX, event.clientY);
     if (index >= 0) activate(index);
   }
 
   function onKeyDown(event) {
-    if (!active || event.repeat || isBlocked()) return;
-    if (!introDone) {
-      finishIntro();
+    if (!active || !mixer || event.repeat || isBlocked()) return;
+    if (state === 'intro') {
+      enterMenu();
       return;
     }
+    if (state !== 'menu') return;
     switch (event.code) {
       case 'ArrowUp':
       case 'KeyW':
-        selected = (selected - 1 + buttons.length) % buttons.length;
+        select((selected - 1 + buttons.length) % buttons.length);
         break;
       case 'ArrowDown':
       case 'KeyS':
-        selected = (selected + 1) % buttons.length;
+        select((selected + 1) % buttons.length);
         break;
       case 'Enter':
       case 'Space':
@@ -323,41 +221,84 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
   canvas.addEventListener('click', onClick);
   window.addEventListener('keydown', onKeyDown);
 
+  /**
+   * The .blend frames the shot for 4:3. Wider windows keep its vertical
+   * field of view and see more to the sides; narrower ones keep its
+   * horizontal one, so the logo and menu are never cropped.
+   */
   function resize(width, height) {
+    viewport = { width, height };
     camera.aspect = width / height;
-    const minVerticalFov = THREE.MathUtils.radToDeg(
-      2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(MIN_HORIZONTAL_FOV / 2)) / camera.aspect),
-    );
-    camera.fov = Math.max(CAMERA_FOV, minVerticalFov);
+    const halfHeight = Math.tan(THREE.MathUtils.degToRad(authoredFov / 2));
+    const neededHalfHeight = (halfHeight * authoredAspect) / camera.aspect;
+    camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.max(halfHeight, neededHalfHeight)));
     camera.updateProjectionMatrix();
+  }
+
+  function update(delta) {
+    if (!active || !mixer) return;
+
+    if (state === 'intro') {
+      time += delta;
+      if (time >= HOLD_TIME) enterMenu();
+      else seek(time);
+      return;
+    }
+
+    if (state === 'outro') {
+      time += delta;
+      seek(Math.min(time, END_TIME));
+      if (time >= END_TIME) {
+        state = 'done';
+        onAction('play');
+      }
+      return;
+    }
+
+    if (state !== 'menu') return;
+    const ease = 1 - Math.exp(-HOVER_EASE * delta);
+    buttons.forEach((button, index) => {
+      button.hover += ((index === selected ? 1 : 0) - button.hover) * ease;
+      const scale = 1 + (HOVER_SCALE - 1) * button.hover;
+      button.objects.forEach((object, i) => object.scale.copy(button.baseScales[i]).multiplyScalar(scale));
+    });
+    if (glove) glove.position.lerp(gloveTarget, ease);
   }
 
   return {
     scene,
-    camera,
+    get camera() {
+      return camera;
+    },
     ready,
     resize,
+    update,
     get active() {
       return active;
+    },
+
+    /**
+     * Renders with the .blend's view transform (Khronos PBR Neutral), then
+     * restores the renderer's own settings for the rest of the game.
+     */
+    render() {
+      sky.material.uniforms.inverseProjection.value.copy(camera.projectionMatrixInverse);
+      const toneMapping = renderer.toneMapping;
+      renderer.toneMapping = THREE.NeutralToneMapping;
+      renderer.render(scene, camera);
+      renderer.toneMapping = toneMapping;
     },
 
     /** Shows the title screen; `playIntro: false` goes straight to the menu. */
     show({ playIntro = true } = {}) {
       active = true;
-      if (playIntro && mixer) {
-        introDone = false;
-        introTime = 0;
-        circusTime = 0;
-        selected = -1;
-        for (const button of buttons) button.hover = 0;
-        // Finished one-shot actions stay paused on their last frame; reset
-        // them so the whole intro runs again from the top.
-        for (const action of actions) action.reset().play();
-        stepIntro({ time: 0 });
+      if (!mixer) return;
+      if (playIntro) {
+        state = 'intro';
+        time = 0;
+        seek(0);
       } else {
-        finishIntro();
-        circusTime = Infinity; // already fully in, no pop
-        updateCircus();
+        enterMenu();
       }
     },
 
@@ -365,79 +306,68 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
       active = false;
       canvas.style.cursor = '';
     },
-
-    update(delta) {
-      if (!active || !mixer) return;
-      circusTime += delta;
-      updateCircus();
-      if (!introDone) {
-        introTime += delta;
-        if (introTime >= introDuration) finishIntro();
-        else stepIntro({ delta });
-        return;
-      }
-
-      const ease = 1 - Math.exp(-HOVER_EASE * delta);
-      buttons.forEach((button, index) => {
-        button.hover += ((index === selected ? 1 : 0) - button.hover) * ease;
-        const scale = 1 + (HOVER_SCALE - 1) * button.hover;
-        button.objects.forEach((object, i) => object.scale.copy(button.baseScales[i]).multiplyScalar(scale));
-      });
-    },
   };
 }
 
 /**
- * A glossy balloon-plastic copy of a letter's material in `color`, with
- * white polka dots drawn in the shader: a hex grid of circles projected
- * onto the letter's front (local XY), faded out on the sides where the
- * projection would smear into stripes. `seed` shifts the grid so no two
- * letters share the same dot pattern.
+ * The .blend's sky isn't a skybox: its world shader maps the image by
+ * *camera* coordinates (Mapping: scale 0.8 × 2.32, offset 0.35, 0.06, then
+ * a flat projection), so the clouds stay put on screen as the camera moves,
+ * like a painted backdrop. This reproduces that mapping per pixel, along
+ * with the world's saturation ×2 and strength 1.6, on a full-screen quad
+ * drawn behind everything.
  */
-function createPolkaDotMaterial(source, color, seed) {
-  const material = new THREE.MeshPhysicalMaterial({
-    color,
-    roughness: 0.28,
-    metalness: 0,
-    clearcoat: 0.8,
-    clearcoatRoughness: 0.15,
-    side: source.side,
+function createSkyBackdrop() {
+  const texture = new THREE.TextureLoader().load(SKY_URL);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  // Blender repeats the image, but the shot only ever showed its 4:3 middle;
+  // widescreen windows see past that, where a repeat shows a hard seam.
+  texture.wrapS = texture.wrapT = THREE.MirroredRepeatWrapping;
+
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      map: { value: texture },
+      inverseProjection: { value: new THREE.Matrix4() },
+    },
+    vertexShader: `
+      varying vec2 vNdc;
+      void main() {
+        vNdc = position.xy;
+        gl_Position = vec4(position.xy, 1.0, 1.0);
+      }`,
+    fragmentShader: `
+      uniform sampler2D map;
+      uniform mat4 inverseProjection;
+      varying vec2 vNdc;
+
+      vec3 rgb2hsv(vec3 c) {
+        vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+        vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+        vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+        float d = q.x - min(q.w, q.y);
+        return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + 1e-10)), d / (q.x + 1e-10), q.x);
+      }
+      vec3 hsv2rgb(vec3 c) {
+        vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+        return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+      }
+
+      void main() {
+        vec4 view = inverseProjection * vec4(vNdc, 1.0, 1.0);
+        vec3 dir = normalize(view.xyz / view.w); // camera space, like Blender's
+        vec2 uv = vec2(0.35, 0.06) + vec2(0.8, 2.32) * dir.xy;
+        vec3 hsv = rgb2hsv(texture2D(map, uv).rgb);
+        hsv.y = clamp(hsv.y * 2.0, 0.0, 1.0);
+        gl_FragColor = vec4(hsv2rgb(hsv) * 1.6, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+    depthTest: false,
+    depthWrite: false,
   });
-  const offset = new THREE.Vector2(seed * 0.37, seed * 0.61);
 
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.dotOffset = { value: offset };
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vDotPos;\nvarying vec3 vDotNormal;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvDotPos = position;\nvDotNormal = normal;');
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        '#include <common>',
-        '#include <common>\nvarying vec3 vDotPos;\nvarying vec3 vDotNormal;\nuniform vec2 dotOffset;',
-      )
-      .replace(
-        '#include <color_fragment>',
-        `#include <color_fragment>
-        {
-          vec2 p = vDotPos.xy / ${DOT_SPACING.toFixed(3)} + dotOffset;
-          vec2 r = vec2(1.0, 1.7320508);
-          vec2 h = r * 0.5;
-          vec2 a = mod(p, r) - h;
-          vec2 b = mod(p - h, r) - h;
-          float d = length(dot(a, a) < dot(b, b) ? a : b);
-          float edge = fwidth(d);
-          float dotMask = 1.0 - smoothstep(${DOT_RADIUS.toFixed(3)} - edge, ${DOT_RADIUS.toFixed(3)} + edge, d);
-          dotMask *= smoothstep(0.35, 0.65, abs(normalize(vDotNormal).z));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), dotMask);
-        }`,
-      );
-  };
-  return material;
-}
-
-/** 0 → 1 with a slight overshoot past 1 before settling, for a "pop". */
-function easeOutBack(t) {
-  const overshoot = 1.70158;
-  const u = t - 1;
-  return 1 + (overshoot + 1) * u * u * u + overshoot * u * u;
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+  quad.frustumCulled = false;
+  quad.renderOrder = -1; // before the scene, which then draws over it
+  return quad;
 }
