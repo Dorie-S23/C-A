@@ -3,12 +3,16 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 import { loadPomniRoom } from './rooms/pomniRoom.js';
 import { loadDormHallRoom } from './rooms/dormHallRoom.js';
+import { loadRibbitRoom } from './rooms/ribbitRoom.js';
 import { loadTadcRoom } from './rooms/tadcRoom.js';
 import { loadMazeRoom } from './rooms/mazeRoom.js';
 import { loadKaufmoRoom } from './rooms/kaufmoRoom.js';
 import { loadPomni } from './characters/pomni.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
-import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue } from './data/dialogues.js';
+import { createTitleScreen } from './ui/titleScreen.js';
+import {
+  SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, ribbitTalkDialogue,
+} from './data/dialogues.js';
 
 // Collision fires dozens of short rays a frame (wall probe, floor probes,
 // body-overlap rings). Plain three.js tests a ray against every triangle of
@@ -25,20 +29,24 @@ const DIALOGUE_SCRIPTS = {
   preLevel1: { script: preLevel1Dialogue, room: 'pomni' },
   level1Open: { script: level1OpenDialogue, room: 'pomni' },
   level2Opening: { script: level2OpeningDialogue, room: 'kaufmo' },
+  ribbitTalk: { script: ribbitTalkDialogue, room: 'ribbit' },
 };
 
 const ROOM_LOADERS = {
   pomni: loadPomniRoom,
   tadc: loadTadcRoom,
   dorm: loadDormHallRoom,
+  ribbit: loadRibbitRoom,
   maze: loadMazeRoom,
   kaufmo: loadKaufmoRoom,
 };
 
 const PLAYER_HEIGHT = 1.7;
 const PLAYER_RADIUS = 0.35;
-const WALK_SPEED = 6.0; // metres per second
-const SPRINT_MULTIPLIER = 2.5; // running speed = WALK_SPEED × this
+// Kept close to the speeds Pomni's Walk/Run clips are authored at (see
+// WALK_CLIP_SPEED/RUN_CLIP_SPEED) so her feet don't skate or blur.
+const WALK_SPEED = 2.0; // metres per second
+const SPRINT_MULTIPLIER = 2.0; // running speed = WALK_SPEED × this
 const WALL_MARGIN = 0.4; // keep the camera this far from any wall
 const STEP_HEIGHT = 0.4; // ledges up to this tall are stepped onto; taller ones block
 const PROBE_HEIGHT = STEP_HEIGHT + 0.05; // height of the wall-probe ray above the feet
@@ -101,10 +109,19 @@ const player = new THREE.Object3D();
 scene.add(player);
 
 let pomni = null;
-const pomniReady = loadPomni().then(({ pomni: model }) => {
+let pomniMixer = null;
+const pomniActions = {}; // lower-cased clip name -> AnimationAction
+let currentAction = null;
+const pomniReady = loadPomni().then(({ pomni: model, animations }) => {
   pomni = model;
   pomni.position.y = -PLAYER_HEIGHT; // feet on the floor
   player.add(pomni);
+
+  if (animations.length > 0) {
+    pomniMixer = new THREE.AnimationMixer(pomni);
+    for (const clip of animations) pomniActions[clip.name.toLowerCase()] = pomniMixer.clipAction(clip);
+    playAction('idle');
+  }
 });
 
 const overlay = document.getElementById('overlay');
@@ -115,6 +132,7 @@ const dialoguePicker = document.getElementById('dialogue-picker');
 const pauseMenu = document.getElementById('pause-menu');
 const btnResume = document.getElementById('btn-resume');
 const btnHome = document.getElementById('btn-home');
+const btnTitle = document.getElementById('btn-title');
 const crosshair = document.getElementById('crosshair');
 const hint = document.getElementById('hint');
 const interactPrompt = document.getElementById('prompt');
@@ -165,8 +183,106 @@ btnHome.addEventListener('click', (event) => {
   returnToHome();
 });
 
+btnTitle.addEventListener('click', (event) => {
+  event.stopPropagation();
+  returnToHome();
+});
+
+// --- Title screen ---
+const titleOptions = document.getElementById('title-options');
+const titleQuit = document.getElementById('title-quit');
+const sensitivityInput = document.getElementById('sensitivity');
+const sensitivityValue = document.getElementById('sensitivity-value');
+const SENSITIVITY_KEY = 'tadc.mouseSensitivity';
+
+const titleScreen = createTitleScreen({
+  renderer,
+  // Keys shouldn't drive the menu hidden behind an open panel.
+  isBlocked: () => !titleOptions.hidden || !titleQuit.hidden || !creditsPanel.classList.contains('hidden'),
+  onAction: (action) => {
+    if (action === 'play') {
+      titleScreen.hide();
+      showRoomPicker();
+    } else if (action === 'options') {
+      titleOptions.hidden = false;
+    } else if (action === 'quit') {
+      // Browsers only let a page close a tab that a script opened, so this
+      // usually does nothing — the panel below is the real "quit" screen.
+      window.close();
+      titleQuit.hidden = false;
+    }
+  },
+});
+titleScreen.resize(window.innerWidth, window.innerHeight);
+
+// Multiplies MOUSE_SENSITIVITY in the mouse-look handler.
+let mouseSensitivityScale = 1;
+
+function setSensitivity(value) {
+  mouseSensitivityScale = value;
+  sensitivityInput.value = value;
+  sensitivityValue.textContent = `${value.toFixed(1)}×`;
+}
+try {
+  setSensitivity(Number(localStorage.getItem(SENSITIVITY_KEY)) || 1);
+} catch {
+  setSensitivity(1);
+}
+sensitivityInput.addEventListener('input', () => {
+  setSensitivity(Number(sensitivityInput.value));
+  try {
+    localStorage.setItem(SENSITIVITY_KEY, sensitivityInput.value);
+  } catch {
+    // Storage blocked (private window etc.) — the setting just won't persist.
+  }
+});
+document.getElementById('btn-replay-intro').addEventListener('click', () => {
+  titleOptions.hidden = true;
+  titleScreen.show({ playIntro: true });
+});
+document.getElementById('btn-options-credits').addEventListener('click', () => {
+  creditsPanel.classList.remove('hidden');
+});
+document.getElementById('btn-options-back').addEventListener('click', () => {
+  titleOptions.hidden = true;
+});
+document.getElementById('btn-quit-back').addEventListener('click', () => {
+  titleQuit.hidden = true;
+});
+
+// Start on the title screen; fall back to the room picker if it can't load.
+overlay.classList.add('loading');
+overlayTitle.textContent = 'Loading…';
+overlaySubtitle.textContent = '';
+roomPicker.hidden = true;
+dialoguePicker.hidden = true;
+btnTitle.hidden = true;
+titleScreen.ready
+  .then(() => {
+    overlay.classList.add('hidden');
+    overlay.classList.remove('loading');
+    titleScreen.show({ playIntro: true });
+  })
+  .catch((err) => {
+    console.error('Failed to load title screen', err);
+    showRoomPicker();
+  });
+
+/** The room/dialogue picker the PLAY button leads to. */
+function showRoomPicker() {
+  overlay.classList.remove('hidden');
+  overlay.classList.remove('loading');
+  overlayTitle.textContent = 'Choose a room';
+  overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
+  roomPicker.hidden = false;
+  dialoguePicker.hidden = false;
+  btnTitle.hidden = false;
+  pauseMenu.hidden = true;
+  crosshair.hidden = true;
+}
+
 /**
- * Tears down the current room and returns to the home (room-picker) screen.
+ * Tears down the current room and returns to the title screen.
  */
 function returnToHome() {
   if (isLocked) document.exitPointerLock();
@@ -200,15 +316,10 @@ function returnToHome() {
   caught = false;
   scene.environment = null;
 
-  // Show home screen
-  overlay.classList.remove('hidden');
-  overlay.classList.remove('loading');
-  overlayTitle.textContent = 'Choose a room';
-  overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
-  roomPicker.hidden = false;
-  dialoguePicker.hidden = false;
+  overlay.classList.add('hidden');
   pauseMenu.hidden = true;
   crosshair.hidden = true;
+  titleScreen.show({ playIntro: false });
 }
 
 /**
@@ -256,12 +367,28 @@ function playDialoguePreview(key) {
  * the mousemove listener instead of actually releasing the pointer, so
  * control comes back the instant the conversation ends or is cancelled
  * with no extra state to restore.
+ *
+ * With `lookAt` (the NPC's position), Pomni turns to face whoever she's
+ * talking to, with the camera swung round behind her. The callbacks pass
+ * straight through to DialogueUI: onComplete for a finished conversation,
+ * onCancel for one abandoned with Escape, onChoice for each option picked.
+ *
+ * @param {string} key a DIALOGUE_SCRIPTS key
+ * @param {{ lookAt?: THREE.Vector3, onChoice?: (option, nextNode) => void,
+ *   onComplete?: () => void, onCancel?: () => void }} [options]
  */
-function playRoomDialogue(key) {
+function playRoomDialogue(key, { lookAt, onChoice, onComplete, onCancel } = {}) {
   const entry = DIALOGUE_SCRIPTS[key];
   if (!entry || dialogueUI.isActive) return;
   resetMoveState();
-  dialogueUI.play(entry.script, {});
+  if (lookAt) {
+    const dx = lookAt.x - player.position.x;
+    const dz = lookAt.z - player.position.z;
+    pomni.rotation.y = Math.atan2(dx, dz); // her model faces +Z
+    cameraYaw = Math.atan2(-dx, -dz);       // camera behind her, looking the same way
+    cameraPitch = DEFAULT_PITCH;
+  }
+  dialogueUI.play(entry.script, { onChoice, onComplete, onCancel });
 }
 
 function selectRoom(roomKey, { onReady, from } = {}) {
@@ -296,6 +423,7 @@ function selectRoom(roomKey, { onReady, from } = {}) {
   caught = false;
   roomPicker.hidden = true;
   dialoguePicker.hidden = true;
+  btnTitle.hidden = true;
   pauseMenu.hidden = true;
   overlay.classList.add('loading');
   // Otherwise she stands alone in the void behind the loading screen.
@@ -327,6 +455,7 @@ function selectRoom(roomKey, { onReady, from } = {}) {
       overlaySubtitle.textContent = 'Check the browser console for details.';
       roomPicker.hidden = false;
       dialoguePicker.hidden = false;
+      btnTitle.hidden = false;
       overlay.classList.remove('loading');
     });
 }
@@ -436,7 +565,7 @@ const move = { forward: false, back: false, left: false, right: false, sprint: f
 window.addEventListener('keydown', (e) => {
   setMove(e.code, true);
   if (e.code === 'KeyE' && !e.repeat && isLocked && focusedInteractable) {
-    focusedInteractable.interact();
+    focusedInteractable.interact(interactionContext);
   }
 });
 window.addEventListener('keyup', (e) => setMove(e.code, false));
@@ -529,8 +658,16 @@ const cameraHitPoint = new THREE.Vector3();
 const cameraRaycaster = new THREE.Raycaster();
 let currentCameraDistance = CAMERA_DISTANCE;
 
-// Pomni turning and her fake walk cycle (see updatePomniWalk).
+// Pomni turning and her walk animation (see updatePomniWalk).
 const TURN_SHARPNESS = 14;     // higher = snappier turning
+// Ground speed each clip's feet move at, measured at POMNI_HEIGHT; the clip
+// is sped up/slowed down by actual speed ÷ this so her feet stay planted.
+const WALK_CLIP_SPEED = 1.1;
+const RUN_CLIP_SPEED = 2.85;
+const RUN_THRESHOLD = WALK_SPEED * 1.4; // above this she's sprinting
+const ACTION_FADE = 0.2;       // seconds to cross-fade between clips
+let animSpeed = 0;             // smoothed ground speed, so clips don't flicker
+// Fallback hop-and-waddle for a model without clips (e.g. the placeholder).
 const STEPS_PER_METRE = 1.4;
 const WALK_BOB_HEIGHT = 0.06;  // metres of hop per step
 const WALK_SWAY = 0.08;        // radians of side-to-side waddle
@@ -566,6 +703,7 @@ document.addEventListener('pointerlockchange', () => {
   overlaySubtitle.textContent = 'Press Esc or click Resume to continue';
   roomPicker.hidden = true;
   dialoguePicker.hidden = true;
+  btnTitle.hidden = true;
   pauseMenu.hidden = false;
 });
 document.addEventListener('mousemove', (e) => {
@@ -573,9 +711,10 @@ document.addEventListener('mousemove', (e) => {
   // movement below — looking around while portraits/text are up is just
   // disorienting, and nothing stops the mouse once the pointer is locked.
   if (!isLocked || dialogueUI.isActive) return;
-  cameraYaw -= e.movementX * MOUSE_SENSITIVITY;
+  const sensitivity = MOUSE_SENSITIVITY * mouseSensitivityScale;
+  cameraYaw -= e.movementX * sensitivity;
   cameraPitch = THREE.MathUtils.clamp(
-    cameraPitch + e.movementY * MOUSE_SENSITIVITY, PITCH_MIN, PITCH_MAX,
+    cameraPitch + e.movementY * sensitivity, PITCH_MIN, PITCH_MAX,
   );
 });
 
@@ -598,8 +737,21 @@ let hazards = [];
 let roomUpdate = null;
 // Moving collision meshes (e.g. swinging doors): their boxes are refreshed every frame.
 let dynamicCollisionMeshes = [];
-// Things the player can use with E: { objects: Mesh[], prompt(): string, interact() }.
+// Things the player can use with E: { objects: Mesh[], prompt(): string,
+// interact(context), anchor?: Object3D, radius?: number }. Aiming at
+// `objects` focuses one; anchored ones (NPCs) also focus when Pomni stands
+// within `radius` of the anchor (see nearestInRange). interact() gets
+// interactionContext, e.g. so an NPC can turn toward Pomni as she talks.
 let interactables = [];
+const interactionContext = { playerPosition: player.position };
+const NPC_TALK_RADIUS = 2.5;  // metres from an NPC's feet that "close enough to talk" means
+const STOREY_TOLERANCE = 1.5; // ignore NPCs on a different floor level
+const anchorPosition = new THREE.Vector3();
+const sightOrigin = new THREE.Vector3();
+const sightTarget = new THREE.Vector3();
+const sightDirection = new THREE.Vector3();
+const sightRaycaster = new THREE.Raycaster();
+const sightCandidates = [];
 // Archways that lead to another room: { box, to } (see rooms/portals.js).
 let portals = [];
 let focusedInteractable = null;
@@ -886,6 +1038,7 @@ function endLevel(title, subtitle) {
   overlaySubtitle.textContent = subtitle;
   roomPicker.hidden = false;
   dialoguePicker.hidden = false;
+  btnTitle.hidden = false;
   pauseMenu.hidden = true;
 }
 
@@ -1032,16 +1185,41 @@ function dampAngle(current, target, sharpness, dt) {
 }
 
 /**
- * Pomni's model has no skeleton or animation clips, so walking is faked:
- * a small hop per step plus a side-to-side waddle, faded in and out with
- * her real speed. Swap this for an AnimationMixer if a rigged model lands.
+ * Plays Idle/Walk/Run from her real ground speed, scaling the clip's
+ * playback so her feet match how fast she's actually moving. Without
+ * clips (the placeholder), walking is faked: a small hop per step plus a
+ * side-to-side waddle, faded in and out with her speed.
  */
 function updatePomniWalk(dt, speed) {
+  if (pomniMixer) {
+    animSpeed = THREE.MathUtils.damp(animSpeed, speed, 12, dt);
+    if (animSpeed < 0.2) {
+      playAction('idle');
+    } else if (animSpeed > RUN_THRESHOLD && pomniActions.run) {
+      playAction('run');
+      pomniActions.run.timeScale = animSpeed / RUN_CLIP_SPEED;
+    } else {
+      playAction('walk');
+      pomniActions.walk.timeScale = animSpeed / WALK_CLIP_SPEED;
+    }
+    pomniMixer.update(dt);
+    return;
+  }
+
   walkAmount = THREE.MathUtils.damp(walkAmount, speed > 0.1 ? 1 : 0, 10, dt);
   walkPhase += speed * dt * STEPS_PER_METRE * Math.PI;
 
   pomni.position.y = -PLAYER_HEIGHT + Math.abs(Math.sin(walkPhase)) * WALK_BOB_HEIGHT * walkAmount;
   pomni.rotation.z = Math.sin(walkPhase) * WALK_SWAY * walkAmount;
+}
+
+/** Cross-fades from whatever Pomni is playing to the named clip. */
+function playAction(name) {
+  const next = pomniActions[name];
+  if (!next || next === currentAction) return;
+  next.reset().fadeIn(ACTION_FADE).play();
+  currentAction?.fadeOut(ACTION_FADE);
+  currentAction = next;
 }
 
 // --- Third-person follow camera ---
@@ -1102,6 +1280,10 @@ function refreshDynamicColliders() {
  * Finds the interactable under the crosshair, if it's within reach, and
  * shows its prompt. Only interactables are tested, so a door behind a
  * thin prop still counts — fine at this short range.
+ *
+ * Interactables with an `anchor` (NPCs) are also usable just by standing
+ * near them: talking to someone shouldn't need pixel-aiming at them. The
+ * crosshair still wins, so pointing at a door beside an NPC uses the door.
  */
 function updateInteractionFocus() {
   let focused = null;
@@ -1113,6 +1295,7 @@ function updateInteractionFocus() {
     if (hit && hit.point.distanceTo(player.position) <= INTERACT_DISTANCE) {
       focused = interactables.find((i) => i.objects.includes(hit.object));
     }
+    focused ??= nearestInRange();
   }
 
   focusedInteractable = focused;
@@ -1120,11 +1303,60 @@ function updateInteractionFocus() {
   if (focused) interactPrompt.textContent = `E — ${focused.prompt()}`;
 }
 
+/**
+ * The closest anchored interactable within its `radius` of Pomni (on the
+ * floor plane, and roughly the same storey) that she can actually see —
+ * so an NPC on the far side of a wall never offers to talk.
+ */
+function nearestInRange() {
+  let nearest = null;
+  let nearestDistance = Infinity;
+  for (const interactable of interactables) {
+    if (!interactable.anchor) continue;
+    interactable.anchor.getWorldPosition(anchorPosition);
+    const feetY = player.position.y - PLAYER_HEIGHT;
+    if (Math.abs(anchorPosition.y - feetY) > STOREY_TOLERANCE) continue;
+    const distance = Math.hypot(anchorPosition.x - player.position.x, anchorPosition.z - player.position.z);
+    const radius = interactable.radius ?? NPC_TALK_RADIUS;
+    if (distance > radius || distance >= nearestDistance) continue;
+    if (!hasLineOfSight(interactable)) continue;
+    nearest = interactable;
+    nearestDistance = distance;
+  }
+  return nearest;
+}
+
+/** Chest-height ray from Pomni to anchorPosition, ignoring the target's own meshes. */
+function hasLineOfSight(interactable) {
+  sightOrigin.set(player.position.x, player.position.y - 0.5, player.position.z);
+  sightTarget.set(anchorPosition.x, anchorPosition.y + PLAYER_HEIGHT - 0.5, anchorPosition.z);
+  sightDirection.subVectors(sightTarget, sightOrigin);
+  const distance = sightDirection.length();
+  if (distance < 1e-6) return true;
+  sightDirection.divideScalar(distance);
+  sightRaycaster.set(sightOrigin, sightDirection);
+  sightRaycaster.far = distance;
+
+  sightCandidates.length = 0;
+  for (const entry of collisionMeshes) {
+    if (interactable.objects.includes(entry.mesh)) continue;
+    if (sightRaycaster.ray.intersectsBox(entry.box)) sightCandidates.push(entry.mesh);
+  }
+  if (sightRaycaster.intersectObjects(sightCandidates, false).length > 0) return false;
+  for (const box of colliders) {
+    if (sightRaycaster.ray.intersectBox(box, cameraHitPoint) && cameraHitPoint.distanceTo(sightOrigin) < distance) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // --- Resize ---
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  titleScreen.resize(window.innerWidth, window.innerHeight);
 });
 
 // --- Main loop ---
@@ -1148,7 +1380,12 @@ function animate() {
     updateCamera(delta);
   }
   updateInteractionFocus();
-  renderer.render(scene, camera);
+  if (titleScreen.active) {
+    titleScreen.update(delta);
+    titleScreen.render();
+  } else {
+    renderer.render(scene, camera);
+  }
   requestAnimationFrame(animate);
 }
 
