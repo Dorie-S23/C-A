@@ -10,6 +10,8 @@ const STRAY_MATERIAL = 'mat21';
 
 /**
  * Loads Pomni with her origin on the floor between her feet, facing +Z.
+ * The model carries Idle, Walk and Run clips (Mixamo, in place) for an
+ * AnimationMixer rooted at the returned group.
  * Falls back to a capsule placeholder if the model isn't there yet.
  * @returns {Promise<{ pomni: THREE.Group, animations: THREE.AnimationClip[] }>}
  */
@@ -29,8 +31,12 @@ function normalize(model) {
     if (child.material.name === STRAY_MATERIAL) strays.push(child);
     child.castShadow = true;
     child.receiveShadow = true;
+    // Skinned bounds are computed once in the bind pose, so an animated
+    // limb can leave them and get her culled at the screen edge.
+    if (child.isSkinnedMesh) child.frustumCulled = false;
   });
   for (const stray of strays) stray.removeFromParent();
+  updateSkeletons(model);
 
   const box = new THREE.Box3().setFromObject(model);
   const size = box.getSize(new THREE.Vector3());
@@ -43,6 +49,17 @@ function normalize(model) {
   pomni.name = 'Pomni';
   pomni.add(model);
   return pomni;
+}
+
+/**
+ * Skinned meshes only fill their bone matrices on the first render, but
+ * the bounding box above reads them before that — so refresh them by hand.
+ */
+function updateSkeletons(root) {
+  root.updateMatrixWorld(true);
+  root.traverse((child) => {
+    if (child.isSkinnedMesh) child.skeleton.update();
+  });
 }
 
 /** A capsule with a nose so you can see which way she faces. */
