@@ -13,10 +13,13 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
  *
  * @param {string} url
  * @param {(ratio: number) => void} [onProgress] called with a 0-1 load ratio
+ * @param {{ spawnAt?: { x: number, z: number } }} [options] spawnAt: where to
+ *   start the player instead of the guessed point, for maps whose vertex
+ *   centroid lands outside the walkable area; the floor height is still raycast
  * @returns {Promise<{ group: THREE.Group, bounds: THREE.Box3, spawn: THREE.Vector3,
  *   collisionMeshes: Array<{ mesh: THREE.Mesh, box: THREE.Box3 }> }>}
  */
-export function loadRoomModel(url, onProgress) {
+export function loadRoomModel(url, onProgress, { spawnAt } = {}) {
   const loader = new GLTFLoader();
 
   return new Promise((resolve, reject) => {
@@ -34,7 +37,7 @@ export function loadRoomModel(url, onProgress) {
         });
 
         const bounds = new THREE.Box3().setFromObject(group);
-        const spawn = findSpawnPoint(group, bounds);
+        const spawn = spawnAt ? spawnPointAt(group, bounds, spawnAt.x, spawnAt.z) : findSpawnPoint(group, bounds);
         const collisionMeshes = collectCollisionMeshes(group, bounds, spawn);
 
         group.add(createRoomLighting(group, bounds, spawn));
@@ -76,6 +79,11 @@ function findSpawnPoint(group, bounds) {
 
   const floorY = raycastFloorY(group, bounds, centroid.x, centroid.z) ?? bounds.min.y;
   return new THREE.Vector3(centroid.x, floorY, centroid.z);
+}
+
+function spawnPointAt(group, bounds, x, z) {
+  const floorY = raycastFloorY(group, bounds, x, z) ?? bounds.min.y;
+  return new THREE.Vector3(x, floorY, z);
 }
 
 function raycastFloorY(group, bounds, x, z) {
