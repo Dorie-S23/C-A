@@ -8,9 +8,10 @@ const KAUFMO_WALL_GAP = 0.6;
 /**
  * Loads Kaufmo's Room, exported from "Kaufmos Room V4.blend" via
  * tools/blender/export_kaufmos_room.py, plus Kaufmo himself standing in it.
- * No dialogue trigger yet — he's just present and collidable.
+ * Walking up and pressing E plays the Level 2 opening script, via the
+ * `playDialogue` hook main.js passes every room loader (see selectRoom()).
  */
-export function loadKaufmoRoom(onProgress) {
+export function loadKaufmoRoom(onProgress, { playDialogue } = {}) {
   return Promise.all([
     loadRoomModel('./models/character%20rooms/kaufmos-room.glb', onProgress),
     loadKaufmo(),
@@ -20,6 +21,19 @@ export function loadKaufmoRoom(onProgress) {
     room.group.add(kaufmo);
     kaufmo.updateMatrixWorld(true);
     room.collisionMeshes.push({ mesh: collider, box: new THREE.Box3().setFromObject(collider) });
+
+    if (playDialogue) {
+      const objects = [];
+      kaufmo.traverse((child) => {
+        if (child.isMesh && child !== collider) objects.push(child);
+      });
+      room.interactables = [{
+        objects,
+        prompt: () => 'Talk to Kaufmo',
+        interact: () => playDialogue('level2Opening'),
+      }];
+    }
+
     return room;
   });
 }

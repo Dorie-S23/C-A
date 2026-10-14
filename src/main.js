@@ -248,6 +248,22 @@ function playDialoguePreview(key) {
   });
 }
 
+/**
+ * Plays a dialogue script as an in-world NPC conversation, triggered by a
+ * room's own interactable (see kaufmoRoom.js). Unlike playDialoguePreview,
+ * the pointer stays locked the whole time — movement and look are frozen
+ * by the dialogueUI.isActive checks in animate()/updateInteractionFocus()/
+ * the mousemove listener instead of actually releasing the pointer, so
+ * control comes back the instant the conversation ends or is cancelled
+ * with no extra state to restore.
+ */
+function playRoomDialogue(key) {
+  const entry = DIALOGUE_SCRIPTS[key];
+  if (!entry || dialogueUI.isActive) return;
+  resetMoveState();
+  dialogueUI.play(entry.script, {});
+}
+
 function selectRoom(roomKey, { onReady, from } = {}) {
   const loadRoom = ROOM_LOADERS[roomKey];
   if (!loadRoom) return;
@@ -291,7 +307,7 @@ function selectRoom(roomKey, { onReady, from } = {}) {
     loadRoom((ratio) => {
       if (myToken !== loadToken) return; // a newer selectRoom()/returnToHome() superseded this one
       overlaySubtitle.textContent = `Fetching room model (${Math.round(ratio * 100)}%)`;
-    }, { from }),
+    }, { from, playDialogue: playRoomDialogue }),
     pomniReady,
   ])
     .then(([result]) => {
@@ -553,7 +569,10 @@ document.addEventListener('pointerlockchange', () => {
   pauseMenu.hidden = false;
 });
 document.addEventListener('mousemove', (e) => {
-  if (!isLocked) return;
+  // Frozen during an in-room conversation (e.g. talking to Kaufmo), same as
+  // movement below — looking around while portraits/text are up is just
+  // disorienting, and nothing stops the mouse once the pointer is locked.
+  if (!isLocked || dialogueUI.isActive) return;
   cameraYaw -= e.movementX * MOUSE_SENSITIVITY;
   cameraPitch = THREE.MathUtils.clamp(
     cameraPitch + e.movementY * MOUSE_SENSITIVITY, PITCH_MIN, PITCH_MAX,
@@ -1086,7 +1105,7 @@ function refreshDynamicColliders() {
  */
 function updateInteractionFocus() {
   let focused = null;
-  if (isLocked && interactables.length > 0) {
+  if (isLocked && !dialogueUI.isActive && interactables.length > 0) {
     // The crosshair ray starts behind Pomni, so reach is measured from her.
     interactRaycaster.setFromCamera(SCREEN_CENTER, camera);
     interactRaycaster.far = INTERACT_DISTANCE + currentCameraDistance;
@@ -1123,9 +1142,9 @@ function animate() {
     refreshDynamicColliders();
   }
   if (pomni) {
-    // No walking while the next room loads.
-    if (isLocked && readyToPlay) updateMovement(delta);
-    else updatePomniWalk(delta, 0); // settle the waddle while paused
+    // No walking while the next room loads, or mid-conversation.
+    if (isLocked && readyToPlay && !dialogueUI.isActive) updateMovement(delta);
+    else updatePomniWalk(delta, 0); // settle the waddle while paused/talking
     updateCamera(delta);
   }
   updateInteractionFocus();
