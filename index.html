@@ -351,6 +351,14 @@
             .dialogue-option:hover {
                 background: rgba(255, 255, 255, 0.18);
             }
+            .dialogue-option-highlighted {
+                background: rgba(255, 255, 255, 0.18);
+                border-color: #ffd27a;
+            }
+            .dialogue-option:focus-visible {
+                outline: 2px solid #ffd27a;
+                outline-offset: 2px;
+            }
         </style>
     </head>
     <body>
@@ -365,6 +373,7 @@
                 <button data-room="tadc">Circus Lobby</button>
                 <button data-room="dorm">Dorm Hall</button>
                 <button data-room="maze">Maze (Level 3)</button>
+                <button data-room="kaufmo">Kaufmo's Room</button>
             </div>
             <div id="dialogue-picker">
                 <button data-dialogue="preLevel1">
@@ -372,6 +381,9 @@
                 </button>
                 <button data-dialogue="level1Open">
                     &#9654; Level 1: Caine's Warning
+                </button>
+                <button data-dialogue="level2Opening">
+                    &#9654; Level 2: Missing Pieces
                 </button>
             </div>
             <div id="pause-menu" hidden>
