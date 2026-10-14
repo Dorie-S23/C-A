@@ -7,7 +7,7 @@ import { loadMazeRoom } from './rooms/mazeRoom.js';
 import { loadKaufmoRoom } from './rooms/kaufmoRoom.js';
 import { loadPomni } from './characters/pomni.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
-import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue } from './data/dialogues.js';
+import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue } from './data/dialogues.js';
 
 // Collision fires dozens of short rays a frame (wall probe, floor probes,
 // body-overlap rings). Plain three.js tests a ray against every triangle of
@@ -19,9 +19,11 @@ THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
+// Each preview plays over whichever room backdrop its own scene is set in.
 const DIALOGUE_SCRIPTS = {
-  preLevel1: preLevel1Dialogue,
-  level1Open: level1OpenDialogue,
+  preLevel1: { script: preLevel1Dialogue, room: 'pomni' },
+  level1Open: { script: level1OpenDialogue, room: 'pomni' },
+  level2Opening: { script: level2OpeningDialogue, room: 'kaufmo' },
 };
 
 const ROOM_LOADERS = {
@@ -212,16 +214,17 @@ function returnToHome() {
  * behaviour the plan calls for NPC interaction, achieved without a
  * separate guard.
  *
- * Uses Pomni's Room rather than the circus map both scripts are actually
- * set in: the circus map currently takes 60+ seconds to become responsive
- * (tracked separately, unrelated to dialogue), which made every preview
- * click look hung. Swap back once that's fixed.
+ * The Pre-Level-1/Level-1 scripts preview over Pomni's Room rather than the
+ * circus map they're actually set in: the circus map currently takes 60+
+ * seconds to become responsive (tracked separately, unrelated to dialogue),
+ * which made every preview click look hung. Swap back once that's fixed.
  */
 function playDialoguePreview(key) {
-  const script = DIALOGUE_SCRIPTS[key];
-  if (!script) return;
+  const entry = DIALOGUE_SCRIPTS[key];
+  if (!entry) return;
+  const { script, room } = entry;
 
-  selectRoom('pomni', {
+  selectRoom(room, {
     onReady: () => {
       overlay.classList.add('hidden');
       readyToPlay = false;
