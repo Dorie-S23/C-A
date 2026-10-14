@@ -10,6 +10,7 @@ export const SPEAKERS = {
   ragatha: { name: 'Ragatha', initials: 'R', color: '#8a6fb0' },
   caine: { name: 'Caine', initials: 'C', color: '#b0163f' },
   kaufmo: { name: 'Kaufmo', initials: 'K', color: '#e0a868' },
+  ribbit: { name: 'Ribbit', initials: 'R', color: '#5d9b3c' },
 };
 
 // --- Pre-Level 1: "Business as Usual" ---------------------------------
@@ -562,6 +563,65 @@ export const level2OpeningDialogue = [
     side: 'right',
     mood: 'happy',
     text: '…No promises.',
+    next: null,
+  },
+];
+
+// --- Level 1: talking to Ribbit (placeholder) ---------------------------
+// Played when Pomni walks up to Ribbit in her room and presses E. A short
+// stand-in so the proximity trigger and the in-game conversation flow can
+// be played end to end; the real graded Level 1 script (good choices earn
+// Escape points via `points`, bad ones earn none but still advance and
+// change her reply) replaces it. Branches rejoin at 'ribbit-after'.
+export const ribbitTalkDialogue = [
+  {
+    type: 'beat',
+    text: "Ribbit is standing by her bed, staring at nothing. She doesn't look up.",
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'worried',
+    text: 'Hey, Ribbit. Caine said I should... check on you.',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    direction: 'flat',
+    text: "Of course he did. Tell him I'm fine. Everyone's fine. It's a circus.",
+  },
+  {
+    type: 'choice',
+    speaker: 'pomni',
+    text: 'What do you say?',
+    options: [
+      { text: "You don't have to be fine. I can just stay a minute.", next: 'ribbit-gentle', points: 1 },
+      { text: "Is this about Jax? Just ignore him, he's like that with everyone.", next: 'ribbit-pushy', points: 0 },
+    ],
+  },
+  {
+    type: 'line',
+    id: 'ribbit-gentle',
+    speaker: 'ribbit',
+    side: 'right',
+    direction: 'quietly, finally looking at her',
+    text: '...Okay. A minute.',
+    next: 'ribbit-after',
+  },
+  {
+    type: 'line',
+    id: 'ribbit-pushy',
+    speaker: 'ribbit',
+    side: 'right',
+    direction: 'turning away again',
+    text: "He's not like that with everyone. That's the point.",
+  },
+  {
+    type: 'beat',
+    id: 'ribbit-after',
+    text: '(Placeholder — the full Level 1 conversation continues here.)',
     next: null,
   },
 ];
