@@ -1,10 +1,11 @@
 import * as THREE from 'three';
-import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 import { loadPomniRoom } from './rooms/pomniRoom.js';
+import { loadDormHallRoom } from './rooms/dormHallRoom.js';
 import { loadTadcRoom } from './rooms/tadcRoom.js';
 import { loadMazeRoom } from './rooms/mazeRoom.js';
+import { loadPomni } from './characters/pomni.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
 import { createTitleScreen } from './ui/titleScreen.js';
 import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue } from './data/dialogues.js';
@@ -27,6 +28,7 @@ const DIALOGUE_SCRIPTS = {
 const ROOM_LOADERS = {
   pomni: loadPomniRoom,
   tadc: loadTadcRoom,
+  dorm: loadDormHallRoom,
   maze: loadMazeRoom,
 };
 
@@ -84,9 +86,18 @@ scene.add(ambient);
 const environmentMap = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = 0.6;
 
-// --- Pointer-lock first-person controls ---
-const controls = new PointerLockControls(camera, renderer.domElement);
-scene.add(controls.object);
+// --- Player (Pomni) ---
+// Stands in for the old first-person camera: position.y = feet + PLAYER_HEIGHT,
+// so all the collision code below works unchanged.
+const player = new THREE.Object3D();
+scene.add(player);
+
+let pomni = null;
+const pomniReady = loadPomni().then(({ pomni: model }) => {
+  pomni = model;
+  pomni.position.y = -PLAYER_HEIGHT; // feet on the floor
+  player.add(pomni);
+});
 
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
@@ -104,6 +115,7 @@ const interactPrompt = document.getElementById('prompt');
 const dialogueUI = createDialogueUI({ speakers: SPEAKERS });
 
 let currentRoom = null;
+let currentRoomKey = null;
 let readyToPlay = false;
 let hintTimeout = null;
 
@@ -113,31 +125,6 @@ function showHint(text, durationMs = 3000) {
   clearTimeout(hintTimeout);
   hintTimeout = setTimeout(() => hint.classList.remove('visible'), durationMs);
 }
-
-overlay.addEventListener('click', (e) => {
-  // Only resume when clicking the overlay background itself (not a button inside it)
-  if (e.target !== overlay && e.target !== overlayTitle && e.target !== overlaySubtitle) return;
-  if (!readyToPlay) return;
-  if (!currentRoom) return; // on home screen, must pick a room first
-  controls.lock();
-});
-controls.addEventListener('lock', () => {
-  overlay.classList.add('hidden');
-  pauseMenu.hidden = true;
-  crosshair.hidden = false;
-});
-controls.addEventListener('unlock', () => {
-  crosshair.hidden = true;
-  if (!currentRoom || !readyToPlay) return; // home screen or loading — handled elsewhere
-  // Show pause menu
-  overlay.classList.remove('hidden');
-  overlayTitle.textContent = 'Paused';
-  overlaySubtitle.textContent = 'Press Esc or click Resume to continue';
-  roomPicker.hidden = true;
-  dialoguePicker.hidden = true;
-  btnTitle.hidden = true;
-  pauseMenu.hidden = false;
-});
 
 roomPicker.querySelectorAll('button').forEach((button) => {
   button.addEventListener('click', (event) => {
@@ -155,7 +142,7 @@ dialoguePicker.querySelectorAll('button').forEach((button) => {
 
 btnResume.addEventListener('click', (event) => {
   event.stopPropagation();
-  if (readyToPlay && currentRoom) controls.lock();
+  if (readyToPlay && currentRoom) renderer.domElement.requestPointerLock();
 });
 
 btnHome.addEventListener('click', (event) => {
@@ -195,8 +182,11 @@ const titleScreen = createTitleScreen({
 });
 titleScreen.resize(window.innerWidth, window.innerHeight);
 
+// Multiplies MOUSE_SENSITIVITY in the mouse-look handler.
+let mouseSensitivityScale = 1;
+
 function setSensitivity(value) {
-  controls.pointerSpeed = value;
+  mouseSensitivityScale = value;
   sensitivityInput.value = value;
   sensitivityValue.textContent = `${value.toFixed(1)}×`;
 }
@@ -262,7 +252,7 @@ function showRoomPicker() {
  * Tears down the current room and returns to the title screen.
  */
 function returnToHome() {
-  if (controls.isLocked) controls.unlock();
+  if (isLocked) document.exitPointerLock();
 
   if (currentRoom) {
     scene.remove(currentRoom);
@@ -281,6 +271,7 @@ function returnToHome() {
   hazards = [];
   roomUpdate = null;
   interactables = [];
+  portals = [];
   focusedInteractable = null;
   interactPrompt.hidden = true;
   foundJax = false;
@@ -326,7 +317,7 @@ function playDialoguePreview(key) {
   });
 }
 
-function selectRoom(roomKey, { onReady } = {}) {
+function selectRoom(roomKey, { onReady, from } = {}) {
   const loadRoom = ROOM_LOADERS[roomKey];
   if (!loadRoom) return;
 
@@ -345,6 +336,7 @@ function selectRoom(roomKey, { onReady } = {}) {
   hazards = [];
   roomUpdate = null;
   interactables = [];
+  portals = [];
   focusedInteractable = null;
   interactPrompt.hidden = true;
   foundJax = false;
@@ -355,13 +347,18 @@ function selectRoom(roomKey, { onReady } = {}) {
   btnTitle.hidden = true;
   pauseMenu.hidden = true;
   overlay.classList.add('loading');
+  // Otherwise she stands alone in the void behind the loading screen.
+  player.visible = false;
   overlayTitle.textContent = 'Loading…';
   overlaySubtitle.textContent = 'Fetching room model (0%)';
 
-  loadRoom((ratio) => {
-    overlaySubtitle.textContent = `Fetching room model (${Math.round(ratio * 100)}%)`;
-  })
-    .then(({
+  Promise.all([
+    loadRoom((ratio) => {
+      overlaySubtitle.textContent = `Fetching room model (${Math.round(ratio * 100)}%)`;
+    }, { from }),
+    pomniReady,
+  ])
+    .then(([{
       group,
       bounds: box,
       spawn,
@@ -373,9 +370,12 @@ function selectRoom(roomKey, { onReady } = {}) {
       hazards: roomHazards,
       update: roomUpdateFn,
       interactables: roomInteractables,
+      portals: roomPortals,
       environment: wantsEnvironment,
-    }) => {
+    }]) => {
       currentRoom = group;
+      currentRoomKey = roomKey;
+      player.visible = true;
       scene.add(group);
 
       floorY = spawn.y;
@@ -405,13 +405,17 @@ function selectRoom(roomKey, { onReady } = {}) {
       hazards = roomHazards ?? [];
       roomUpdate = roomUpdateFn ?? null;
       interactables = roomInteractables ?? [];
+      portals = roomPortals ?? [];
       scene.environment = wantsEnvironment ? environmentMap : null;
 
-      controls.object.position.set(spawn.x, floorY + PLAYER_HEIGHT, spawn.z);
+      player.position.set(spawn.x, floorY + PLAYER_HEIGHT, spawn.z);
       // Rooms can request a starting yaw (the maze points the player down
       // whichever side of the start cell is actually open); anything that
-      // doesn't specify one keeps the previous default of facing -Z.
-      controls.object.rotation.set(0, spawnFacing ?? 0, 0);
+      // doesn't specify one keeps the default of facing -Z.
+      cameraYaw = spawnFacing ?? 0;
+      pomni.rotation.y = cameraYaw + Math.PI; // her model faces +Z
+      cameraPitch = DEFAULT_PITCH;
+      currentCameraDistance = CAMERA_DISTANCE;
 
       // three.js compiles each material's shader the first time it comes
       // into view, which hitches mid-walk; compile them all up front instead,
@@ -441,6 +445,7 @@ function selectRoom(roomKey, { onReady } = {}) {
 function disposeObject3D(root) {
   root.traverse((child) => {
     if (!child.isMesh) return;
+    child.dispose?.(); // e.g. a mirror's Reflector frees its render target
     child.geometry?.disposeBoundsTree();
     child.geometry?.dispose();
     const materials = Array.isArray(child.material) ? child.material : [child.material];
@@ -467,7 +472,7 @@ const move = { forward: false, back: false, left: false, right: false, sprint: f
 
 window.addEventListener('keydown', (e) => {
   setMove(e.code, true);
-  if (e.code === 'KeyE' && !e.repeat && controls.isLocked && focusedInteractable) {
+  if (e.code === 'KeyE' && !e.repeat && isLocked && focusedInteractable) {
     focusedInteractable.interact();
   }
 });
@@ -526,6 +531,70 @@ const partDirection = new THREE.Vector3();
 // Populated once a room model has loaded and its real bounding box is known.
 let bounds = null;
 let floorY = 0;
+// --- Pointer lock + third-person mouse look ---
+const MOUSE_SENSITIVITY = 0.0025;
+const PITCH_MIN = -0.4; // radians; below 0 = camera under her head looking up
+const PITCH_MAX = 1.2;  // looking down from above
+const DEFAULT_PITCH = 0.25;
+
+let isLocked = false;
+let cameraYaw = 0; // 0 = looking toward -Z, the spawn facing
+let cameraPitch = DEFAULT_PITCH;
+
+// Third-person follow camera (see updateCamera).
+const CAMERA_DISTANCE = 3.2;        // how far behind Pomni
+const CAMERA_TARGET_DROP = 0.3;     // aim at her shoulders, a bit below PLAYER_HEIGHT
+const CAMERA_COLLISION_PAD = 0.25;  // stay this far in front of any wall
+const CAMERA_RETURN_SHARPNESS = 6;  // how fast it eases back out after a wall
+const MIN_VISIBLE_DISTANCE = 0.7;   // hide Pomni if the camera is inside her
+const cameraTarget = new THREE.Vector3();
+const cameraOffset = new THREE.Vector3();
+const cameraHitPoint = new THREE.Vector3();
+const cameraRaycaster = new THREE.Raycaster();
+let currentCameraDistance = CAMERA_DISTANCE;
+
+// Pomni turning and her fake walk cycle (see updatePomniWalk).
+const TURN_SHARPNESS = 14;     // higher = snappier turning
+const STEPS_PER_METRE = 1.4;
+const WALK_BOB_HEIGHT = 0.06;  // metres of hop per step
+const WALK_SWAY = 0.08;        // radians of side-to-side waddle
+const wishDirection = new THREE.Vector3();
+let walkPhase = 0;
+let walkAmount = 0;
+
+overlay.addEventListener('click', (e) => {
+  // Only resume when clicking the overlay background itself (not a button inside it)
+  if (e.target !== overlay && e.target !== overlayTitle && e.target !== overlaySubtitle) return;
+  if (!readyToPlay) return;
+  if (!currentRoom) return; // on home screen, must pick a room first
+  renderer.domElement.requestPointerLock();
+});
+document.addEventListener('pointerlockchange', () => {
+  isLocked = document.pointerLockElement === renderer.domElement;
+  crosshair.hidden = !isLocked;
+  if (isLocked) {
+    overlay.classList.add('hidden');
+    pauseMenu.hidden = true;
+    return;
+  }
+  if (!currentRoom || !readyToPlay) return; // home screen, loading or endLevel — handled elsewhere
+  // Esc mid-game: show the pause menu
+  overlay.classList.remove('hidden');
+  overlayTitle.textContent = 'Paused';
+  overlaySubtitle.textContent = 'Press Esc or click Resume to continue';
+  roomPicker.hidden = true;
+  dialoguePicker.hidden = true;
+  btnTitle.hidden = true;
+  pauseMenu.hidden = false;
+});
+document.addEventListener('mousemove', (e) => {
+  if (!isLocked) return;
+  const sensitivity = MOUSE_SENSITIVITY * mouseSensitivityScale;
+  cameraYaw -= e.movementX * sensitivity;
+  cameraPitch = THREE.MathUtils.clamp(
+    cameraPitch + e.movementY * sensitivity, PITCH_MIN, PITCH_MAX,
+  );
+});
 
 // Two collision systems, picked by what the loaded room supplies:
 //  - colliders: exact wall Box3s (the maze), resolved circle-vs-box below.
@@ -548,6 +617,8 @@ let roomUpdate = null;
 let dynamicCollisionMeshes = [];
 // Things the player can use with E: { objects: Mesh[], prompt(): string, interact() }.
 let interactables = [];
+// Archways that lead to another room: { box, to } (see rooms/portals.js).
+let portals = [];
 let focusedInteractable = null;
 const interactRaycaster = new THREE.Raycaster();
 const SCREEN_CENTER = new THREE.Vector2(0, 0);
@@ -826,7 +897,7 @@ function bodyClearance(player) {
 
 function endLevel(title, subtitle) {
   readyToPlay = false;
-  controls.unlock();
+  document.exitPointerLock();
   overlay.classList.remove('hidden');
   overlayTitle.textContent = title;
   overlaySubtitle.textContent = subtitle;
@@ -834,6 +905,34 @@ function endLevel(title, subtitle) {
   dialoguePicker.hidden = false;
   btnTitle.hidden = false;
   pauseMenu.hidden = true;
+}
+
+/** Walking into an archway's portal loads the room it leads to. */
+function checkPortals() {
+  if (portals.length === 0) return;
+  // Her actual feet, not floorY: the dorm arch stands on a few steps.
+  triggerProbe.set(player.position.x, player.position.y - PLAYER_HEIGHT + 0.5, player.position.z);
+  const portal = portals.find((p) => p.box.containsPoint(triggerProbe));
+  if (portal) travelTo(portal.to);
+}
+
+/**
+ * Switches rooms mid-game, keeping the mouse captured: the loading screen
+ * shows over the game and play carries straight on once the room is in.
+ */
+function travelTo(roomKey) {
+  overlay.classList.remove('hidden');
+  selectRoom(roomKey, {
+    from: currentRoomKey,
+    onReady: () => {
+      if (isLocked) {
+        overlay.classList.add('hidden');
+      } else {
+        overlayTitle.textContent = 'Click to Play';
+        overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
+      }
+    },
+  });
 }
 
 function checkTriggers(player) {
@@ -874,17 +973,25 @@ function updateMovement(deltaSeconds) {
   if (velocity.lengthSq() > 0) velocity.normalize();
   velocity.multiplyScalar(speed * deltaSeconds);
 
-  const player = controls.object;
+  // Camera-relative basis: W always walks "into the screen".
+  moveForward.set(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw));
+  moveRight.set(Math.cos(cameraYaw), 0, -Math.sin(cameraYaw));
+
+  // Turn Pomni toward the direction she's being steered.
+  wishDirection.set(0, 0, 0)
+    .addScaledVector(moveRight, velocity.x)
+    .addScaledVector(moveForward, -velocity.z);
+  if (wishDirection.lengthSq() > 1e-8) {
+    const targetYaw = Math.atan2(wishDirection.x, wishDirection.z);
+    pomni.rotation.y = dampAngle(pomni.rotation.y, targetYaw, TURN_SHARPNESS, deltaSeconds);
+  }
+
+  const frameStartX = player.position.x;
+  const frameStartZ = player.position.z;
 
   if (collisionMeshes.length > 0) {
-    // GLB rooms: build the frame's displacement in world space exactly the
-    // way controls.moveRight/moveForward would, but pass it through the
-    // wall probes and the floor follow before it is applied.
-    moveRight.setFromMatrixColumn(camera.matrix, 0);
-    moveRight.y = 0;
-    moveRight.normalize();
-    moveForward.crossVectors(camera.up, moveRight).normalize();
-
+    // GLB rooms: pass the frame's displacement through the wall probes and
+    // the floor follow before it is applied.
     moveDelta
       .set(0, 0, 0)
       .addScaledVector(moveRight, velocity.x)
@@ -917,8 +1024,7 @@ function updateMovement(deltaSeconds) {
       }
     }
   } else {
-    controls.moveRight(velocity.x);
-    controls.moveForward(-velocity.z);
+    player.position.addScaledVector(moveRight, velocity.x).addScaledVector(moveForward, -velocity.z);
 
     resolveWallCollisions(player.position);
 
@@ -929,7 +1035,78 @@ function updateMovement(deltaSeconds) {
     }
   }
 
+  // Animate from how far she actually got, so walking into a wall doesn't bob.
+  const moved = Math.hypot(player.position.x - frameStartX, player.position.z - frameStartZ);
+  updatePomniWalk(deltaSeconds, deltaSeconds > 0 ? moved / deltaSeconds : 0);
+
   checkTriggers(player);
+  checkPortals();
+}
+
+/** Frame-rate-independent turn toward `target`, always taking the short way round. */
+function dampAngle(current, target, sharpness, dt) {
+  const diff = THREE.MathUtils.euclideanModulo(target - current + Math.PI, Math.PI * 2) - Math.PI;
+  return current + diff * (1 - Math.exp(-sharpness * dt));
+}
+
+/**
+ * Pomni's model has no skeleton or animation clips, so walking is faked:
+ * a small hop per step plus a side-to-side waddle, faded in and out with
+ * her real speed. Swap this for an AnimationMixer if a rigged model lands.
+ */
+function updatePomniWalk(dt, speed) {
+  walkAmount = THREE.MathUtils.damp(walkAmount, speed > 0.1 ? 1 : 0, 10, dt);
+  walkPhase += speed * dt * STEPS_PER_METRE * Math.PI;
+
+  pomni.position.y = -PLAYER_HEIGHT + Math.abs(Math.sin(walkPhase)) * WALK_BOB_HEIGHT * walkAmount;
+  pomni.rotation.z = Math.sin(walkPhase) * WALK_SWAY * walkAmount;
+}
+
+// --- Third-person follow camera ---
+
+function updateCamera(dt) {
+  cameraTarget.set(player.position.x, player.position.y - CAMERA_TARGET_DROP, player.position.z);
+  cameraOffset.set(
+    Math.sin(cameraYaw) * Math.cos(cameraPitch),
+    Math.sin(cameraPitch),
+    Math.cos(cameraYaw) * Math.cos(cameraPitch),
+  ); // unit vector pointing from Pomni back toward the camera
+
+  // Snap in instantly when a wall gets in the way (so it never clips through),
+  // but ease back out smoothly once it's clear.
+  const allowed = cameraCollisionDistance(cameraTarget, cameraOffset, CAMERA_DISTANCE);
+  currentCameraDistance = allowed < currentCameraDistance
+    ? allowed
+    : THREE.MathUtils.damp(currentCameraDistance, allowed, CAMERA_RETURN_SHARPNESS, dt);
+
+  camera.position.copy(cameraTarget).addScaledVector(cameraOffset, currentCameraDistance);
+  camera.lookAt(cameraTarget);
+
+  pomni.visible = currentCameraDistance > MIN_VISIBLE_DISTANCE;
+}
+
+/** How far the camera can sit along `direction` before hitting the room. */
+function cameraCollisionDistance(origin, direction, maxDistance) {
+  const reach = maxDistance + CAMERA_COLLISION_PAD;
+  cameraRaycaster.set(origin, direction);
+  cameraRaycaster.far = reach;
+  let nearest = reach;
+
+  // GLB rooms: same box broad-phase as firstWallHit, then exact triangles.
+  const candidates = [];
+  for (const entry of collisionMeshes) {
+    if (cameraRaycaster.ray.intersectsBox(entry.box)) candidates.push(entry.mesh);
+  }
+  const hit = cameraRaycaster.intersectObjects(candidates, false)[0];
+  if (hit) nearest = Math.min(nearest, hit.distance);
+
+  // Maze: walls are plain Box3s, not meshes.
+  for (const box of colliders) {
+    if (cameraRaycaster.ray.intersectBox(box, cameraHitPoint)) {
+      nearest = Math.min(nearest, cameraHitPoint.distanceTo(origin));
+    }
+  }
+  return Math.max(0, nearest - CAMERA_COLLISION_PAD);
 }
 
 function refreshDynamicColliders() {
@@ -946,11 +1123,14 @@ function refreshDynamicColliders() {
  */
 function updateInteractionFocus() {
   let focused = null;
-  if (controls.isLocked && interactables.length > 0) {
+  if (isLocked && interactables.length > 0) {
+    // The crosshair ray starts behind Pomni, so reach is measured from her.
     interactRaycaster.setFromCamera(SCREEN_CENTER, camera);
-    interactRaycaster.far = INTERACT_DISTANCE;
+    interactRaycaster.far = INTERACT_DISTANCE + currentCameraDistance;
     const hit = interactRaycaster.intersectObjects(interactables.flatMap((i) => i.objects), false)[0];
-    if (hit) focused = interactables.find((i) => i.objects.includes(hit.object));
+    if (hit && hit.point.distanceTo(player.position) <= INTERACT_DISTANCE) {
+      focused = interactables.find((i) => i.objects.includes(hit.object));
+    }
   }
 
   focusedInteractable = focused;
@@ -974,11 +1154,16 @@ function animate() {
   updateMovers(delta);
   roomUpdate?.(delta);
   refreshDynamicColliders();
+  if (pomni) {
+    // No walking while the next room loads.
+    if (isLocked && readyToPlay) updateMovement(delta);
+    else updatePomniWalk(delta, 0); // settle the waddle while paused
+    updateCamera(delta);
+  }
   updateInteractionFocus();
-  if (controls.isLocked) updateMovement(delta);
   if (titleScreen.active) {
     titleScreen.update(delta);
-    renderer.render(titleScreen.scene, titleScreen.camera);
+    titleScreen.render();
   } else {
     renderer.render(scene, camera);
   }
