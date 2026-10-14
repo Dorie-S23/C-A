@@ -1,5 +1,6 @@
 import { createDialogueEngine } from '../dialogue/dialogueEngine.js';
 import { SPRITES } from './portraitSprites.js';
+import { ICONS } from './portraitIcons.js';
 
 const TYPE_SPEED_MS = 22;
 
@@ -43,9 +44,9 @@ export function createDialogueUI({ speakers }) {
 
   /**
    * Fills a portrait slot with whichever speaker last occupied that side.
-   * Characters with an entry in SPRITES (currently Pomni and Caine) get a
-   * drawn face that swaps per line's mood; anyone else falls back to the
-   * plain initials circle this already had.
+   * Characters with an entry in ICONS show their 2D icon; failing that, an
+   * entry in SPRITES gets a drawn face that swaps per line's mood; anyone
+   * else falls back to the plain initials circle.
    */
   function renderPortrait(el, speakerId, mood, active) {
     const speaker = speakerId ? speakers[speakerId] : null;
@@ -55,10 +56,17 @@ export function createDialogueUI({ speakers }) {
     if (!speaker) return;
     el.style.setProperty('--portrait-color', speaker.color);
 
+    const icon = ICONS[speakerId];
     const sprite = SPRITES[speakerId];
     const face = document.createElement('div');
     face.className = 'dialogue-portrait-initials';
-    if (sprite) {
+    if (icon) {
+      face.classList.add('dialogue-portrait-icon');
+      const img = document.createElement('img');
+      img.src = icon;
+      img.alt = speaker.name;
+      face.append(img);
+    } else if (sprite) {
       face.classList.add('dialogue-portrait-sprite');
       face.innerHTML = sprite(mood ?? 'neutral');
     } else {
