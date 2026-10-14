@@ -337,6 +337,11 @@
                 gap: 0.5em;
                 margin-top: 0.6em;
             }
+            /* Same as the pickers: without this, a choice's options stay on
+       screen (and clickable) under every line after it. */
+            #dialogue-options[hidden] {
+                display: none;
+            }
             .dialogue-option {
                 text-align: left;
                 padding: 0.6em 0.9em;
@@ -372,6 +377,7 @@
                 <button data-room="pomni">Pomni's Room</button>
                 <button data-room="tadc">Circus Lobby</button>
                 <button data-room="dorm">Dorm Hall</button>
+                <button data-room="ribbit">Ribbit's Room (Level 1)</button>
                 <button data-room="maze">Maze (Level 3)</button>
                 <button data-room="kaufmo">Kaufmo's Room</button>
             </div>
