@@ -6,6 +6,7 @@ import { loadPomniRoom } from './rooms/pomniRoom.js';
 import { loadTadcRoom } from './rooms/tadcRoom.js';
 import { loadMazeRoom } from './rooms/mazeRoom.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
+import { createTitleScreen } from './ui/titleScreen.js';
 import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue } from './data/dialogues.js';
 
 // Collision fires dozens of short rays a frame (wall probe, floor probes,
@@ -95,6 +96,7 @@ const dialoguePicker = document.getElementById('dialogue-picker');
 const pauseMenu = document.getElementById('pause-menu');
 const btnResume = document.getElementById('btn-resume');
 const btnHome = document.getElementById('btn-home');
+const btnTitle = document.getElementById('btn-title');
 const crosshair = document.getElementById('crosshair');
 const hint = document.getElementById('hint');
 const interactPrompt = document.getElementById('prompt');
@@ -133,6 +135,7 @@ controls.addEventListener('unlock', () => {
   overlaySubtitle.textContent = 'Press Esc or click Resume to continue';
   roomPicker.hidden = true;
   dialoguePicker.hidden = true;
+  btnTitle.hidden = true;
   pauseMenu.hidden = false;
 });
 
@@ -160,8 +163,103 @@ btnHome.addEventListener('click', (event) => {
   returnToHome();
 });
 
+btnTitle.addEventListener('click', (event) => {
+  event.stopPropagation();
+  returnToHome();
+});
+
+// --- Title screen ---
+const titleOptions = document.getElementById('title-options');
+const titleQuit = document.getElementById('title-quit');
+const sensitivityInput = document.getElementById('sensitivity');
+const sensitivityValue = document.getElementById('sensitivity-value');
+const SENSITIVITY_KEY = 'tadc.mouseSensitivity';
+
+const titleScreen = createTitleScreen({
+  renderer,
+  // Keys shouldn't drive the menu hidden behind an open panel.
+  isBlocked: () => !titleOptions.hidden || !titleQuit.hidden || !creditsPanel.classList.contains('hidden'),
+  onAction: (action) => {
+    if (action === 'play') {
+      titleScreen.hide();
+      showRoomPicker();
+    } else if (action === 'options') {
+      titleOptions.hidden = false;
+    } else if (action === 'quit') {
+      // Browsers only let a page close a tab that a script opened, so this
+      // usually does nothing — the panel below is the real "quit" screen.
+      window.close();
+      titleQuit.hidden = false;
+    }
+  },
+});
+titleScreen.resize(window.innerWidth, window.innerHeight);
+
+function setSensitivity(value) {
+  controls.pointerSpeed = value;
+  sensitivityInput.value = value;
+  sensitivityValue.textContent = `${value.toFixed(1)}×`;
+}
+try {
+  setSensitivity(Number(localStorage.getItem(SENSITIVITY_KEY)) || 1);
+} catch {
+  setSensitivity(1);
+}
+sensitivityInput.addEventListener('input', () => {
+  setSensitivity(Number(sensitivityInput.value));
+  try {
+    localStorage.setItem(SENSITIVITY_KEY, sensitivityInput.value);
+  } catch {
+    // Storage blocked (private window etc.) — the setting just won't persist.
+  }
+});
+document.getElementById('btn-replay-intro').addEventListener('click', () => {
+  titleOptions.hidden = true;
+  titleScreen.show({ playIntro: true });
+});
+document.getElementById('btn-options-credits').addEventListener('click', () => {
+  creditsPanel.classList.remove('hidden');
+});
+document.getElementById('btn-options-back').addEventListener('click', () => {
+  titleOptions.hidden = true;
+});
+document.getElementById('btn-quit-back').addEventListener('click', () => {
+  titleQuit.hidden = true;
+});
+
+// Start on the title screen; fall back to the room picker if it can't load.
+overlay.classList.add('loading');
+overlayTitle.textContent = 'Loading…';
+overlaySubtitle.textContent = '';
+roomPicker.hidden = true;
+dialoguePicker.hidden = true;
+btnTitle.hidden = true;
+titleScreen.ready
+  .then(() => {
+    overlay.classList.add('hidden');
+    overlay.classList.remove('loading');
+    titleScreen.show({ playIntro: true });
+  })
+  .catch((err) => {
+    console.error('Failed to load title screen', err);
+    showRoomPicker();
+  });
+
+/** The room/dialogue picker the PLAY button leads to. */
+function showRoomPicker() {
+  overlay.classList.remove('hidden');
+  overlay.classList.remove('loading');
+  overlayTitle.textContent = 'Choose a room';
+  overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
+  roomPicker.hidden = false;
+  dialoguePicker.hidden = false;
+  btnTitle.hidden = false;
+  pauseMenu.hidden = true;
+  crosshair.hidden = true;
+}
+
 /**
- * Tears down the current room and returns to the home (room-picker) screen.
+ * Tears down the current room and returns to the title screen.
  */
 function returnToHome() {
   if (controls.isLocked) controls.unlock();
@@ -190,15 +288,10 @@ function returnToHome() {
   caught = false;
   scene.environment = null;
 
-  // Show home screen
-  overlay.classList.remove('hidden');
-  overlay.classList.remove('loading');
-  overlayTitle.textContent = 'Choose a room';
-  overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
-  roomPicker.hidden = false;
-  dialoguePicker.hidden = false;
+  overlay.classList.add('hidden');
   pauseMenu.hidden = true;
   crosshair.hidden = true;
+  titleScreen.show({ playIntro: false });
 }
 
 /**
@@ -259,6 +352,7 @@ function selectRoom(roomKey, { onReady } = {}) {
   caught = false;
   roomPicker.hidden = true;
   dialoguePicker.hidden = true;
+  btnTitle.hidden = true;
   pauseMenu.hidden = true;
   overlay.classList.add('loading');
   overlayTitle.textContent = 'Loading…';
@@ -339,6 +433,7 @@ function selectRoom(roomKey, { onReady } = {}) {
       overlaySubtitle.textContent = 'Check the browser console for details.';
       roomPicker.hidden = false;
       dialoguePicker.hidden = false;
+      btnTitle.hidden = false;
       overlay.classList.remove('loading');
     });
 }
@@ -737,6 +832,7 @@ function endLevel(title, subtitle) {
   overlaySubtitle.textContent = subtitle;
   roomPicker.hidden = false;
   dialoguePicker.hidden = false;
+  btnTitle.hidden = false;
   pauseMenu.hidden = true;
 }
 
@@ -867,6 +963,7 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  titleScreen.resize(window.innerWidth, window.innerHeight);
 });
 
 // --- Main loop ---
@@ -879,7 +976,12 @@ function animate() {
   refreshDynamicColliders();
   updateInteractionFocus();
   if (controls.isLocked) updateMovement(delta);
-  renderer.render(scene, camera);
+  if (titleScreen.active) {
+    titleScreen.update(delta);
+    renderer.render(titleScreen.scene, titleScreen.camera);
+  } else {
+    renderer.render(scene, camera);
+  }
   requestAnimationFrame(animate);
 }
 
