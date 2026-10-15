@@ -51,6 +51,9 @@ const ROOM_LOADERS = {
 };
 
 const PLAYER_HEIGHT = 1.7;
+// A dialogue preview's camera looks over Pomni's shoulder at whoever she's
+// talking to; straight from behind, her hat hides them.
+const PREVIEW_CAMERA_OFFSET = 0.5;
 const PLAYER_RADIUS = 0.35;
 // Faster than her Walk/Run clips are authored at (WALK_CLIP_SPEED/RUN_CLIP_SPEED);
 // updatePomniWalk speeds the clips up to match, so her feet stay planted.
@@ -321,6 +324,8 @@ function returnToHome({ toRoomPicker = false } = {}) {
   movers = [];
   hazards = [];
   roomUpdate = null;
+  roomDialogueCue = null;
+  roomTalkPartner = null;
   interactables = [];
   portals = [];
   focusedInteractable = null;
@@ -351,6 +356,11 @@ function returnToHome({ toRoomPicker = false } = {}) {
  * circus map they're actually set in: the circus map currently takes 60+
  * seconds to become responsive (tracked separately, unrelated to dialogue),
  * which made every preview click look hung. Swap back once that's fixed.
+ *
+ * The room is told which script it's backing (`preview`), so it can stage
+ * the scene for it: Pomni's Room swaps Caine for Ragatha in Pre-Level 1.
+ * A room that does returns `onDialogueNode`, which follows the script's
+ * `anim` cues, and `talkPartner`, who Pomni turns to face.
  */
 function playDialoguePreview(key) {
   const entry = DIALOGUE_SCRIPTS[key];
@@ -358,12 +368,16 @@ function playDialoguePreview(key) {
   const { script, room } = entry;
 
   selectRoom(room, {
+    preview: key,
     onReady: () => {
       overlay.classList.add('hidden');
       readyToPlay = false;
       resetMoveState();
+      if (roomTalkPartner) turnPomniTowards(roomTalkPartner, PREVIEW_CAMERA_OFFSET);
       dialogueUI.play(script, {
+        onNode: roomDialogueCue,
         onComplete: () => {
+          roomDialogueCue?.(null);
           readyToPlay = true;
           overlay.classList.remove('hidden');
           overlayTitle.textContent = 'Click to Play';
@@ -399,14 +413,20 @@ function playRoomDialogue(key, { lookAt, onChoice, onComplete, onCancel } = {}) 
   const entry = DIALOGUE_SCRIPTS[key];
   if (!entry || dialogueUI.isActive) return;
   resetMoveState();
-  if (lookAt) {
-    const dx = lookAt.x - player.position.x;
-    const dz = lookAt.z - player.position.z;
-    pomni.rotation.y = Math.atan2(dx, dz); // her model faces +Z
-    cameraYaw = Math.atan2(-dx, -dz);       // camera behind her, looking the same way
-    cameraPitch = DEFAULT_PITCH;
-  }
+  if (lookAt) turnPomniTowards(lookAt);
   dialogueUI.play(entry.script, { onChoice, onComplete, onCancel });
+}
+
+/**
+ * Turns Pomni to face a point, with the camera swung round behind her —
+ * or, with `cameraOffset` (radians), round that far to one side of her.
+ */
+function turnPomniTowards(point, cameraOffset = 0) {
+  const dx = point.x - player.position.x;
+  const dz = point.z - player.position.z;
+  pomni.rotation.y = Math.atan2(dx, dz);           // her model faces +Z
+  cameraYaw = Math.atan2(-dx, -dz) + cameraOffset; // camera behind her, looking the same way
+  cameraPitch = DEFAULT_PITCH;
 }
 
 // --- Level 2 item collection -------------------------------------------
@@ -449,7 +469,7 @@ const itemState = {
   },
 };
 
-function selectRoom(roomKey, { onReady, from } = {}) {
+function selectRoom(roomKey, { onReady, from, preview } = {}) {
   const loadRoom = ROOM_LOADERS[roomKey];
   if (!loadRoom) return;
 
@@ -472,6 +492,8 @@ function selectRoom(roomKey, { onReady, from } = {}) {
   movers = [];
   hazards = [];
   roomUpdate = null;
+  roomDialogueCue = null;
+  roomTalkPartner = null;
   interactables = [];
   portals = [];
   focusedInteractable = null;
@@ -493,7 +515,7 @@ function selectRoom(roomKey, { onReady, from } = {}) {
     loadRoom((ratio) => {
       if (myToken !== loadToken) return; // a newer selectRoom()/returnToHome() superseded this one
       overlaySubtitle.textContent = `Fetching room model (${Math.round(ratio * 100)}%)`;
-    }, { from, playDialogue: playRoomDialogue, items: itemState }),
+    }, { from, preview, playDialogue: playRoomDialogue, items: itemState }),
     pomniReady,
   ])
     .then(([result]) => {
@@ -529,6 +551,8 @@ function applyLoadedRoom({
   movers: roomMovers,
   hazards: roomHazards,
   update: roomUpdateFn,
+  onDialogueNode,
+  talkPartner,
   interactables: roomInteractables,
   portals: roomPortals,
   environment: wantsEnvironment,
@@ -564,6 +588,8 @@ function applyLoadedRoom({
   movers = roomMovers ?? [];
   hazards = roomHazards ?? [];
   roomUpdate = roomUpdateFn ?? null;
+  roomDialogueCue = onDialogueNode ?? null;
+  roomTalkPartner = talkPartner ?? null;
   interactables = roomInteractables ?? [];
   portals = roomPortals ?? [];
   scene.environment = wantsEnvironment ? environmentMap : null;
@@ -812,6 +838,11 @@ let movers = [];
 let hazards = [];
 // Per-frame hook for room-specific animation (e.g. Caine's idle in Pomni's room).
 let roomUpdate = null;
+// Set by rooms that stage a dialogue preview (see playDialoguePreview):
+// called with each node as it comes up, then null once the script ends,
+// and the point Pomni turns to face while it plays.
+let roomDialogueCue = null;
+let roomTalkPartner = null;
 // Moving collision meshes (e.g. swinging doors): their boxes are refreshed every frame.
 let dynamicCollisionMeshes = [];
 // Things the player can use with E: { objects: Mesh[], prompt(): string,

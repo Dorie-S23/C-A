@@ -20,9 +20,15 @@ export const SPEAKERS = {
 // so the overlay still carries the moment during a text-only playtest,
 // but it has no speaker/portrait and is meant to be replaced by an actual
 // animated Jax walking through the background once that exists.
+//
+// `anim` cues the cast in the 3D scene as each node comes up (see
+// pomniRoom.js): Ragatha walks up to Pomni, waves hello, chats, follows
+// Jax with her eyes on the beat, and turns worried once he's gone. A cue
+// holds until the next one.
 export const preLevel1Dialogue = [
   {
     type: 'line',
+    anim: { ragatha: 'walkIn' },
     speaker: 'pomni',
     side: 'left',
     direction: 'internal, muttered to herself',
@@ -31,12 +37,14 @@ export const preLevel1Dialogue = [
   },
   {
     type: 'line',
+    anim: { ragatha: 'wave' },
     speaker: 'ragatha',
     side: 'right',
     text: 'Morning, Pomni! Sleep okay? Well — "sleep." You know what I mean.',
   },
   {
     type: 'line',
+    anim: { ragatha: 'listen' },
     speaker: 'pomni',
     side: 'left',
     mood: 'neutral',
@@ -44,12 +52,14 @@ export const preLevel1Dialogue = [
   },
   {
     type: 'line',
+    anim: { ragatha: 'chatty' },
     speaker: 'ragatha',
     side: 'right',
     text: "Caine's got something planned today, I think. He was doing that thing where he mutters to himself and draws diagrams nobody asked for.",
   },
   {
     type: 'line',
+    anim: { ragatha: 'listen' },
     speaker: 'pomni',
     side: 'left',
     direction: 'deadpan',
@@ -58,10 +68,12 @@ export const preLevel1Dialogue = [
   },
   {
     type: 'beat',
+    anim: { ragatha: 'watch' },
     text: 'Jax storms past in the background — no dialogue, just animation/SFX.',
   },
   {
     type: 'line',
+    anim: { ragatha: 'worried' },
     speaker: 'ragatha',
     side: 'right',
     direction: 'watching him go, dropping the upbeat tone',
@@ -69,6 +81,7 @@ export const preLevel1Dialogue = [
   },
   {
     type: 'line',
+    anim: { ragatha: 'worried' },
     speaker: 'pomni',
     side: 'left',
     mood: 'neutral',
@@ -76,12 +89,14 @@ export const preLevel1Dialogue = [
   },
   {
     type: 'line',
+    anim: { ragatha: 'worried' },
     speaker: 'ragatha',
     side: 'right',
     text: 'Not like this. Not since the thing with Ribbit.',
   },
   {
     type: 'line',
+    anim: { ragatha: 'worried' },
     speaker: 'pomni',
     side: 'left',
     direction: 'pause, uneasy',

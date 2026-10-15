@@ -37,6 +37,7 @@ export function createDialogueUI({ speakers }) {
   let onComplete = null;
   let onChoice = null;
   let onCancel = null;
+  let onNode = null;
   let leftSpeaker = null;
   let rightSpeaker = null;
   let leftMood = 'neutral';
@@ -138,6 +139,7 @@ export function createDialogueUI({ speakers }) {
       finish();
       return;
     }
+    onNode?.(node);
 
     if (node.type === 'line' && node.side) {
       if (node.side === 'left') {
@@ -210,6 +212,7 @@ export function createDialogueUI({ speakers }) {
     onComplete = null;
     onChoice = null;
     onCancel = null;
+    onNode = null;
     if (callback) callback();
   }
 
@@ -229,6 +232,7 @@ export function createDialogueUI({ speakers }) {
     onComplete = null;
     onChoice = null;
     onCancel = null;
+    onNode = null;
     if (callback) callback();
   }
 
@@ -301,13 +305,18 @@ export function createDialogueUI({ speakers }) {
   return {
     /**
      * @param {Array} script - see src/data/dialogues.js for node shapes
-     * @param {{ onComplete?: () => void, onChoice?: (option, nextNode) => void, onCancel?: () => void }} [handlers]
+     * onNode is called with each node as it comes up, so the scene can
+     * stage it (e.g. a character's animation cue — see `anim` in dialogues.js).
+     *
+     * @param {{ onComplete?: () => void, onChoice?: (option, nextNode) => void,
+     *   onCancel?: () => void, onNode?: (node) => void }} [handlers]
      */
-    play(script, { onComplete: complete, onChoice: choice, onCancel: cancel } = {}) {
+    play(script, { onComplete: complete, onChoice: choice, onCancel: cancel, onNode: nodeShown } = {}) {
       engine = createDialogueEngine(script);
       onComplete = complete ?? null;
       onChoice = choice ?? null;
       onCancel = cancel ?? null;
+      onNode = nodeShown ?? null;
       leftSpeaker = null;
       rightSpeaker = null;
       leftMood = 'neutral';
