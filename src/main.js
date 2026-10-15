@@ -671,6 +671,8 @@ function applyLoadedRoom({
   update: roomUpdateFn,
   interactables: roomInteractables,
   portals: roomPortals,
+  mapMarkers,
+  warmUp,
   environment: wantsEnvironment,
 }, onReady, roomKey) {
   currentRoom = group;
@@ -709,7 +711,9 @@ function applyLoadedRoom({
   scene.environment = wantsEnvironment ? environmentMap : null;
   // Only meaningful in the hub with multiple unmarked doors — every other
   // room either has no portals or just the one obvious way back.
-  if (roomKey === 'dorm' && portals.length > 0) minimap.show(portals);
+  // Rooms built onto the hall (see rooms/connectRooms.js) have no portal,
+  // just a marker.
+  if (roomKey === 'dorm' && portals.length > 0) minimap.show([...portals, ...(mapMarkers ?? [])]);
   else minimap.hide();
 
   player.position.set(spawn.x, floorY + PLAYER_HEIGHT, spawn.z);
@@ -725,6 +729,10 @@ function applyLoadedRoom({
   // into view, which hitches mid-walk; compile them all up front instead,
   // now that the room's lights and environment are in place.
   renderer.compile(scene, camera);
+  // Anything the room only switches on later (a connected room's mirrors
+  // and shadows) builds its shaders now, under the loading screen.
+  warmUp?.(renderer, scene, camera);
+  window.__debug = { ...(window.__debug ?? {}), renderer }; // TEMP_TEST
 
   readyToPlay = true;
   overlay.classList.remove('loading');
@@ -950,7 +958,8 @@ let collisionMeshes = [];
 let triggers = null;
 let movers = [];
 let hazards = [];
-// Per-frame hook for room-specific animation (e.g. Caine's idle in Pomni's room).
+// Per-frame hook for room-specific animation (e.g. Caine's idle in Pomni's room),
+// called with (deltaSeconds, playerPosition).
 let roomUpdate = null;
 // Moving collision meshes (e.g. swinging doors): their boxes are refreshed every frame.
 let dynamicCollisionMeshes = [];
@@ -1264,8 +1273,8 @@ function checkPortals() {
   if (portals.length === 0) return;
   // Her actual feet, not floorY: the dorm arch stands on a few steps.
   triggerProbe.set(player.position.x, player.position.y - PLAYER_HEIGHT + 0.5, player.position.z);
-  // A door portal (see rooms/doors.js) only leads anywhere once it's open.
-  const portal = portals.find((p) => p.box.containsPoint(triggerProbe) && (p.enabled?.() ?? true));
+  // A door portal only leads anywhere once it's open (see makeDoorOpenable).
+  const portal = portals.find((p) => !p.disabled && p.box.containsPoint(triggerProbe));
   if (portal) travelTo(portal.to);
 }
 
@@ -1752,7 +1761,7 @@ function animate() {
   // on a player who is sitting in the pause menu.
   if (!paused) {
     updateMovers(delta);
-    roomUpdate?.(delta);
+    roomUpdate?.(delta, player.position);
     refreshDynamicColliders();
   }
   if (pomni) {
