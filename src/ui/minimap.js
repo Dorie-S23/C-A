@@ -80,7 +80,12 @@ export function createMinimap() {
       ctx.clearRect(0, 0, SIZE, SIZE);
 
       ctx.font = '11px sans-serif';
-      ctx.textAlign = 'center';
+      // Labels sit beside their dot, not above it: the Dorm Hall is one long
+      // narrow corridor, so its doors stack in a single column on the map
+      // and labels above neighbouring dots (Kaufmo's and Ribbit's doors are
+      // ~15 m apart) would print over each other.
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
       for (const point of points) {
         const { x, y } = worldToCanvas(point.x, point.z);
         ctx.beginPath();
@@ -91,7 +96,7 @@ export function createMinimap() {
         ctx.lineWidth = 1;
         ctx.stroke();
         ctx.fillStyle = '#fff';
-        ctx.fillText(point.label, x, y - DOOR_RADIUS - 4);
+        ctx.fillText(point.label, x + DOOR_RADIUS + 4, y);
       }
 
       // Player marker: a dot with a short line showing which way they're facing.

@@ -18,21 +18,37 @@
  * `next` is a node `id` to jump to, or omitted to fall through to the next
  * array entry, or `null` to end the script. Choice nodes only advance via
  * choose(optionIndex) — calling advance() on one is a no-op.
+ *
+ * A script can also be played in parts — e.g. Level 1's knock at the door
+ * in one room, the rest inside Ribbit's room after a room change: `startAt`
+ * begins at that node id instead of the first node, and reaching the
+ * `stopAt` node id ends this part (without showing it) as if the script
+ * had finished there.
+ *
+ * @param {Array} script
+ * @param {{ startAt?: string, stopAt?: string }} [options]
  */
-export function createDialogueEngine(script) {
+export function createDialogueEngine(script, { startAt, stopAt } = {}) {
   const byId = new Map();
   script.forEach((node, i) => {
     if (node.id) byId.set(node.id, i);
   });
 
+  function lookup(id) {
+    if (!byId.has(id)) throw new Error(`Unknown dialogue node id: ${id}`);
+    return byId.get(id);
+  }
+  const stopIndex = stopAt === undefined ? null : lookup(stopAt);
+
   function resolve(next, index) {
-    if (next === undefined) return index + 1 >= script.length ? null : index + 1;
-    if (next === null) return null;
-    if (!byId.has(next)) throw new Error(`Unknown dialogue node id: ${next}`);
-    return byId.get(next);
+    let target;
+    if (next === undefined) target = index + 1 >= script.length ? null : index + 1;
+    else if (next === null) target = null;
+    else target = lookup(next);
+    return target === stopIndex ? null : target;
   }
 
-  let index = script.length > 0 ? 0 : null;
+  let index = startAt !== undefined ? lookup(startAt) : (script.length > 0 ? 0 : null);
 
   return {
     get current() {

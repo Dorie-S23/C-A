@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 // "jax_from_tadc.glb": rigged (hips/spine/legs/arms down to fingers) but,
-// like Caine's model, ships with no baked animation clips — the walk below
+// like Caine's model, ships with no baked animation clips — the run below
 // is hand-posed per frame instead of played from a clip.
 const JAX_URL = './models/characters/jax/jax_from_tadc.glb';
 
@@ -14,11 +14,13 @@ const JAX_URL = './models/characters/jax/jax_from_tadc.glb';
 // side, Y just twists it in place, Z is the one that reads as a stride.
 const HINGE_AXIS = new THREE.Vector3(0, 0, 1);
 
-const STRIDE_HZ = 2.4; // steps/second — brisk, matches "storms past"
-const LEG_SWING = THREE.MathUtils.degToRad(30);
-const KNEE_BEND = THREE.MathUtils.degToRad(24);
-const ARM_SWING = THREE.MathUtils.degToRad(24);
-const BOB_HEIGHT = 0.035;
+// An actual run (he "storms past"), not a walk: quicker cadence, a
+// bigger stride, and a real bounce rather than a gentle bob.
+const STRIDE_HZ = 3.3; // steps/second
+const LEG_SWING = THREE.MathUtils.degToRad(42);
+const KNEE_BEND = THREE.MathUtils.degToRad(55);
+const ARM_SWING = THREE.MathUtils.degToRad(36);
+const BOB_HEIGHT = 0.07;
 
 // A light of his own, attached to his group so it travels with him and
 // doesn't depend on whatever a given room's own lighting happens to be —

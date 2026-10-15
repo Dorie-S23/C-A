@@ -16,10 +16,11 @@ export const SPEAKERS = {
 // --- Pre-Level 1: "Business as Usual" ---------------------------------
 // Jax's wordless pass-by (the design doc's "tell that something is wrong
 // before anyone says so directly") is a pure 3D/animation beat with no
-// dialogue box in the source script — a silent `cue` node, not a `beat`:
-// it never shows in the dialogue box at all, just signals main.js (via
-// onNode, matching on this id) to trigger Jax actually walking through
-// the room in the background. See characters/jax.js for the animation.
+// dialogue box in the source script at all — played as an actual cutscene
+// (see jaxHallwayCutscene.js), not anything inline here. main.js plays
+// this script in two parts with stopAt/startAt both set to 'afterJaxPassBy'
+// below: part one ends right before that line, the cutscene plays between
+// the two Ragatha lines, then part two resumes from 'afterJaxPassBy'.
 export const preLevel1Dialogue = [
   {
     type: 'line',
@@ -57,10 +58,7 @@ export const preLevel1Dialogue = [
     text: 'Thrilling. Another one of his "brilliant" ideas.',
   },
   {
-    type: 'cue',
-    id: 'jaxPassBy',
-  },
-  {
+    id: 'afterJaxPassBy',
     type: 'line',
     speaker: 'ragatha',
     side: 'right',
@@ -567,61 +565,440 @@ export const level2OpeningDialogue = [
   },
 ];
 
-// --- Level 1: talking to Ribbit (placeholder) ---------------------------
-// Played when Pomni walks up to Ribbit in her room and presses E. A short
-// stand-in so the proximity trigger and the in-game conversation flow can
-// be played end to end; the real graded Level 1 script (good choices earn
-// Escape points via `points`, bad ones earn none but still advance and
-// change her reply) replaces it. Branches rejoin at 'ribbit-after'.
-export const ribbitTalkDialogue = [
+// --- Level 1: "Talk Her Down" (Ribbit) ---------------------------------
+// Script by Dorsa Shahrokh. Played when Pomni walks up to Ribbit in her
+// room and presses E. Four graded choices: the best answer earns 1 Escape
+// point (`points: 1`), the others 0 — they still advance, but change
+// Ribbit's reply and Pomni has to walk it back. Every option's branch
+// rejoins the main line, so all 81 paths visit all four choices and end
+// the same way: Ribbit is steadied regardless of score (the score feeds
+// the ending, not this level). Choice-checking lives in
+// src/dialogue/choiceTally.js; src/rooms/ribbitRoom.js keeps the tally.
+// `action` on a node names a stage direction ribbitRoom.js acts out in 3D
+// when that node is shown (knock, enterRoom, sitBesideRibbit,
+// ribbitSitsUp) — the text stays exactly as written.
+export const level1RibbitDialogue = [
   {
     type: 'beat',
-    text: "Ribbit is standing by her bed, staring at nothing. She doesn't look up.",
+    action: 'knock',
+    text: "Ribbit's room. The door is shut. Pomni knocks.",
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    direction: 'through the door',
+    text: '…Go away. Unless you’re Caine. Actually, especially if you’re Caine.',
+  },
+  // CHOICE 1
+  {
+    type: 'choice',
+    speaker: 'pomni',
+    options: [
+      { text: '“It’s Pomni. I just wanted to see how you’re doing.”', next: 'l1_c1_a', points: 1 },
+      { text: '“Caine sent me. He’s worried you’re going to abstract.”', next: 'l1_c1_b', points: 0 },
+      { text: '“It’s me. Open up, I don’t have all day.”', next: 'l1_c1_c', points: 0 },
+    ],
+  },
+  {
+    id: 'l1_c1_a',
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: '…Pomni? Fine. Door’s open.',
+    next: 'l1_inside',
+  },
+  {
+    id: 'l1_c1_b',
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'He — what? Is that what everyone’s saying about me now?',
   },
   {
     type: 'line',
     speaker: 'pomni',
     side: 'left',
     mood: 'worried',
-    text: 'Hey, Ribbit. Caine said I should... check on you.',
+    text: 'No. Sorry. That came out wrong. Can I come in?',
   },
   {
     type: 'line',
     speaker: 'ribbit',
     side: 'right',
-    direction: 'flat',
-    text: "Of course he did. Tell him I'm fine. Everyone's fine. It's a circus.",
+    text: '…Whatever. It’s open.',
+    next: 'l1_inside',
   },
   {
-    type: 'choice',
+    id: 'l1_c1_c',
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'Then don’t spend it here.',
+  },
+  {
+    type: 'line',
     speaker: 'pomni',
-    text: 'What do you say?',
-    options: [
-      { text: "You don't have to be fine. I can just stay a minute.", next: 'ribbit-gentle', points: 1 },
-      { text: "Is this about Jax? Just ignore him, he's like that with everyone.", next: 'ribbit-pushy', points: 0 },
-    ],
+    side: 'left',
+    mood: 'sad',
+    text: '…Okay, that was rude. Sorry. Can I come in?',
   },
   {
     type: 'line',
-    id: 'ribbit-gentle',
     speaker: 'ribbit',
     side: 'right',
-    direction: 'quietly, finally looking at her',
-    text: '...Okay. A minute.',
-    next: 'ribbit-after',
+    text: '…It’s open.',
+  },
+  {
+    id: 'l1_inside',
+    type: 'beat',
+    action: 'enterRoom',
+    text: 'Inside, the room is dim. Ribbit is curled up on the bed. An empty mug hook hangs by the door.',
   },
   {
     type: 'line',
-    id: 'ribbit-pushy',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'neutral',
+    text: 'Hey.',
+  },
+  {
+    type: 'line',
     speaker: 'ribbit',
     side: 'right',
-    direction: 'turning away again',
-    text: "He's not like that with everyone. That's the point.",
+    text: 'Hey.',
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'worried',
+    text: 'It’s quiet in here. You’re usually… not quiet.',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'Yeah, well. Turns out I’m a lot. Apparently.',
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'worried',
+    text: 'Who said that?',
   },
   {
     type: 'beat',
-    id: 'ribbit-after',
-    text: '(Placeholder — the full Level 1 conversation continues here.)',
+    text: 'Silence.',
+  },
+  // CHOICE 2
+  {
+    type: 'choice',
+    speaker: 'pomni',
+    options: [
+      { text: '“Let me guess. Jax.”', next: 'l1_c2_a', points: 0 },
+      { text: '(Sit down next to her and wait.)', next: 'l1_c2_b', points: 1 },
+      { text: '“Whatever it is, you’ll get over it. Everyone here bounces back.”', next: 'l1_c2_c', points: 0 },
+    ],
+  },
+  {
+    id: 'l1_c2_a',
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'Don’t. Don’t say his name like it’s a punchline.',
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'sad',
+    text: 'Okay. Sorry.',
+    next: 'l1_jax',
+  },
+  {
+    id: 'l1_c2_b',
+    type: 'line',
+    action: 'sitBesideRibbit',
+    speaker: 'ribbit',
+    side: 'right',
+    text: '…You’re not gonna make me talk?',
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'neutral',
+    text: 'Nope. I’m very good at sitting.',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: '…Okay.',
+    next: 'l1_jax',
+  },
+  {
+    id: 'l1_c2_c',
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'Do they? Because I’ve seen what happens to people who don’t.',
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'sad',
+    text: '…Yeah. Bad choice of words. Sorry.',
+  },
+  {
+    id: 'l1_jax',
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'It was Jax.',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'Every night after the show, we’d hang out at the café. Hot chocolate, terrible jokes. It was the one normal thing in this whole place.',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'He’s been getting worse lately. Snappier. So the other night I asked if he was okay. That’s it. That’s all I asked.',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'And he just exploded. Said he never wanted me tagging along. That I’m loud and clingy, and the only reason anyone puts up with me is because nobody can leave.',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'Then he knocked my mug off the table and walked out.',
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'sad',
+    text: '…',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'And now I keep thinking… what if he’s right?',
+  },
+  // CHOICE 3
+  {
+    type: 'choice',
+    speaker: 'pomni',
+    options: [
+      { text: '“He’s not right. He’s hurting, and he aimed it at the closest person.”', next: 'l1_c3_a', points: 1 },
+      { text: '“Well… you are pretty loud.”', next: 'l1_c3_b', points: 0 },
+      { text: '“Maybe you should stay away from him for a while.”', next: 'l1_c3_c', points: 0 },
+    ],
+  },
+  {
+    id: 'l1_c3_a',
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: '…That’s not fair either.',
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'neutral',
+    text: 'No. It’s not. But it’s not the truth about you.',
+    next: 'l1_best_friend',
+  },
+  {
+    id: 'l1_c3_b',
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: '…Great. Thanks. Really helpful.',
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'shocked',
+    text: 'That — okay, I’m bad at this. Loud isn’t bad. It’s just… you.',
+    next: 'l1_best_friend',
+  },
+  {
+    id: 'l1_c3_c',
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'So he wins? I lose my best friend and my hot chocolate?',
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'sad',
+    text: 'That’s not what I meant. Sorry.',
+  },
+  {
+    id: 'l1_best_friend',
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'He’s my best friend, Pomni. Was. Is? I don’t know.',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'And it’s not just me. He’s been going after Kaufmo too.',
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'shocked',
+    text: 'Kaufmo?',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'Kaufmo’s got this theory. That there’s a way out. He’s been collecting stuff, writing everything down. He told Jax about it.',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'Jax laughed at him. Called him crazy.',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'Kaufmo laughed too, but… I know that laugh. It’s the one I do.',
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'worried',
+    text: 'Have you talked to him?',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'I couldn’t even get out of bed. Some friend I am.',
+  },
+  // CHOICE 4
+  {
+    type: 'choice',
+    speaker: 'pomni',
+    options: [
+      { text: '“You’re allowed to take a minute. I’ll check on him. You can come when you’re ready.”', next: 'l1_c4_a', points: 1 },
+      { text: '“Yeah, he probably needs you more than you need to lie here.”', next: 'l1_c4_b', points: 0 },
+      { text: '“Kaufmo’s a grown man. He’ll be fine.”', next: 'l1_c4_c', points: 0 },
+    ],
+  },
+  {
+    id: 'l1_c4_a',
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: '…You’d do that?',
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'annoyed',
+    text: 'Apparently I’m doing welfare checks today.',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'Okay.',
+    next: 'l1_sits_up',
+  },
+  {
+    id: 'l1_c4_b',
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: '…I know. You don’t have to rub it in.',
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'worried',
+    text: 'I didn’t mean — look. I’ll go. You don’t have to.',
+    next: 'l1_sits_up',
+  },
+  {
+    id: 'l1_c4_c',
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'That’s what everyone says right before someone isn’t.',
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'sad',
+    text: '…Okay. I’ll check on him.',
+  },
+  {
+    id: 'l1_sits_up',
+    type: 'beat',
+    action: 'ribbitSitsUp',
+    text: 'Ribbit sits up slowly.',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'Thanks, Pomni. Really. I feel… less like a puddle.',
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'annoyed',
+    text: 'High praise.',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'If you see Kaufmo, tell him I’m on his side. Even if he is a little crazy.',
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'neutral',
+    text: 'Will do.',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'And Pomni? …If Jax ever wants to talk, tell him I’ll make the hot chocolate.',
     next: null,
   },
 ];

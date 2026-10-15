@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { loadRoomModel } from './loadRoomModel.js';
 import { loadCaine, createCaineIdle } from '../characters/caine.js';
 import { addMirrorReflections } from './mirrors.js';
-import { openHingedDoor } from './doors.js';
+import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { createDoorPortal } from './portals.js';
 import { findWallSpot, findSpotNear, placeOfficePicture } from '../props/officePicture.js';
 
@@ -22,18 +22,6 @@ const PICTURE_OFFSET = new THREE.Vector3(-0.5, 0, 0.35);
 // dot both go), so they come out as this at runtime.
 const DOOR_FRAME_NAME = 'Door_Frame024';
 const DOOR_SLAB_NAME = 'Door_Slab024';
-
-// Right in the doorway's own thickness (depth 0 = the frame's centre),
-// not further out into the hallway: addDoorwayGlimpse (portals.js) puts
-// an opaque warm panel 0.25m past the frame on the hallway side to stand
-// in for the unmodelled space beyond it, which would otherwise hide
-// anything walking behind it. Staying inside the frame's own ~0.17m
-// thickness keeps him in front of that panel instead of occluded by it.
-const JAX_PASSBY_HALLWAY_DEPTH = 0;
-// How much wider than the doorway itself his path spans, so he's visibly
-// entering and leaving the gap rather than just appearing and vanishing
-// exactly at its edges.
-const JAX_PASSBY_MARGIN = 0.5;
 
 // Exported from "Pomnis Room V3.blend" by tools/blender/export_pomnis_room_v3.py,
 // which converts the materials the glTF exporter can't read — re-run it
@@ -60,6 +48,7 @@ export function loadPomniRoom(onProgress, { from, items } = {}) {
     }
 
     const door = openHingedDoor(room.group, DOOR_FRAME_NAME, DOOR_SLAB_NAME, room.spawn, room.collisionMeshes);
+    let doorControl = null;
     if (door) {
       const doorCenter = door.frameBox.getCenter(new THREE.Vector3());
       room.spawnFacing = Math.atan2(room.spawn.x - doorCenter.x, room.spawn.z - doorCenter.z);
@@ -71,13 +60,9 @@ export function loadPomniRoom(onProgress, { from, items } = {}) {
         room.spawnFacing = portal.arrival.facing;
       }
 
-      // Pre-Level 1's "Jax storms past" plays over this room as a stand-in
-      // for the circus hallway it's actually set in (see playDialoguePreview
-      // in main.js) — so the pass-by needs to read as happening out in the
-      // hall, glimpsed through the open door, not someone wandering through
-      // Pomni's own bedroom. userData survives onto `group`, which becomes
-      // the live `currentRoom` main.js reads this back from.
-      room.group.userData.jaxPassBy = computeDoorwayPassBy(door.frameBox, defaultSpawn);
+      // Shut until Pomni opens it with E (see makeDoorOpenable).
+      doorControl = makeDoorOpenable(room, door, { portal });
+      room.interactables = [...(room.interactables ?? []), doorControl.interactable];
     }
 
     placeInFrontOfSpawn(caine, { group: room.group, spawn: defaultSpawn });
@@ -85,7 +70,11 @@ export function loadPomniRoom(onProgress, { from, items } = {}) {
     caine.updateMatrixWorld(true);
 
     room.collisionMeshes.push({ mesh: collider, box: new THREE.Box3().setFromObject(collider) });
-    room.update = createCaineIdle(caine);
+    const caineIdle = createCaineIdle(caine);
+    room.update = (deltaSeconds) => {
+      caineIdle(deltaSeconds);
+      doorControl?.update(deltaSeconds);
+    };
 
     return room;
   });
@@ -116,32 +105,4 @@ function placeInFrontOfSpawn(caine, { group, spawn }) {
 
   caine.position.copy(position);
   caine.rotation.y = Math.atan2(spawn.x - position.x, spawn.z - position.z);
-}
-
-/**
- * A straight-line path crossing through the doorway itself — not into the
- * room, not out into the unmodelled hallway past it (see
- * JAX_PASSBY_HALLWAY_DEPTH) — wide enough that something walking it is
- * seen entering and leaving the gap rather than popping in and out at its
- * exact edges. Same wideAxis logic as createDoorPortal (whichever of x/z
- * the frame spans more of is the door's width).
- */
-function computeDoorwayPassBy(frameBox, spawn) {
-  const size = frameBox.getSize(new THREE.Vector3());
-  const wideAxis = size.x >= size.z ? 'x' : 'z';
-  const center = frameBox.getCenter(new THREE.Vector3());
-
-  const intoRoom = new THREE.Vector3().subVectors(spawn, center).setY(0);
-  if (intoRoom.lengthSq() < 1e-6) intoRoom.set(0, 0, 1);
-  intoRoom.normalize();
-
-  const beyond = center.clone().addScaledVector(intoRoom, -JAX_PASSBY_HALLWAY_DEPTH);
-  beyond.y = spawn.y;
-  const half = size[wideAxis] / 2 + JAX_PASSBY_MARGIN;
-
-  const from = beyond.clone();
-  const to = beyond.clone();
-  from[wideAxis] -= half;
-  to[wideAxis] += half;
-  return { from, to };
 }

@@ -102,9 +102,14 @@ export function createDoorPortal(group, frameBox, spawn, to) {
   const thinAxis = wideAxis === 'x' ? 'z' : 'x';
   const center = frameBox.getCenter(new THREE.Vector3());
 
-  const intoRoom = new THREE.Vector3().subVectors(spawn, center).setY(0);
-  if (intoRoom.lengthSq() < 1e-6) intoRoom.set(0, 0, 1); // spawn directly on the doorway: arbitrary but valid
-  intoRoom.normalize();
+  // Straight out of the wall the door is set in (its thin axis), toward
+  // whichever side `spawn` is on. Aiming at the spawn itself would tilt it
+  // whenever the spawn isn't square in front of the door — the doorway
+  // glimpse then cut diagonally through the wall (Kaufmo's room), and the
+  // arrival point and facing came out skewed.
+  const side = spawn[thinAxis] - center[thinAxis];
+  const intoRoom = new THREE.Vector3();
+  intoRoom[thinAxis] = side < 0 ? -1 : 1;
 
   const box = frameBox.clone();
   box.min[wideAxis] += DOOR_TRIGGER_SIDE_INSET;

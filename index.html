@@ -531,6 +531,61 @@
                 outline: 2px solid #ffd27a;
                 outline-offset: 2px;
             }
+
+            /* --- Speaker distress (DialogueUI setDistress, levels 1-3) ---
+       A line said by someone shaken: the box trembles and the name,
+       text and active portrait run red, harder at each level. */
+            #dialogue {
+                --distress-shift: 0px;
+            }
+            #dialogue.dialogue-distress-1 {
+                --distress-shift: 1.5px;
+                --distress-color: #f4a6a6;
+            }
+            #dialogue.dialogue-distress-2 {
+                --distress-shift: 3px;
+                --distress-color: #ff7b7b;
+            }
+            #dialogue.dialogue-distress-3 {
+                --distress-shift: 5px;
+                --distress-color: #ff4d4d;
+            }
+            #dialogue[class*='dialogue-distress-'] #dialogue-box {
+                animation: dialogue-tremble 0.12s linear infinite;
+                border-color: var(--distress-color);
+                box-shadow:
+                    0 10px 30px rgba(0, 0, 0, 0.5),
+                    0 0 18px color-mix(in srgb, var(--distress-color) 45%, transparent);
+            }
+            #dialogue[class*='dialogue-distress-'] #dialogue-name,
+            #dialogue[class*='dialogue-distress-'] #dialogue-text {
+                color: var(--distress-color);
+            }
+            #dialogue[class*='dialogue-distress-'] .dialogue-portrait-active {
+                filter: drop-shadow(0 0 10px var(--distress-color));
+                animation: dialogue-tremble 0.12s linear infinite;
+            }
+            @keyframes dialogue-tremble {
+                0%,
+                100% {
+                    translate: 0 0;
+                }
+                25% {
+                    translate: var(--distress-shift) calc(var(--distress-shift) * -0.5);
+                }
+                50% {
+                    translate: calc(var(--distress-shift) * -1) 0;
+                }
+                75% {
+                    translate: calc(var(--distress-shift) * 0.5) var(--distress-shift);
+                }
+            }
+            @media (prefers-reduced-motion: reduce) {
+                #dialogue[class*='dialogue-distress-'] #dialogue-box,
+                #dialogue[class*='dialogue-distress-'] .dialogue-portrait-active {
+                    animation: none;
+                }
+            }
         </style>
     </head>
     <body>
@@ -544,7 +599,7 @@
                 <button data-room="pomni">Pomni's Room</button>
                 <button data-room="tadc">Circus Lobby</button>
                 <button data-room="dorm">Dorm Hall</button>
-                <button data-room="ribbit">Ribbit's Room (Level 1)</button>
+                <button data-room="ribbit">Ribbit's Room</button>
                 <button data-room="maze">Maze (Level 3)</button>
                 <button data-room="kaufmo">Kaufmo's Room</button>
             </div>
@@ -554,6 +609,9 @@
                 </button>
                 <button data-dialogue="level1Open">
                     &#9654; Level 1: Caine's Warning
+                </button>
+                <button data-mission="level1">
+                    &#9654; Level 1: Talk Her Down
                 </button>
                 <button data-dialogue="level2Opening">
                     &#9654; Level 2: Missing Pieces

@@ -120,13 +120,18 @@ export function findSpotNear(group, anchorName, offset) {
  * @param {string} imageUrl
  * @param {THREE.Vector3} position
  * @param {number} rotationY
+ * @param {{ tiltBack?: number }} [options] tiltBack: radians to lean the
+ *   top back, e.g. a picture propped against a wall rather than standing
  */
-export function placeOfficePicture(room, items, itemId, imageUrl, position, rotationY) {
+export function placeOfficePicture(room, items, itemId, imageUrl, position, rotationY, { tiltBack = 0 } = {}) {
   if (items.hasCollected(itemId)) return;
 
   const picture = createOfficePicture(imageUrl);
   picture.position.copy(position);
-  picture.rotation.y = rotationY;
+  // Yaw first, then the lean about its own left-right axis; -X tips the
+  // top away from the photo's face (+Z).
+  picture.rotation.order = 'YXZ';
+  picture.rotation.set(-tiltBack, rotationY, 0);
   room.group.add(picture);
   picture.updateMatrixWorld(true);
 
@@ -135,12 +140,19 @@ export function placeOfficePicture(room, items, itemId, imageUrl, position, rota
     if (child.isMesh) objects.push(child);
   });
 
-  room.interactables = [...(room.interactables ?? []), {
+  const pickup = {
     objects,
     prompt: () => 'Pick up photo',
     interact: () => {
       picture.removeFromParent();
       items.collect(itemId);
+      // Drop it from the room's E list too: a raycast still hits meshes
+      // that have left the scene, so its prompt would otherwise linger
+      // over the empty spot. main.js uses this same array for the room.
+      const list = room.interactables;
+      const index = list.indexOf(pickup);
+      if (index !== -1) list.splice(index, 1);
     },
-  }];
+  };
+  room.interactables = [...(room.interactables ?? []), pickup];
 }
