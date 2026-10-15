@@ -1,8 +1,13 @@
 // Node verification harness for the dialogue engine's branching logic.
 // Run with `node _verify_dialogue.mjs`.
 import { createDialogueEngine } from './src/dialogue/dialogueEngine.js';
+import { createChoiceTally } from './src/dialogue/choiceTally.js';
 import {
-  SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, ribbitTalkDialogue,
+  ESCAPE_MAX, ESCAPE_PASS_MARK, LEVEL_MAX_POINTS, getEscapeTotal, getLevelPoints,
+  passesEscapeGate, resetEscapeThreshold, setLevelPoints,
+} from './src/state/escapeThreshold.js';
+import {
+  SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
   level2HandIn1Dialogue, level2HandIn2Dialogue, level2HandIn3Dialogue,
   level2IdleDialogue, level2CompleteDialogue, level2PayoffDialogue,
 } from './src/data/dialogues.js';
@@ -182,34 +187,143 @@ function collectAllReachableNodes(script, maxPaths = 64) {
   check('empty script starts done', engine.done && engine.current === null);
 }
 
-// the real branching script (talking to Ribbit): every option path
-// plays to the end without throwing (so every `next` id resolves), stays
-// in the registry's speakers, and passes along its option's `points`.
+// Level 1 (Ribbit): walk every combination of answers through the engine
+// with a live tally, the way ribbitRoom.js drives it. Every path must
+// reach the end, pass all four choices, use only known speakers and moods,
+// and score exactly the points of the options it picked.
 {
-  const choiceIndex = ribbitTalkDialogue.findIndex((n) => n.type === 'choice');
-  const choice = ribbitTalkDialogue[choiceIndex];
-  check('ribbitTalk: has a choice node with options', choiceIndex >= 0 && choice.options.length >= 2);
+  const script = level1RibbitDialogue;
+  const choices = script.filter((n) => n.type === 'choice');
+  check('level1Ribbit: has four choices of three options', choices.length === 4
+    && choices.every((c) => c.options.length === 3), `choices=${choices.length}`);
 
-  choice.options.forEach((option, i) => {
-    const engine = createDialogueEngine(ribbitTalkDialogue);
+  // The script's own answer key (Dorsa's +1 options): A, B, A, A.
+  const key = choices.map((c) => c.options.findIndex((o) => o.points === 1));
+  check('level1Ribbit: correct answers are A, B, A, A', key.join() === '0,1,0,0', `key=${key.join()}`);
+  check('level1Ribbit: one correct answer per choice, the rest score 0', choices.every(
+    (c) => c.options.filter((o) => o.points === 1).length === 1 && c.options.every((o) => o.points === 0 || o.points === 1)));
+
+  const paths = [];
+  const walk = (picks) => {
+    if (picks.length === choices.length) { paths.push(picks); return; }
+    for (let i = 0; i < 3; i++) walk([...picks, i]);
+  };
+  walk([]);
+
+  let failed = null;
+  for (const picks of paths) {
+    const engine = createDialogueEngine(script);
+    const tally = createChoiceTally(script);
     const seen = [];
-    let picked = null;
-    let threw = null;
+    let verdicts = [];
+    let expected = 0;
     try {
-      for (let steps = 0; !engine.done && steps < 100; steps++) {
-        seen.push(engine.current);
-        if (engine.current.type === 'choice') picked = engine.choose(i);
-        else engine.advance();
+      let c = 0;
+      for (let steps = 0; !engine.done && steps < 500; steps++) {
+        const node = engine.current;
+        seen.push(node);
+        if (node.type === 'choice') {
+          const option = engine.choose(picks[c]);
+          expected += option.points;
+          verdicts.push(tally.record(option));
+          c++;
+        } else {
+          engine.advance();
+        }
       }
     } catch (e) {
-      threw = e.message;
+      failed = `${picks.join('')}: threw ${e.message}`;
+      break;
     }
-    check(`ribbitTalk option ${i + 1}: plays to the end`, !threw && engine.done, threw ?? '');
-    check(`ribbitTalk option ${i + 1}: choose() hands back its points`,
-      picked === option && typeof picked.points === 'number');
-    const missing = seen.find((n) => n.type === 'line' && !SPEAKERS[n.speaker]);
-    check(`ribbitTalk option ${i + 1}: every speaker exists`, !missing, missing?.speaker ?? '');
-  });
+    const problem = !engine.done ? 'never ended'
+      : tally.answered !== 4 ? `answered ${tally.answered} choices`
+      : tally.points !== expected ? `points ${tally.points} != ${expected}`
+      : verdicts.some((v, i) => v !== (picks[i] === key[i])) ? `verdicts ${verdicts.join()}`
+      : seen.find((n) => n.type === 'line' && !SPEAKERS[n.speaker]) ? 'unknown speaker'
+      : seen.find((n) => n.type === 'line' && SPRITES[n.speaker] && !MOODS.includes(n.mood)) ? 'missing/unknown mood'
+      : seen.find((n) => (n.type === 'line' || n.type === 'beat') && !n.text?.trim()) ? 'empty text'
+      : seen[seen.length - 1].text !== script[script.length - 1].text ? 'ends somewhere else'
+      : null;
+    if (problem) { failed = `${picks.map((p) => 'ABC'[p]).join('')}: ${problem}`; break; }
+  }
+  check(`level1Ribbit: all ${paths.length} answer paths play to the same ending and score correctly`, !failed, failed ?? '');
+
+  const best = createChoiceTally(script);
+  choices.forEach((c, i) => best.record(c.options[key[i]]));
+  check('level1Ribbit: all-correct run scores 4/4 points, 4/4 right', best.points === 4 && best.correct === 4
+    && best.maxPoints === 4 && best.totalChoices === 4);
+
+  const worst = createChoiceTally(script);
+  choices.forEach((c, i) => worst.record(c.options[(key[i] + 1) % 3]));
+  check('level1Ribbit: all-wrong run scores 0 points, 0 right, still 4 answered',
+    worst.points === 0 && worst.correct === 0 && worst.answered === 4);
+
+  // Stage directions ribbitRoom.js acts out; anything else would silently do nothing.
+  const KNOWN_ACTIONS = ['knock', 'enterRoom', 'sitBesideRibbit', 'ribbitSitsUp'];
+  const actions = script.filter((n) => n.action).map((n) => n.action);
+  check('level1Ribbit: every stage-direction action is one the room plays, each used once',
+    actions.length === KNOWN_ACTIONS.length && KNOWN_ACTIONS.every((a) => actions.includes(a)), actions.join());
+
+  // Level 1 is played in two parts (src/levels/level1.js): at the door in
+  // the Dorm Hall until 'l1_inside', then from 'l1_inside' in her room.
+  for (let pick = 0; pick < 3; pick++) {
+    const door = createDialogueEngine(script, { stopAt: 'l1_inside' });
+    const shown = [];
+    for (let steps = 0; !door.done && steps < 50; steps++) {
+      shown.push(door.current);
+      if (door.current.type === 'choice') door.choose(pick); else door.advance();
+    }
+    check(`level1Ribbit at the door, option ${'ABC'[pick]}: ends just before 'l1_inside'`,
+      door.done && !shown.some((n) => n.id === 'l1_inside') && shown[0].action === 'knock');
+  }
+  const inside = createDialogueEngine(script, { startAt: 'l1_inside' });
+  check("level1Ribbit in her room: starts on 'l1_inside' (the walk-in)",
+    inside.current.id === 'l1_inside' && inside.current.action === 'enterRoom');
+  {
+    const split = createChoiceTally(script);
+    const doorPart = createDialogueEngine(script, { stopAt: 'l1_inside' });
+    while (!doorPart.done) {
+      if (doorPart.current.type === 'choice') split.record(doorPart.choose(0)); else doorPart.advance();
+    }
+    const roomPart = createDialogueEngine(script, { startAt: 'l1_inside' });
+    let c = 1;
+    while (!roomPart.done) {
+      if (roomPart.current.type === 'choice') split.record(roomPart.choose(key[c++])); else roomPart.advance();
+    }
+    check('level1Ribbit: one tally across both parts scores all four choices (4/4)', split.points === 4 && split.answered === 4);
+  }
+
+  check('choiceTally: an option from another script is ignored',
+    createChoiceTally(script).record({ text: 'x', points: 1 }) === null);
+}
+
+// Escape Threshold (KAN-32): per-level points that replace rather than
+// stack, a 7-point maximum, Gate 1 at the pass mark, and a clean reset.
+{
+  resetEscapeThreshold();
+  check('escape: max is 7 (Level 1: 4, Level 2: 3), pass mark 5',
+    ESCAPE_MAX === 7 && LEVEL_MAX_POINTS.level1 === 4 && LEVEL_MAX_POINTS.level2 === 3 && ESCAPE_PASS_MARK === 5);
+  check('escape: a fresh run starts at 0 and fails the gate', getEscapeTotal() === 0 && !passesEscapeGate());
+
+  setLevelPoints('level1', 2);
+  setLevelPoints('level1', 3); // replaying Level 1 replaces its score
+  check('escape: replaying a level replaces its points instead of adding', getLevelPoints('level1') === 3
+    && getEscapeTotal() === 3);
+  setLevelPoints('level2', 1);
+  check('escape: levels add up across the run; 4 < 5 fails the gate', getEscapeTotal() === 4 && !passesEscapeGate());
+  setLevelPoints('level2', 2);
+  check('escape: reaching the pass mark (5) clears the gate', getEscapeTotal() === 5 && passesEscapeGate());
+
+  setLevelPoints('level1', 99);
+  setLevelPoints('level2', -4);
+  check("escape: points are clamped to each level's range",getLevelPoints('level1') === 4 && getLevelPoints('level2') === 0);
+
+  let threw = false;
+  try { setLevelPoints('level9', 1); } catch { threw = true; }
+  check('escape: an unknown level is rejected loudly', threw);
+
+  resetEscapeThreshold();
+  check('escape: reset clears the whole run', getEscapeTotal() === 0 && getLevelPoints('level1') === 0);
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
