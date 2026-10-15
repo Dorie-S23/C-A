@@ -2,13 +2,21 @@ import * as THREE from 'three';
 import { loadKaufmo } from './kaufmo.js';
 import { bendBone, SIDEWAYS } from './bendBone.js';
 
-// An actual run: quick cadence, a real stride, a bounce — matches jax.js's
-// gait constants (same "storms/hurries past" energy).
+// An actual run: quick cadence, a bounce, a forward lean — matches jax.js's
+// gait energy. The swing angles are deliberately smaller than Jax's: his
+// rig's hip/knee joints don't resolve to as clean a single hinge axis as
+// Jax's did (checked offline — no single axis swings this rig's thigh
+// cleanly forward/back without also lifting it, unlike Jax's), so a
+// smaller amplitude keeps whatever's imprecise about the arc from
+// reading as obviously wrong, while the lean carries most of the "he's
+// running" read on its own.
 const STRIDE_HZ = 3.3;
-const LEG_SWING = THREE.MathUtils.degToRad(42);
-const KNEE_BEND = THREE.MathUtils.degToRad(55);
-const ARM_SWING = THREE.MathUtils.degToRad(36);
+const LEG_SWING = THREE.MathUtils.degToRad(26);
+const KNEE_BEND = THREE.MathUtils.degToRad(34);
+const ARM_SWING = THREE.MathUtils.degToRad(30);
 const BOB_HEIGHT = 0.06; // he's shorter than Jax — a smaller bounce reads right at his scale
+const LEAN_ANGLE = THREE.MathUtils.degToRad(16); // a little more than Jax's — he's shorter, so it needs to read at a glance
+const LEAN_IN_SECONDS = 0.25;
 
 // Same reasoning as Jax's: a light of his own so he isn't just however lit
 // the backdrop happens to leave him, positioned clear of his own mesh
@@ -79,6 +87,7 @@ export function loadKaufmoRunExtra() {
     function playPassBy(from, to, duration) {
       kaufmo.position.copy(from);
       kaufmo.rotation.y = Math.atan2(to.x - from.x, to.z - from.z);
+      kaufmo.rotation.x = 0;
       kaufmo.visible = true;
       walk = { from: from.clone(), to: to.clone(), duration, elapsed: 0 };
     }
@@ -102,6 +111,7 @@ export function loadKaufmoRunExtra() {
       bendBone(bones.armL, kaufmo, SIDEWAYS, Math.sin(phase) * ARM_SWING);
       bendBone(bones.armR, kaufmo, SIDEWAYS, -Math.sin(phase) * ARM_SWING);
       kaufmo.position.y += Math.abs(Math.sin(phase)) * BOB_HEIGHT;
+      kaufmo.rotation.x = LEAN_ANGLE * Math.min(walk.elapsed / LEAN_IN_SECONDS, 1);
 
       if (t >= 1) {
         kaufmo.visible = false;
