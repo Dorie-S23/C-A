@@ -37,6 +37,7 @@ export function createDialogueUI({ speakers }) {
   let onComplete = null;
   let onChoice = null;
   let onCancel = null;
+  let onNode = null;
   let leftSpeaker = null;
   let rightSpeaker = null;
   let leftMood = 'neutral';
@@ -139,6 +140,18 @@ export function createDialogueUI({ speakers }) {
       return;
     }
 
+    onNode?.(node);
+
+    // A silent sync point for the scene behind the dialogue (e.g. cueing a
+    // background animation) rather than anything the player reads — skip
+    // it with no visible change and no click required, instead of making
+    // them advance past an empty box.
+    if (node.type === 'cue') {
+      engine.advance();
+      renderNode();
+      return;
+    }
+
     if (node.type === 'line' && node.side) {
       if (node.side === 'left') {
         leftSpeaker = node.speaker;
@@ -210,6 +223,7 @@ export function createDialogueUI({ speakers }) {
     onComplete = null;
     onChoice = null;
     onCancel = null;
+    onNode = null;
     if (callback) callback();
   }
 
@@ -229,6 +243,7 @@ export function createDialogueUI({ speakers }) {
     onComplete = null;
     onChoice = null;
     onCancel = null;
+    onNode = null;
     if (callback) callback();
   }
 
@@ -301,13 +316,18 @@ export function createDialogueUI({ speakers }) {
   return {
     /**
      * @param {Array} script - see src/data/dialogues.js for node shapes
-     * @param {{ onComplete?: () => void, onChoice?: (option, nextNode) => void, onCancel?: () => void }} [handlers]
+     * @param {{ onComplete?: () => void, onChoice?: (option, nextNode) => void, onCancel?: () => void,
+     *   onNode?: (node) => void }} [handlers] onNode fires for every node as it becomes
+     *   current — including 'cue' nodes, which otherwise never render anything — so a
+     *   caller can sync scene-level side effects (e.g. cueing a background animation)
+     *   to a specific point in the script without the player seeing a dialogue line for it.
      */
-    play(script, { onComplete: complete, onChoice: choice, onCancel: cancel } = {}) {
+    play(script, { onComplete: complete, onChoice: choice, onCancel: cancel, onNode: node } = {}) {
       engine = createDialogueEngine(script);
       onComplete = complete ?? null;
       onChoice = choice ?? null;
       onCancel = cancel ?? null;
+      onNode = node ?? null;
       leftSpeaker = null;
       rightSpeaker = null;
       leftMood = 'neutral';

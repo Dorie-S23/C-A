@@ -16,10 +16,10 @@ export const SPEAKERS = {
 // --- Pre-Level 1: "Business as Usual" ---------------------------------
 // Jax's wordless pass-by (the design doc's "tell that something is wrong
 // before anyone says so directly") is a pure 3D/animation beat with no
-// dialogue box in the source script — represented here as a `beat` node
-// so the overlay still carries the moment during a text-only playtest,
-// but it has no speaker/portrait and is meant to be replaced by an actual
-// animated Jax walking through the background once that exists.
+// dialogue box in the source script — a silent `cue` node, not a `beat`:
+// it never shows in the dialogue box at all, just signals main.js (via
+// onNode, matching on this id) to trigger Jax actually walking through
+// the room in the background. See characters/jax.js for the animation.
 export const preLevel1Dialogue = [
   {
     type: 'line',
@@ -57,8 +57,8 @@ export const preLevel1Dialogue = [
     text: 'Thrilling. Another one of his "brilliant" ideas.',
   },
   {
-    type: 'beat',
-    text: 'Jax storms past in the background — no dialogue, just animation/SFX.',
+    type: 'cue',
+    id: 'jaxPassBy',
   },
   {
     type: 'line',
