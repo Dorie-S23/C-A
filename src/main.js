@@ -739,8 +739,8 @@ let currentCameraDistance = CAMERA_DISTANCE;
 const TURN_SHARPNESS = 14;     // higher = snappier turning
 // Ground speed each clip's feet move at, measured at POMNI_HEIGHT; the clip
 // is sped up/slowed down by actual speed ÷ this so her feet stay planted.
-const WALK_CLIP_SPEED = 1.1;
-const RUN_CLIP_SPEED = 2.85;
+const WALK_CLIP_SPEED = 1.24; // 1.1 at the old 1.6 m height, scaled by 1.8/1.6
+const RUN_CLIP_SPEED = 3.2;   // 2.85 at the old 1.6 m height, scaled by 1.8/1.6
 const RUN_THRESHOLD = WALK_SPEED * 1.4; // above this she's sprinting
 const ACTION_FADE = 0.2;       // seconds to cross-fade between clips
 let animSpeed = 0;             // smoothed ground speed, so clips don't flicker
