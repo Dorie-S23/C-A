@@ -75,8 +75,12 @@ export function createDoorPortal(group, frameBox, spawn, to) {
   box.max[thinAxis] += DOOR_TRIGGER_DEPTH;
   box.min.y -= 0.2;
 
-  // Appear just outside, on the far side from the room — then face back in.
-  const arrivalSpawn = center.clone().addScaledVector(intoRoom, -DOOR_ARRIVAL_DISTANCE);
+  // This function is called once per room, by that room's own loader, using
+  // a point inside THAT room as `spawn` — so "arrival" always means landing
+  // back inside the room that called it (the far side of the door from
+  // wherever the player is coming from), not out past the doorway into
+  // whatever this room doesn't model beyond it.
+  const arrivalSpawn = center.clone().addScaledVector(intoRoom, DOOR_ARRIVAL_DISTANCE);
   arrivalSpawn.y = floorBelow(group, arrivalSpawn.x, frameBox.max.y + 5, arrivalSpawn.z) ?? frameBox.min.y;
   const arrivalFacing = Math.atan2(intoRoom.x, intoRoom.z);
 
