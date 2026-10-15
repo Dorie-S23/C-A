@@ -1,17 +1,12 @@
 import * as THREE from 'three';
-import { loadRoomModel } from '../rooms/loadRoomModel.js';
+import { loadHallwayBackdrop } from './hallwayBackdrop.js';
 import { loadJax } from '../characters/jax.js';
 
 // Pre-Level 1's "Jax storms past" plays as an actual cutscene: cut away
 // from Pomni's Room entirely to a shot of him running down the real Dorm
 // Hall, then cut back. That needs its own THREE.Scene + camera (the main
-// scene can only hold one room at a time), but no portals/doors/collision
-// — this is a backdrop nobody walks through, so it's built straight from
-// loadRoomModel rather than loadDormHallRoom's full interactive setup.
-// loadRoomModel already attaches a self-contained lighting rig to the
-// group (see createRoomLighting in loadRoomModel.js), so the cutscene
-// scene needs no lighting of its own.
-const DORM_HALL_URL = './models/world/dorm-hall-v7.glb';
+// scene can only hold one room at a time) — see hallwayBackdrop.js for why
+// it's not loadDormHallRoom's full interactive setup.
 
 // A clear stretch of the main hallway, away from any of its doors — he's
 // just running past in the background, not through a doorway. Spawning
@@ -48,7 +43,7 @@ const HOLD_AFTER = 0.35;
  */
 export function preloadJaxHallwayCutscene() {
   return Promise.all([
-    loadRoomModel(DORM_HALL_URL, null, { spawnAt: SPAWN_AT }),
+    loadHallwayBackdrop(SPAWN_AT),
     loadJax(),
   ]).then(([hall, jaxApi]) => {
     const scene = new THREE.Scene();

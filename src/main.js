@@ -10,6 +10,7 @@ import { loadKaufmoRoom } from './rooms/kaufmoRoom.js';
 import { loadPomni } from './characters/pomni.js';
 import { bendBone, SIDEWAYS } from './characters/bendBone.js';
 import { preloadJaxHallwayCutscene, playJaxHallwayCutscene } from './cutscenes/jaxHallwayCutscene.js';
+import { preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
 import { createTitleScreen } from './ui/titleScreen.js';
 import { resetEscapeThreshold, setLevelPoints } from './state/escapeThreshold.js';
@@ -379,6 +380,41 @@ function runCutscene(cutscene, onDone) {
 }
 
 /**
+ * Wires Level 2's opening script to cut to Kaufmo's hallway run the moment
+ * his mumbling line comes up (see kaufmoHallwayCutscene.js) — shared by
+ * the preview button (playDialoguePreview) and the real in-room
+ * conversation (kaufmoRoom.js, via playRoomDialogue), since level2Opening
+ * plays through both. Unlike Jax's cutscene, the dialogue box stays open
+ * the whole time — his mumbled line is the point, not a silent beat — so
+ * this only ever needs to decorate onNode, never split the script.
+ * Starts loading immediately so the cutscene's ready by the time the line
+ * actually shows, and composes with whatever onNode the caller already
+ * wanted (level1.js's missions use onNode too).
+ */
+function withKaufmoHallwayCutscene(key, baseOnNode) {
+  if (key !== 'level2Opening') return baseOnNode;
+  const ready = preloadKaufmoHallwayCutscene();
+  let triggered = false;
+  return (node) => {
+    baseOnNode?.(node);
+    if (triggered || node.id !== 'kaufmoHurriesBy') return;
+    triggered = true;
+    ready.then((assets) => {
+      if (!assets) return;
+      // The preload can still be in flight when the line that needs it
+      // shows — if the player's already backed out of the conversation
+      // by the time it resolves, don't let a stale cutscene hijack
+      // whatever's on screen now; just free it unused.
+      if (!dialogueUI.isActive) {
+        disposeObject3D(assets.scene);
+        return;
+      }
+      runCutscene(playKaufmoHallwayCutscene(renderer, assets), () => disposeObject3D(assets.scene));
+    });
+  };
+}
+
+/**
  * Loads a room as a backdrop and plays a dialogue script over it instead
  * of the usual "Click to Play" prompt. The pointer is never locked during
  * this, so WASD/mouse-look stay inert for free — the same "locks movement"
@@ -452,7 +488,11 @@ function playDialoguePreview(key) {
             onCancel: cancel,
           });
         } else {
-          dialogueUI.play(script, { onComplete: finish, onCancel: cancel });
+          dialogueUI.play(script, {
+            onNode: withKaufmoHallwayCutscene(key, undefined),
+            onComplete: finish,
+            onCancel: cancel,
+          });
         }
       });
     },
@@ -496,7 +536,8 @@ function playRoomDialogue(key, {
     cameraPitch = DEFAULT_PITCH;
   }
   dialogueUI.play(entry.script, {
-    onChoice, onComplete, onCancel, distressFor, onNode, startAt, stopAt,
+    onChoice, onComplete, onCancel, distressFor, startAt, stopAt,
+    onNode: withKaufmoHallwayCutscene(key, onNode),
   });
 }
 

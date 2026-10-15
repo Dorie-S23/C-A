@@ -209,6 +209,7 @@ export const level2OpeningDialogue = [
     text: "Hallway outside Ribbit's room. Pomni steps out. Kaufmo hurries past without noticing her.",
   },
   {
+    id: 'kaufmoHurriesBy',
     type: 'line',
     speaker: 'kaufmo',
     side: 'right',
