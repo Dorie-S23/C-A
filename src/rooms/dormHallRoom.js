@@ -15,8 +15,7 @@ const DORM_HALL_URL = './models/world/dorm-hall-v7.glb';
 // Just inside the main hallway, in front of the curtained entrance arch,
 // looking down the hall (-Z). The three hallways are far apart, so the
 // loader's centroid guess would land in the empty space between them.
-const TEMP_Q = new URLSearchParams(location.search); // TEMP_TEST
-const SPAWN = { x: Number(TEMP_Q.get('tx') ?? -1.3), z: Number(TEMP_Q.get('tz') ?? -40.16) }; // TEMP_TEST
+const SPAWN = { x: 0, z: -1.5 };
 
 // The entrance arch's curtain: it opens toward -Z (into the hallway) and
 // leads back out to the Circus Lobby.
@@ -79,7 +78,7 @@ export function loadDormHallRoom(onProgress, { from, items } = {}) {
     const guestRooms = Object.fromEntries(guests);
     // The door handles and light fittings are real metals.
     room.environment = true;
-    // useDialogueIcons(room.group); // TEMP_TEST_DISABLED
+    useDialogueIcons(room.group);
     // Placed before `from` below can move room.spawn to a different
     // arrival point — the picture always hangs near the hall's own
     // default entrance, regardless of which door the player walked in.
@@ -147,8 +146,6 @@ export function loadDormHallRoom(onProgress, { from, items } = {}) {
     }
 
     room.portals = portals;
-    room.spawnFacing = Number(TEMP_Q.get('tyaw') ?? Math.PI / 2); // TEMP_TEST
-    window.__debug = { THREE, room }; // TEMP_TEST
     if (arrival) {
       room.spawn = arrival;
     } else {
@@ -176,10 +173,9 @@ export function loadDormHallRoom(onProgress, { from, items } = {}) {
  * room.warmUp (called by main.js under the loading screen) does it then.
  */
 function onlyRenderWhenSeen(room, guest, control, roomBounds, doorway) {
-  const reflectors = TEMP_Q.has('notr') ? [] : guest.reflectors ?? []; // TEMP_TEST
+  const reflectors = guest.reflectors ?? [];
   const shadowLights = [];
   guest.group.traverse((child) => { if (child.isLight && child.castShadow) shadowLights.push(child); });
-  if (TEMP_Q.has('nosh')) shadowLights.length = 0; // TEMP_TEST
   if (reflectors.length === 0 && shadowLights.length === 0) return;
 
   const show = (seen) => {

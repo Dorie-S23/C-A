@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { loadRoomModel } from './loadRoomModel.js';
 import { loadCaine, createCaineIdle } from '../characters/caine.js';
+import { loadRagatha } from '../characters/ragatha.js';
 import { addMirrorReflections } from './mirrors.js';
 import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { createDoorPortal } from './portals.js';
@@ -8,6 +9,12 @@ import { findWallSpot, findSpotNear, placeOfficePicture } from '../props/officeP
 
 const CAINE_DISTANCE = 3; // how far in front of the spawn point Caine stands
 const CAINE_WALL_GAP = 0.8; // keep him at least this far off any wall in the way
+
+const RAGATHA_TALK_DISTANCE = 2.2;
+const RAGATHA_MIN_DISTANCE = 1.4;
+const RAGATHA_WALL_GAP = 0.5;
+const RAGATHA_OUTSIDE_DOOR = 1.5;
+const RAGATHA_WALK_IN = 2.0;
 
 const PICTURE_ID = 'ca1';
 const PICTURE_URL = './models/objects/ca1.png';
@@ -38,8 +45,8 @@ export function loadPomniRoom(onProgress, { from, items, preview, embedded = fal
   const withRagatha = preview === 'preLevel1';
   return Promise.all([
     loadRoomModel('./models/character%20rooms/pomnis-room-v3.glb', onProgress),
-    loadCaine(),
-  ]).then(([room, { caine, collider }]) => {
+    withRagatha ? loadRagatha() : loadCaine(),
+  ]).then(([room, cast]) => {
     // Its metal trim needs something to reflect.
     room.environment = true;
     // The vanity and the standing mirror reflect the room for real.
@@ -76,6 +83,7 @@ export function loadPomniRoom(onProgress, { from, items, preview, embedded = fal
 
       // Shut until Pomni opens it with E (see makeDoorOpenable).
       doorControl = makeDoorOpenable(room, door, { portal });
+      room.doorControl = doorControl;
       room.interactables = [...(room.interactables ?? []), doorControl.interactable];
     }
 

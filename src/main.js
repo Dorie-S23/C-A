@@ -10,6 +10,7 @@ import { loadKaufmoRoom } from './rooms/kaufmoRoom.js';
 import { loadPomni } from './characters/pomni.js';
 import { bendBone, SIDEWAYS } from './characters/bendBone.js';
 import { preloadJaxHallwayCutscene, playJaxHallwayCutscene } from './cutscenes/jaxHallwayCutscene.js';
+import { createCaineApproachCutscene } from './cutscenes/caineApproachCutscene.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
 import { createTitleScreen } from './ui/titleScreen.js';
 import { resetEscapeThreshold, setLevelPoints } from './state/escapeThreshold.js';
@@ -327,6 +328,10 @@ function returnToHome({ toRoomPicker = false } = {}) {
   minimap.hide();
   loadToken++; // discard any load still in flight for the room we're leaving
   paused = false;
+  if (preLevel1Timer) {
+    clearInterval(preLevel1Timer);
+    preLevel1Timer = null;
+  }
   resetMoveState();
   resetStage();
 
@@ -403,6 +408,7 @@ function playDialoguePreview(key) {
   const cutsceneReady = key === 'preLevel1' ? preloadJaxHallwayCutscene() : Promise.resolve(null);
 
   selectRoom(room, {
+    preview: key,
     onReady: () => {
       overlay.classList.add('hidden');
       readyToPlay = false;
@@ -446,16 +452,96 @@ function playDialoguePreview(key) {
             onComplete: () => {
               runCutscene(playJaxHallwayCutscene(renderer, cutsceneAssets), () => {
                 disposeCutsceneAssets();
-                dialogueUI.play(script, { startAt: 'afterJaxPassBy', onComplete: finish, onCancel: cancel });
+                dialogueUI.play(script, {
+                  startAt: 'afterJaxPassBy',
+                  onComplete: () => {
+                    if (key === 'preLevel1') {
+                      startPreLevel1Exploration();
+                    } else {
+                      finish();
+                    }
+                  },
+                  onCancel: cancel,
+                });
               });
             },
             onCancel: cancel,
           });
         } else {
-          dialogueUI.play(script, { onComplete: finish, onCancel: cancel });
+          dialogueUI.play(script, {
+            onComplete: () => {
+              if (key === 'preLevel1') {
+                startPreLevel1Exploration();
+              } else {
+                finish();
+              }
+            },
+            onCancel: cancel,
+          });
         }
       });
     },
+  });
+}
+
+let preLevel1Timer = null;
+let preLevel1SecondsLeft = 0;
+
+function startPreLevel1Exploration() {
+  readyToPlay = true;
+  overlay.classList.add('hidden');
+  resetMoveState();
+  stage.hold(false);
+
+  // Attempt pointer lock so Pomni can immediately walk out and explore
+  try {
+    renderer.domElement.requestPointerLock?.();
+  } catch (_) {}
+
+  showHint('Explore the circus... Caine arrives in 8s!', 4000);
+
+  if (preLevel1Timer) clearInterval(preLevel1Timer);
+  preLevel1SecondsLeft = 8;
+
+  preLevel1Timer = setInterval(() => {
+    preLevel1SecondsLeft--;
+    if (preLevel1SecondsLeft === 5) {
+      showHint('5s remaining to explore...', 1800);
+    } else if (preLevel1SecondsLeft === 2) {
+      showHint('2s... Look around!', 1500);
+    } else if (preLevel1SecondsLeft <= 0) {
+      clearInterval(preLevel1Timer);
+      preLevel1Timer = null;
+      triggerCaineCutscene();
+    }
+  }, 1000);
+}
+
+function triggerCaineCutscene() {
+  stage.hold(true);
+  resetMoveState();
+  showHint('Here comes Caine!', 2500);
+
+  const cutscene = createCaineApproachCutscene({
+    scene,
+    camera,
+    player,
+    pomni,
+    renderer,
+    dialogueUI,
+    onComplete: () => {
+      stage.hold(false);
+      showHint('Objective: Check on Ribbit down the hall (Level 1)', 6000);
+    },
+    onCancel: () => {
+      stage.hold(false);
+      returnToHome();
+    },
+  });
+
+  runCutscene(cutscene, () => {
+    stage.hold(false);
+    showHint('Objective: Check on Ribbit down the hall (Level 1)', 6000);
   });
 }
 
@@ -588,7 +674,7 @@ const itemState = {
   },
 };
 
-function selectRoom(roomKey, { onReady, from } = {}) {
+function selectRoom(roomKey, { onReady, from, preview } = {}) {
   const loadRoom = ROOM_LOADERS[roomKey];
   if (!loadRoom) return;
 
@@ -633,7 +719,7 @@ function selectRoom(roomKey, { onReady, from } = {}) {
     loadRoom((ratio) => {
       if (myToken !== loadToken) return; // a newer selectRoom()/returnToHome() superseded this one
       overlaySubtitle.textContent = `Fetching room model (${Math.round(ratio * 100)}%)`;
-    }, { from, playDialogue: playRoomDialogue, endLevel, stage, items: itemState }),
+    }, { from, playDialogue: playRoomDialogue, endLevel, stage, items: itemState, preview }),
     pomniReady,
   ])
     .then(([result]) => {
@@ -732,7 +818,6 @@ function applyLoadedRoom({
   // Anything the room only switches on later (a connected room's mirrors
   // and shadows) builds its shaders now, under the loading screen.
   warmUp?.(renderer, scene, camera);
-  window.__debug = { ...(window.__debug ?? {}), renderer }; // TEMP_TEST
 
   readyToPlay = true;
   overlay.classList.remove('loading');
@@ -906,6 +991,11 @@ overlay.addEventListener('click', (e) => {
   if (!readyToPlay) return;
   if (!currentRoom) return; // on home screen, must pick a room first
   renderer.domElement.requestPointerLock();
+});
+renderer.domElement.addEventListener('click', () => {
+  if (readyToPlay && !isLocked && !dialogueUI.isActive && !stageBusy() && currentRoom) {
+    renderer.domElement.requestPointerLock();
+  }
 });
 document.addEventListener('pointerlockchange', () => {
   isLocked = document.pointerLockElement === renderer.domElement;
@@ -1770,7 +1860,10 @@ function animate() {
     if (stageWalk && !paused) updateStageWalk(delta);
     else if (isLocked && readyToPlay && !dialogueUI.isActive && !stageBusy()) updateMovement(delta);
     else updatePomniWalk(delta, 0); // settle the waddle while paused/talking
-    updateCamera(delta);
+    // Don't run the orbit camera while a cutscene owns it — the cutscene
+    // sets camera.position / lookAt itself, and running updateCamera on top
+    // would fight it every frame, causing a visible shake/jitter.
+    if (!activeCutscene) updateCamera(delta);
   }
   minimap.update(player.position.x, player.position.z, cameraYaw);
   updateInteractionFocus();
