@@ -3,17 +3,19 @@ import { loadRoomModel } from './loadRoomModel.js';
 import { loadCaine, createCaineIdle } from '../characters/caine.js';
 import { loadRagatha } from '../characters/ragatha.js';
 import { addMirrorReflections } from './mirrors.js';
-import { openHingedDoor } from './doors.js';
+import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { createDoorPortal } from './portals.js';
 import { findWallSpot, findSpotNear, placeOfficePicture } from '../props/officePicture.js';
 
 const CAINE_DISTANCE = 3; // how far in front of the spawn point Caine stands
 const CAINE_WALL_GAP = 0.8; // keep him at least this far off any wall in the way
 
-// Pre-Level 1: Ragatha comes in from the doorway the player faces and
+// Pre-Level 1: Ragatha comes in through the doorway the player faces and
 // stops this far in front of Pomni to chat.
 const RAGATHA_TALK_DISTANCE = 2.2;
-const RAGATHA_WALK_IN = 2.5; // how far back she starts her walk up
+const RAGATHA_WALK_IN = 2.5; // how far back she starts her walk up, with no doorway
+// With one, she starts just outside it, behind its lit glimpse panel.
+const RAGATHA_OUTSIDE_DOOR = 0.6;
 const RAGATHA_WALL_GAP = 0.6;
 const RAGATHA_MIN_DISTANCE = 1.2; // never closer than this to Pomni
 
@@ -60,6 +62,7 @@ export function loadPomniRoom(onProgress, { from, items, preview } = {}) {
     }
 
     const door = openHingedDoor(room.group, DOOR_FRAME_NAME, DOOR_SLAB_NAME, room.spawn, room.collisionMeshes);
+    let doorControl = null;
     if (door) {
       const doorCenter = door.frameBox.getCenter(new THREE.Vector3());
       room.spawnFacing = Math.atan2(room.spawn.x - doorCenter.x, room.spawn.z - doorCenter.z);
@@ -70,10 +73,23 @@ export function loadPomniRoom(onProgress, { from, items, preview } = {}) {
         room.spawn = portal.arrival.spawn;
         room.spawnFacing = portal.arrival.facing;
       }
+
+      // Shut until Pomni opens it with E (see makeDoorOpenable).
+      doorControl = makeDoorOpenable(room, door, { portal });
+      room.interactables = [...(room.interactables ?? []), doorControl.interactable];
     }
 
     if (withRagatha) {
-      stageRagatha(room, cast, defaultSpawn, room.spawnFacing ?? 0);
+      // Ragatha's entrance: she's already let herself in, so the door
+      // starts open (Pomni can still shut it with E afterwards).
+      doorControl?.open({ immediate: true });
+      doorControl?.update(0);
+      const doorway = door?.frameBox.getCenter(new THREE.Vector3());
+      const ragathaUpdate = stageRagatha(room, cast, defaultSpawn, room.spawnFacing ?? 0, doorway);
+      room.update = (deltaSeconds) => {
+        ragathaUpdate(deltaSeconds);
+        doorControl?.update(deltaSeconds);
+      };
       return room;
     }
 
@@ -83,7 +99,11 @@ export function loadPomniRoom(onProgress, { from, items, preview } = {}) {
     caine.updateMatrixWorld(true);
 
     room.collisionMeshes.push({ mesh: collider, box: new THREE.Box3().setFromObject(collider) });
-    room.update = createCaineIdle(caine);
+    const caineIdle = createCaineIdle(caine);
+    room.update = (deltaSeconds) => {
+      caineIdle(deltaSeconds);
+      doorControl?.update(deltaSeconds);
+    };
 
     return room;
   });
@@ -91,16 +111,20 @@ export function loadPomniRoom(onProgress, { from, items, preview } = {}) {
 
 /**
  * Puts Ragatha out of the way along the direction the player faces at
- * spawn, ready to walk up to Pomni, and returns the hooks main.js's
- * dialogue preview drives her with: `onDialogueNode` follows each node's
+ * spawn, ready to walk up to Pomni, and sets the hooks main.js's dialogue
+ * preview drives her with: `onDialogueNode` follows each node's
  * `anim.ragatha` cue (a pose name, or 'walkIn' to walk up) and makes her
- * gesture along while the line is hers.
+ * gesture along while the line is hers. Returns her per-frame update.
  */
-function stageRagatha(room, { ragatha, collider, update, setPose, setSpeaking, walkTo, faceTowards }, spawn, facing) {
+function stageRagatha(room, { ragatha, collider, update, setPose, setSpeaking, walkTo, faceTowards }, spawn, facing, doorway) {
   const forward = new THREE.Vector3(-Math.sin(facing), 0, -Math.cos(facing)); // yaw 0 faces -Z
   const clear = clearDistance(room.group, spawn, forward) - RAGATHA_WALL_GAP;
   const talkDistance = Math.max(RAGATHA_MIN_DISTANCE, Math.min(RAGATHA_TALK_DISTANCE, clear));
-  const startDistance = Math.max(talkDistance, Math.min(talkDistance + RAGATHA_WALK_IN, clear));
+  // The spawn faces the doorway, so its distance along `forward` puts her
+  // on the far side of it.
+  const startDistance = doorway
+    ? Math.max(talkDistance, doorway.clone().sub(spawn).setY(0).dot(forward) + RAGATHA_OUTSIDE_DOOR)
+    : Math.max(talkDistance, Math.min(talkDistance + RAGATHA_WALK_IN, clear));
 
   const pomniSpot = new THREE.Vector3(spawn.x, spawn.y, spawn.z);
   const talkSpot = pomniSpot.clone().addScaledVector(forward, talkDistance);
@@ -131,7 +155,7 @@ function stageRagatha(room, { ragatha, collider, update, setPose, setSpeaking, w
     });
   };
   room.talkPartner = talkSpot;
-  room.update = update;
+  return update;
 }
 
 /** How far the room is open from `origin` along `direction`, at waist height. */

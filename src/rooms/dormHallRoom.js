@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { loadRoomModel } from './loadRoomModel.js';
 import { createCurtainPortal, createDoorPortal } from './portals.js';
-import { openHingedDoor } from './doors.js';
+import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { findWallSpot, findSpotNear, placeOfficePicture } from '../props/officePicture.js';
 
 // Exported from "Dorm Hall V7.blend" by tools/blender/export_dorm_hall_v7.py,
@@ -18,27 +18,35 @@ const SPAWN = { x: 0, z: -1.5 };
 // leads back out to the Circus Lobby.
 const ENTRANCE_CURTAIN = 'Plane036';
 
-// Three of the hallway's many numbered bedroom doors (it has dozens —
-// .014-.145 — lining both sides of a long corridor running away from
-// spawn), picked for being nearest to it (~8-17m down the hall) rather
-// than for anything to do with the rooms they now lead to. The glTF
-// export carries these as "Door Frame.014" etc; three.js's GLTFLoader
-// sanitizes node names (spaces go, the disambiguating dot is stripped),
-// so they come out as below.
+// The bedroom doors that lead somewhere (shut until Pomni opens them — see
+// makeDoorOpenable): each character's own door, the one
+// with their icon on it, so the hallway, its minimap and the story (Level 1
+// knocks on Ribbit's door) all agree. Found by matching each icon decal in
+// the hall to its nearest door. The glTF export carries these as "Door
+// Frame.068" etc; three.js's GLTFLoader sanitizes node names (spaces go,
+// the disambiguating dot is stripped), so they come out as below. All three
+// are on the main hallway's left wall.
 const ROOM_DOORS = [
-  { frame: 'Door_Frame014', slab: 'Door_Slab014', to: 'pomni' },
-  { frame: 'Door_Frame028', slab: 'Door_Slab028', to: 'kaufmo' },
-  { frame: 'Door_Frame015', slab: 'Door_Slab015', to: 'ribbit' },
+  { frame: 'Door_Frame068', slab: 'Door_Slab068', icon: 'Pomni', to: 'pomni' },   // z ≈ -40
+  { frame: 'Door_Frame087', slab: 'Door_Slab087', icon: 'Kaufmo', to: 'kaufmo' }, // z ≈ -95
+  { frame: 'Door_Frame089', slab: 'Door_Slab089', icon: 'Ribbit', to: 'ribbit' }, // z ≈ -110
 ];
+// The main hallway runs along -Z down x = 0. Doors swing into it, and
+// arrivals stand in it, straight out from the door: aiming at the hall's
+// spawn instead (far behind, back at the entrance) would point almost
+// along the wall for doors this far down.
+const HALL_CENTRE_X = 0;
 
 const PICTURE_ID = 'ca3';
 const PICTURE_URL = './models/objects/ca3.png';
 const PICTURE_HEIGHT = 1.5;
-// On the floor below one of the hallway's own hung photos, partway down
-// toward the bedroom doors — as if it fell from the wall of frames rather
-// than being yet another one neatly hanging in it.
+// On the floor below one of the hallway's own hung photos (on the right
+// wall by the first door), propped against the wall as if it fell from the
+// wall of frames — facing out into the hall so it reads as a photo, not
+// the dark back of a frame.
 const PICTURE_ANCHOR = 'Short_Photo002';
-const PICTURE_OFFSET = new THREE.Vector3(-0.9, 0, 0);
+const PICTURE_OFFSET = new THREE.Vector3(-0.3, 0, 0); // just off the wall, into the hall
+const PICTURE_LEAN = 0.2; // radians, top resting back against the wall
 
 export function loadDormHallRoom(onProgress, { from, items } = {}) {
   return loadRoomModel(DORM_HALL_URL, onProgress, { spawnAt: SPAWN }).then((room) => {
@@ -54,17 +62,35 @@ export function loadDormHallRoom(onProgress, { from, items } = {}) {
       const spot = findSpotNear(room.group, PICTURE_ANCHOR, PICTURE_OFFSET)
         ?? findWallSpot(room.group, origin, new THREE.Vector3(1, 0, 0), 8)
         ?? findWallSpot(room.group, origin, new THREE.Vector3(-1, 0, 0), 8);
-      if (spot) placeOfficePicture(room, items, PICTURE_ID, PICTURE_URL, spot.position, spot.rotationY);
+      if (spot) {
+        // Face the hall's centre line (x = 0), away from the wall it leans on.
+        const facing = Math.atan2(HALL_CENTRE_X - spot.position.x, 0);
+        placeOfficePicture(room, items, PICTURE_ID, PICTURE_URL, spot.position, facing, { tiltBack: PICTURE_LEAN });
+      }
     }
 
     const entrance = createCurtainPortal(room.group, ENTRANCE_CURTAIN, -1, 'tadc');
     const portals = entrance ? [entrance] : [];
 
-    for (const { frame, slab, to } of ROOM_DOORS) {
-      const door = openHingedDoor(room.group, frame, slab, room.spawn, room.collisionMeshes);
+    room.hallDoors = {};
+    for (const { frame, slab, icon, to } of ROOM_DOORS) {
+      const frameObject = room.group.getObjectByName(frame);
+      if (!frameObject) continue;
+      const centre = new THREE.Box3().setFromObject(frameObject).getCenter(new THREE.Vector3());
+      const inFront = new THREE.Vector3(HALL_CENTRE_X, centre.y, centre.z);
+      const door = openHingedDoor(room.group, frame, slab, inFront, room.collisionMeshes);
       if (!door) continue;
-      portals.push(createDoorPortal(room.group, door.frameBox, room.spawn, to));
+      const portal = createDoorPortal(room.group, door.frameBox, inFront, to);
+      portals.push(portal);
+      // Shut until Pomni walks up and opens it; the character's icon swings with it.
+      const control = makeDoorOpenable(room, door, { portal, attach: [room.group.getObjectByName(icon)] });
+      room.hallDoors[to] = { portal, control, shut: () => control.lock(), open: () => control.open() };
     }
+    const doorControls = Object.values(room.hallDoors).map((d) => d.control);
+    room.interactables = [...(room.interactables ?? []), ...doorControls.map((c) => c.interactable)];
+    room.update = (deltaSeconds) => {
+      for (const control of doorControls) control.update(deltaSeconds);
+    };
 
     room.portals = portals;
     // Arrive at whichever portal leads back to wherever the player came from.

@@ -37,6 +37,7 @@ export function createDialogueUI({ speakers }) {
   let onComplete = null;
   let onChoice = null;
   let onCancel = null;
+  let distressFor = null;
   let onNode = null;
   let leftSpeaker = null;
   let rightSpeaker = null;
@@ -141,6 +142,16 @@ export function createDialogueUI({ speakers }) {
     }
     onNode?.(node);
 
+    // A silent sync point for the scene behind the dialogue (e.g. cueing a
+    // background animation) rather than anything the player reads — skip
+    // it with no visible change and no click required, instead of making
+    // them advance past an empty box.
+    if (node.type === 'cue') {
+      engine.advance();
+      renderNode();
+      return;
+    }
+
     if (node.type === 'line' && node.side) {
       if (node.side === 'left') {
         leftSpeaker = node.speaker;
@@ -156,6 +167,7 @@ export function createDialogueUI({ speakers }) {
     renderPortrait(portraitRight, rightSpeaker, rightMood, activeSide === 'right');
 
     box.classList.toggle('dialogue-box-beat', node.type === 'beat');
+    setDistress(node.type === 'line' && distressFor ? distressFor(node) : 0);
     optionsEl.hidden = true;
     continueEl.textContent = CONTINUE_HINT;
 
@@ -204,6 +216,16 @@ export function createDialogueUI({ speakers }) {
     renderNode();
   }
 
+  /**
+   * 0 = calm; 1-3 = how shaken the speaker sounds on this line: the box
+   * trembles and the name/text/portrait tint red, harder at each level
+   * (see .dialogue-distress-N in index.html).
+   */
+  function setDistress(level) {
+    const clamped = Math.max(0, Math.min(3, Math.round(level || 0)));
+    for (let i = 1; i <= 3; i++) root.classList.toggle(`dialogue-distress-${i}`, i === clamped);
+  }
+
   function finish() {
     root.classList.add('hidden');
     stopTyping();
@@ -212,7 +234,9 @@ export function createDialogueUI({ speakers }) {
     onComplete = null;
     onChoice = null;
     onCancel = null;
+    distressFor = null;
     onNode = null;
+    setDistress(0);
     if (callback) callback();
   }
 
@@ -232,7 +256,9 @@ export function createDialogueUI({ speakers }) {
     onComplete = null;
     onChoice = null;
     onCancel = null;
+    distressFor = null;
     onNode = null;
+    setDistress(0);
     if (callback) callback();
   }
 
@@ -305,18 +331,27 @@ export function createDialogueUI({ speakers }) {
   return {
     /**
      * @param {Array} script - see src/data/dialogues.js for node shapes
-     * onNode is called with each node as it comes up, so the scene can
-     * stage it (e.g. a character's animation cue — see `anim` in dialogues.js).
-     *
-     * @param {{ onComplete?: () => void, onChoice?: (option, nextNode) => void,
-     *   onCancel?: () => void, onNode?: (node) => void }} [handlers]
+     * @param {{ onComplete?: () => void, onChoice?: (option, nextNode) => void, onCancel?: () => void,
+     *   onNode?: (node) => void, distressFor?: (lineNode) => number,
+     *   startAt?: string, stopAt?: string }} [handlers] onNode fires for every node as it
+     *   becomes current — including 'cue' nodes, which otherwise never render anything, so a
+     *   caller can sync scene-level side effects (e.g. cueing a background animation, or
+     *   acting out a node's `action` stage direction) to a specific point in the script
+     *   without the player seeing a dialogue line for it. distressFor: 0-3 per line as it's
+     *   shown (see setDistress), for reactions that depend on the player's earlier picks
+     *   rather than on the script itself. startAt/stopAt play just part of the script (see
+     *   createDialogueEngine).
      */
-    play(script, { onComplete: complete, onChoice: choice, onCancel: cancel, onNode: nodeShown } = {}) {
-      engine = createDialogueEngine(script);
+    play(script, {
+      onComplete: complete, onChoice: choice, onCancel: cancel, distressFor: distress, onNode: node,
+      startAt, stopAt,
+    } = {}) {
+      engine = createDialogueEngine(script, { startAt, stopAt });
       onComplete = complete ?? null;
       onChoice = choice ?? null;
       onCancel = cancel ?? null;
-      onNode = nodeShown ?? null;
+      distressFor = distress ?? null;
+      onNode = node ?? null;
       leftSpeaker = null;
       rightSpeaker = null;
       leftMood = 'neutral';

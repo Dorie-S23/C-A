@@ -9,18 +9,43 @@ const DOOR_TRIGGER_DEPTH = 1.0;
 const DOOR_TRIGGER_SIDE_INSET = 0.1;
 const DOOR_ARRIVAL_DISTANCE = 1.8;
 // A plain open doorway shows the scene's background colour through it —
-// reads as a black void, not "there's a hallway through here". A warm,
-// unlit panel just past the frame (plus a soft light bleeding back onto
-// the frame itself) suggests a lit passage instead, without needing an
+// reads as a black void, not "there's a hallway through here". A warm
+// glow just past the frame (plus a soft light bleeding back onto the
+// frame itself) suggests a lit passage instead, without needing an
 // actual rendered view of the other room.
+//
+// This used to be a flat, hard-edged, fully opaque colour — which, lit
+// head-on and filling almost the whole opening, read as a solid painted
+// wall rather than an opening ("it's as if the door's closed"), and gave
+// anything crossing in front of it zero rim/fill light of its own, so it
+// silhouetted. A radial gradient (bright, warm centre fading to fully
+// transparent at the edges) keeps the same "something's glowing back
+// there" cue without the hard rectangle, and letting the room's own dark
+// show through at the edges is what actually reads as depth/an opening.
 const GLIMPSE_INSET = 0.92; // shrink from the frame's full opening so it doesn't poke past the trim
-// Unlit (MeshBasicMaterial), so this renders at exactly this brightness no
-// matter how dim the room around it is — needs to actually look bright
-// next to the door's own wood tones, not just "a different dark colour".
-const GLIMPSE_COLOR = 0xf2c488;
+const GLIMPSE_CORE_COLOR = 'rgba(247, 208, 150, 0.92)';
+const GLIMPSE_MID_COLOR = 'rgba(214, 160, 104, 0.5)';
+const GLIMPSE_EDGE_COLOR = 'rgba(214, 160, 104, 0)';
 const GLIMPSE_LIGHT_COLOR = 0xffce8a;
-const GLIMPSE_LIGHT_INTENSITY = 4;
+const GLIMPSE_LIGHT_INTENSITY = 2.5;
 const GLIMPSE_LIGHT_RANGE = 4.5;
+
+let glimpseTexture = null;
+function getGlimpseTexture() {
+  if (glimpseTexture) return glimpseTexture;
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, GLIMPSE_CORE_COLOR);
+  gradient.addColorStop(0.55, GLIMPSE_MID_COLOR);
+  gradient.addColorStop(1, GLIMPSE_EDGE_COLOR);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+  glimpseTexture = new THREE.CanvasTexture(canvas);
+  return glimpseTexture;
+}
 
 /**
  * A curtained archway that leads to another room: walking up into the
@@ -77,9 +102,14 @@ export function createDoorPortal(group, frameBox, spawn, to) {
   const thinAxis = wideAxis === 'x' ? 'z' : 'x';
   const center = frameBox.getCenter(new THREE.Vector3());
 
-  const intoRoom = new THREE.Vector3().subVectors(spawn, center).setY(0);
-  if (intoRoom.lengthSq() < 1e-6) intoRoom.set(0, 0, 1); // spawn directly on the doorway: arbitrary but valid
-  intoRoom.normalize();
+  // Straight out of the wall the door is set in (its thin axis), toward
+  // whichever side `spawn` is on. Aiming at the spawn itself would tilt it
+  // whenever the spawn isn't square in front of the door — the doorway
+  // glimpse then cut diagonally through the wall (Kaufmo's room), and the
+  // arrival point and facing came out skewed.
+  const side = spawn[thinAxis] - center[thinAxis];
+  const intoRoom = new THREE.Vector3();
+  intoRoom[thinAxis] = side < 0 ? -1 : 1;
 
   const box = frameBox.clone();
   box.min[wideAxis] += DOOR_TRIGGER_SIDE_INSET;
@@ -103,7 +133,7 @@ export function createDoorPortal(group, frameBox, spawn, to) {
 }
 
 /**
- * A warm unlit panel + soft light just past the open door, facing back
+ * A warm glowing panel + soft light just past the open door, facing back
  * into the room — so looking at an open doorway shows a dim lit passage
  * instead of the flat black of empty, unmodelled space beyond it.
  */
@@ -111,7 +141,9 @@ function addDoorwayGlimpse(group, frameBox, center, intoRoom, wideAxis) {
   const size = frameBox.getSize(new THREE.Vector3());
   const panel = new THREE.Mesh(
     new THREE.PlaneGeometry(size[wideAxis] * GLIMPSE_INSET, size.y * GLIMPSE_INSET),
-    new THREE.MeshBasicMaterial({ color: GLIMPSE_COLOR, side: THREE.DoubleSide }),
+    new THREE.MeshBasicMaterial({
+      map: getGlimpseTexture(), transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    }),
   );
   panel.name = 'DoorwayGlimpse';
   panel.position.copy(center).addScaledVector(intoRoom, -0.25);
