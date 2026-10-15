@@ -162,6 +162,7 @@ const btnResume = document.getElementById('btn-resume');
 const btnHome = document.getElementById('btn-home');
 const btnTitle = document.getElementById('btn-title');
 const crosshair = document.getElementById('crosshair');
+const pictureCounter = document.getElementById('picture-counter');
 const hint = document.getElementById('hint');
 const interactPrompt = document.getElementById('prompt');
 
@@ -648,6 +649,20 @@ const itemState = {
     return 'level2Payoff';
   },
 };
+
+function updatePictureCounter() {
+  // Only free exploration shows the HUD, including between room visits.
+  const visible = isLocked && readyToPlay && !paused && !dialogueUI.isActive
+    && !activeCutscene && !stageBusy() && !titleScreen.active
+    && overlay.classList.contains('hidden') && controlsPanel.hidden
+    && creditsPanel.classList.contains('hidden');
+  if (pictureCounter.hidden === visible) pictureCounter.hidden = !visible;
+
+  // Handed-in pictures still count as found. Only update the live region
+  // when its text changes, rather than announcing it every animation frame.
+  const text = `Pictures found: ${collectedItems.size + presentedItems.size}/3`;
+  if (pictureCounter.textContent !== text) pictureCounter.textContent = text;
+}
 
 function selectRoom(roomKey, { onReady, from, preview } = {}) {
   const loadRoom = ROOM_LOADERS[roomKey];
@@ -1839,6 +1854,7 @@ function animate() {
   }
   minimap.update(player.position.x, player.position.z, cameraYaw);
   updateInteractionFocus();
+  updatePictureCounter();
   if (activeCutscene) {
     const finished = activeCutscene.update(delta);
     if (finished) {
