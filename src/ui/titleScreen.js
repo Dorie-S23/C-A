@@ -46,6 +46,7 @@ const GLOVE_MAX_LEAN = 0.35;
 const GLOVE_LEAN_SHARPNESS = 10;  // per second; how quickly the tilt follows (and settles back)
 const GLOVE_BOB = 0.04;           // resting bob height, in spacings
 const GLOVE_BOB_PERIOD = 1.6;     // seconds
+const GLOVE_FOLLOW_SHARPNESS = 30; // per second; how tightly the glove trails the mouse
 
 // Lighting, matched to the .blend: one sun (strength 6.22, aimed as below
 // after converting Blender's Z-up to three's Y-up) plus the world's dim
@@ -121,6 +122,13 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
   let gloveSettled = 1; // eases the resting bob in after a hop
   let gloveBobTime = 0;
   let buttonSpacing = 1;
+  // The glove stands in for the mouse cursor: once the mouse moves, the
+  // glove follows it with its fingertip on the pointer. Arrow keys switch
+  // back to hopping between buttons.
+  let followPointer = false;
+  const pointerTarget = new THREE.Vector3(); // where the glove goes to put its fingertip on the pointer
+  const fingertipOffset = new THREE.Vector3(); // glove origin minus fingertip, in its plane
+  const glovePlane = new THREE.Plane();
   let active = false;
 
   const ready = new GLTFLoader().loadAsync(TITLE_URL).then((gltf) => {
@@ -145,6 +153,8 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
     buttons = BUTTONS.map(({ action, block, label }) => ({
       action,
       block: gltf.scene.getObjectByName(block),
+      label: gltf.scene.getObjectByName(label),
+      restScale: null, // the block's scale once it has settled, at HOLD_TIME
       objects: [block, label].map((name) => gltf.scene.getObjectByName(name)).filter(Boolean),
       baseScales: [],
       basePositions: [],
@@ -155,6 +165,12 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
     glove = gltf.scene.getObjectByName(GLOVE);
     doorway = gltf.scene.getObjectByName(DOORWAY);
 
+    for (const button of buttons) {
+      // OPTIONS and QUIT share a material; each label toggles its own.
+      if (button.label) button.label.material = button.label.material.clone();
+    }
+    seek(HOLD_TIME);
+    for (const button of buttons) button.restScale = button.block.scale.clone();
     seek(0);
     renderer.compile(scene, camera);
   });
@@ -171,6 +187,23 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
       action.time = Math.min(t, action.getClip().duration);
     }
     mixer.update(0);
+    keepLabelsInFront();
+  }
+
+  /**
+   * As each block pops in it overshoots, bulging deeper and wider than it
+   * settles at while its label stays put, so for a moment the block's
+   * surface swallows the lettering. Until a block has settled, draw its
+   * label over it; after that, back to normal depth so the glove can still
+   * pass in front.
+   */
+  function keepLabelsInFront() {
+    for (const button of buttons) {
+      if (!button.label || !button.restScale) continue;
+      const popping = button.block.scale.distanceToSquared(button.restScale) > 1e-8;
+      button.label.material.depthTest = !popping;
+      button.label.renderOrder = popping ? 1 : 0; // after its block
+    }
   }
 
   /** Holds on the menu pose and switches the buttons on. */
@@ -201,6 +234,8 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
     cameraRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
     cameraUp.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
     cameraForward.setFromMatrixColumn(camera.matrixWorld, 2).normalize().negate();
+    if (glove) measureFingertip();
+    followPointer = false;
     select(0);
   }
 
@@ -208,10 +243,11 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
     return new THREE.Box3().setFromObject(button.block).getCenter(new THREE.Vector3());
   }
 
-  function select(index) {
+  function select(index, { moveGlove = true } = {}) {
     selected = index;
     // The glove is a root node, so its position is in world space.
-    if (!glove) return;
+    if (!glove || !moveGlove) return;
+    followPointer = false;
     gloveTarget.copy(gloveRest).add(buttons[index].offset);
     gloveFrom.copy(glovePath);
     const hops = gloveFrom.distanceTo(gloveTarget) / buttonSpacing;
@@ -230,7 +266,6 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
       if (glove) glove.quaternion.copy(gloveRestQuaternion);
       state = 'outro';
       measureDoorway();
-      canvas.style.cursor = '';
       return;
     }
     onAction(button.action);
@@ -249,9 +284,36 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
 
   function onPointerMove(event) {
     if (!active || state !== 'menu') return;
-    const index = buttonAt(event.clientX, event.clientY);
-    canvas.style.cursor = index >= 0 ? 'pointer' : '';
-    if (index >= 0 && index !== selected) select(index);
+    const index = buttonAt(event.clientX, event.clientY); // also aims raycaster at the pointer
+    if (glove && raycaster.ray.intersectPlane(glovePlane, pointerTarget)) {
+      pointerTarget.add(fingertipOffset);
+      followPointer = true;
+    }
+    if (index >= 0 && index !== selected) select(index, { moveGlove: !followPointer });
+  }
+
+  /**
+   * Works out where the glove's fingertip is, relative to the glove, so the
+   * fingertip can sit on the pointer. The glove points up and to the left,
+   * so its fingertip is the top-left corner of its on-screen bounds. The
+   * glove then moves in the plane through its resting spot, facing the
+   * camera.
+   */
+  function measureFingertip() {
+    glove.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(glove, true);
+    let left = Infinity;
+    let top = -Infinity;
+    const corner = new THREE.Vector3();
+    for (let i = 0; i < 8; i++) {
+      corner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(camera);
+      left = Math.min(left, corner.x);
+      top = Math.max(top, corner.y);
+    }
+    glovePlane.setFromNormalAndCoplanarPoint(cameraForward, gloveRest);
+    raycaster.setFromCamera(pointer.set(left, top), camera);
+    const fingertip = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(glovePlane, fingertip)) fingertipOffset.subVectors(gloveRest, fingertip);
   }
 
   function onClick(event) {
@@ -415,13 +477,16 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
    */
   function updateGlove(delta, ease) {
     if (delta <= 0) return;
-    gloveHop = Math.min(1, gloveHop + delta / gloveHopTime);
-    const p = gloveHop < 0.5 ? 4 * gloveHop ** 3 : 1 - (-2 * gloveHop + 2) ** 3 / 2; // ease in-out
-    const hopLength = gloveFrom.distanceTo(gloveTarget);
-
     glovePrevPath.copy(glovePath);
-    glovePath.lerpVectors(gloveFrom, gloveTarget, p)
-      .addScaledVector(cameraRight, Math.sin(Math.PI * p) * GLOVE_ARC * hopLength);
+    if (followPointer) {
+      glovePath.lerp(pointerTarget, 1 - Math.exp(-GLOVE_FOLLOW_SHARPNESS * delta));
+    } else {
+      gloveHop = Math.min(1, gloveHop + delta / gloveHopTime);
+      const p = gloveHop < 0.5 ? 4 * gloveHop ** 3 : 1 - (-2 * gloveHop + 2) ** 3 / 2; // ease in-out
+      const hopLength = gloveFrom.distanceTo(gloveTarget);
+      glovePath.lerpVectors(gloveFrom, gloveTarget, p)
+        .addScaledVector(cameraRight, Math.sin(Math.PI * p) * GLOVE_ARC * hopLength);
+    }
 
     // Moving down the menu tips the fingers forward; moving up, back.
     const upSpeed = gloveStep.subVectors(glovePath, glovePrevPath).dot(cameraUp) / delta / buttonSpacing;
@@ -429,7 +494,8 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
     gloveLean += (leanTarget - gloveLean) * (1 - Math.exp(-GLOVE_LEAN_SHARPNESS * delta));
     glove.quaternion.copy(gloveRestQuaternion).premultiply(leanRotation.setFromAxisAngle(cameraForward, gloveLean));
 
-    gloveSettled += ((gloveHop >= 1 ? 1 : 0) - gloveSettled) * ease;
+    // Bob only while resting on a button, not while standing in for the cursor.
+    gloveSettled += ((!followPointer && gloveHop >= 1 ? 1 : 0) - gloveSettled) * ease;
     gloveBobTime += delta;
     const bob = Math.sin((gloveBobTime / GLOVE_BOB_PERIOD) * Math.PI * 2) * GLOVE_BOB * buttonSpacing * gloveSettled;
     glove.position.copy(glovePath).addScaledVector(cameraUp, bob);
@@ -463,6 +529,7 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
     show({ playIntro = true } = {}) {
       active = true;
       setFade(0);
+      canvas.style.cursor = 'none'; // Kinger's glove is the cursor here
       if (!mixer) return;
       if (playIntro) {
         state = 'intro';

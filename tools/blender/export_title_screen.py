@@ -21,12 +21,15 @@ in memory; the .blend file itself is never saved or modified):
   have their final shape, keeping the shape keys the letters pop in with.
 - The sky is a world texture, which glTF has no place for; it's written
   next to the GLB as its own image.
+- The "CHASING THE EXIT" tagline under CIRCUS isn't in the .blend: it's
+  built here in THE AMAZING's style (see add_tagline).
 
 Run from the repo root:
     blender -b "assets-src/TADC Intro Animation V2.blend" \
         --python tools/blender/export_title_screen.py -- \
         "public/models/game screens/title-screen.glb"
 """
+import math
 import os
 import sys
 
@@ -215,11 +218,59 @@ def apply_modifiers():
                 new_keys.animation_data.action_slot = slot
         print(f'applied modifiers of {ob.name}, keeping shape keys {names[1:]}')
 
+# The tagline under CIRCUS. The logo's own letters were converted to meshes
+# and their font isn't in the .blend, so this uses the closest installed
+# match; everything else copies THE AMAZING (material, depth, arched line,
+# popping in with an overshoot).
+TAGLINE = 'CHASING THE EXIT'
+TAGLINE_FONT = 'C:/Windows/Fonts/ARLRDBD.TTF'  # Arial Rounded MT Bold
+TAGLINE_MATERIAL = 'Material.001'  # THE AMAZING's yellow
+TAGLINE_CAP_HEIGHT = 0.45          # THE AMAZING's letters are ~0.45 tall
+TAGLINE_DEPTH = 0.3                # and about this deep
+TAGLINE_CENTER = (-0.2, -200.62, 33.88)  # centred under CIRCUS, in the logo's plane
+TAGLINE_ARCH = 0.12                # how much lower its ends sit than its middle
+TAGLINE_POP = [(146, 0.0), (150, 1.15), (154, 0.95), (158, 1.0)]  # (frame, scale)
+
+
+def add_tagline():
+    curve = bpy.data.curves.new('Tagline', 'FONT')
+    curve.body = TAGLINE
+    curve.font = bpy.data.fonts.load(TAGLINE_FONT)
+    curve.align_x = 'CENTER'
+    curve.align_y = 'CENTER'
+    curve.size = TAGLINE_CAP_HEIGHT / 0.716  # Arial Rounded's caps are ~0.716 em
+    curve.extrude = TAGLINE_DEPTH / 2
+    curve.bevel_depth = 0.015
+    curve.bevel_resolution = 1
+    curve.resolution_u = 3  # the default 12 made it ~37k vertices, a third of the scene
+    text = bpy.data.objects.new('Tagline Text', curve)
+    scene.collection.objects.link(text)
+
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    mesh = bpy.data.meshes.new_from_object(text.evaluated_get(depsgraph))
+    bpy.data.objects.remove(text)
+    mesh.name = 'Tagline'
+    # Arch it like THE AMAZING: ends lower than the middle.
+    half_width = max(abs(v.co.x) for v in mesh.vertices) or 1
+    for v in mesh.vertices:
+        v.co.y -= TAGLINE_ARCH * (v.co.x / half_width) ** 2
+    mesh.materials.append(bpy.data.materials[TAGLINE_MATERIAL])
+
+    ob = bpy.data.objects.new('Tagline', mesh)
+    scene.collection.objects.link(ob)
+    ob.location = TAGLINE_CENTER
+    ob.rotation_euler = (math.radians(90), 0, 0)  # stand it up, facing the camera (-Y)
+    for frame, scale in TAGLINE_POP:
+        ob.scale = (scale, scale, scale)
+        ob.keyframe_insert('scale', frame=frame)
+    print('added tagline')
+
 
 bake_circus_letters()
 lighten_subdivision(1)
 bake_constraints()
 apply_modifiers()
+add_tagline()
 byte_vertex_colours(['Cloth.001', 'Plastic', 'kinger_gloves'])
 bpy.data.materials['Material.002'].node_tree.nodes['Principled BSDF'].inputs['Metallic'].default_value = 0.0
 write_sky()
