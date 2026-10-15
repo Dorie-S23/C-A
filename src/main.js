@@ -23,6 +23,8 @@ import { createMinimap } from './ui/minimap.js';
 import { createObjectiveController } from './game/objectives.js';
 import { createObjectiveHUD } from './ui/objectiveHUD.js';
 import { shouldShowObjective } from './ui/objectiveHUD.js';
+import { createControlsTutorial } from './game/controlsTutorial.js';
+import { createTutorialHUD } from './ui/tutorialHUD.js';
 import { createCaineConversation } from './game/caineConversation.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
@@ -180,6 +182,8 @@ const dialogueUI = createDialogueUI({ speakers: SPEAKERS });
 const minimap = createMinimap();
 const objectives = createObjectiveController();
 const objectiveHUD = createObjectiveHUD({ objectives, root: document.getElementById('objective-hud') });
+const controlsTutorial = createControlsTutorial();
+const tutorialHUD = createTutorialHUD({ tutorial: controlsTutorial, root: document.getElementById('tutorial-hud') });
 let preLevel1Session = false;
 let morningDialoguePending = false;
 const caineConversation = createCaineConversation({
@@ -457,6 +461,7 @@ function resetObjectiveSession(active = false) {
   preLevel1Session = active;
   morningDialoguePending = false;
   objectives.reset(); objectiveHUD.hide();
+  controlsTutorial.reset(); tutorialHUD.hide();
 }
 
 /** Only story conversations use this: preview completion never awards progress. */
@@ -469,6 +474,7 @@ function playMorningDialogue(finish) {
       if (!valid()) return;
       morningDialoguePending = false;
       objectives.activate('find-caine');
+      controlsTutorial.unlock();
       finish();
     },
     onCancel: () => {
@@ -998,6 +1004,7 @@ function applyLoadedRoom({
 }, onReady, roomKey, playOpening = false) {
   currentRoom = group;
   currentRoomKey = roomKey;
+  controlsTutorial.enterRoom(roomKey);
   player.visible = true;
   scene.add(group);
 
@@ -1141,6 +1148,8 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   setMove(e.code, true);
+  if (e.code === 'KeyX' && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey
+    && shouldShowObjective(gameplayHUDContext())) controlsTutorial.dismiss();
   if (e.code === 'KeyT' && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey
     && isLocked && readyToPlay && !paused && !dialogueUI.isActive
     && currentRoomKey === 'pomni' && morningDialoguePending && preLevel1Session) {
@@ -1149,6 +1158,7 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (e.code === 'KeyE' && !e.repeat && isLocked && readyToPlay && !dialogueUI.isActive && focusedInteractable) {
+    if (shouldShowObjective(gameplayHUDContext()) && focusedBedroomDoor()) controlsTutorial.interact();
     focusedInteractable.interact(interactionContext);
   }
 });
@@ -1320,10 +1330,14 @@ document.addEventListener('mousemove', (e) => {
   // disorienting, and nothing stops the mouse once the pointer is locked.
   if (!isLocked || !readyToPlay || activeCinematic()?.active || dialogueUI.isActive || stageBusy() || activeCutscene) return;
   const sensitivity = MOUSE_SENSITIVITY * mouseSensitivityScale;
+  const oldYaw = cameraYaw, oldPitch = cameraPitch;
   cameraYaw -= e.movementX * sensitivity;
   cameraPitch = THREE.MathUtils.clamp(
     cameraPitch + e.movementY * sensitivity, PITCH_MIN, PITCH_MAX,
   );
+  if (shouldShowObjective(gameplayHUDContext())) {
+    controlsTutorial.look(Math.hypot(cameraYaw - oldYaw, cameraPitch - oldPitch));
+  }
 });
 
 // Two collision systems, picked by what the loaded room supplies:
@@ -1788,6 +1802,7 @@ function updateMovement(deltaSeconds) {
   // Animate from how far she actually got, so walking into a wall doesn't bob.
   const moved = Math.hypot(player.position.x - frameStartX, player.position.z - frameStartZ);
   if (shouldShowObjective(gameplayHUDContext()) && (move.forward || move.back || move.left || move.right)) {
+    controlsTutorial.move(moved, move.sprint);
   }
   updatePomniWalk(deltaSeconds, deltaSeconds > 0 ? moved / deltaSeconds : 0);
 
@@ -2208,6 +2223,7 @@ function animate() {
   updateInteractionFocus();
   const hudContext = gameplayHUDContext();
   objectiveHUD.update(hudContext, currentRoomKey === 'dorm' && portals.length > 0);
+  tutorialHUD.update(hudContext, focusedBedroomDoor());
   updatePictureCounter();
   if (activeCutscene) {
     const finished = activeCutscene.update(delta);
@@ -2237,6 +2253,9 @@ function gameplayHUDContext() {
   };
 }
 
+function focusedBedroomDoor() {
+  return currentRoomKey === 'pomni' && focusedInteractable?.prompt() === 'Exit to Hallway';
+}
 
 /** Read-only development diagnostics for the opening's browser regressions. */
 export function getOpeningDiagnostics() {
@@ -2250,6 +2269,7 @@ export function getOpeningDiagnostics() {
   return {
     room: currentRoomKey, phase: opening?.phase ?? null, time: opening?.time ?? null,
     objective: objectives.active, objectiveVisible: !document.getElementById('objective-hud').hidden,
+    tutorial: controlsTutorial.state, tutorialVisible: !document.getElementById('tutorial-hud').hidden,
     morningDialoguePending, preLevel1Session,
     caineConversationBusy: caineConversation.busy,
     caineWarningComplete: objectives.isComplete('find-caine'),
