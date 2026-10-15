@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { loadRoomModel } from './loadRoomModel.js';
 import { loadCaine, createCaineIdle } from '../characters/caine.js';
 import { addMirrorReflections } from './mirrors.js';
-import { openHingedDoor } from './doors.js';
+import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { createDoorPortal } from './portals.js';
 import { findWallSpot, findSpotNear, placeOfficePicture } from '../props/officePicture.js';
 
@@ -48,6 +48,7 @@ export function loadPomniRoom(onProgress, { from, items } = {}) {
     }
 
     const door = openHingedDoor(room.group, DOOR_FRAME_NAME, DOOR_SLAB_NAME, room.spawn, room.collisionMeshes);
+    let doorControl = null;
     if (door) {
       const doorCenter = door.frameBox.getCenter(new THREE.Vector3());
       room.spawnFacing = Math.atan2(room.spawn.x - doorCenter.x, room.spawn.z - doorCenter.z);
@@ -58,6 +59,9 @@ export function loadPomniRoom(onProgress, { from, items } = {}) {
         room.spawn = portal.arrival.spawn;
         room.spawnFacing = portal.arrival.facing;
       }
+      // Shut until Pomni opens it with E (see makeDoorOpenable).
+      doorControl = makeDoorOpenable(room, door, { portal });
+      room.interactables = [...(room.interactables ?? []), doorControl.interactable];
     }
 
     placeInFrontOfSpawn(caine, { group: room.group, spawn: defaultSpawn });
@@ -65,7 +69,11 @@ export function loadPomniRoom(onProgress, { from, items } = {}) {
     caine.updateMatrixWorld(true);
 
     room.collisionMeshes.push({ mesh: collider, box: new THREE.Box3().setFromObject(collider) });
-    room.update = createCaineIdle(caine);
+    const caineIdle = createCaineIdle(caine);
+    room.update = (deltaSeconds) => {
+      caineIdle(deltaSeconds);
+      doorControl?.update(deltaSeconds);
+    };
 
     return room;
   });
