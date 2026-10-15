@@ -4,9 +4,14 @@ import { loadCaine, createCaineIdle } from '../characters/caine.js';
 import { addMirrorReflections } from './mirrors.js';
 import { openHingedDoor } from './doors.js';
 import { createDoorPortal } from './portals.js';
+import { findWallSpot, placeOfficePicture } from '../props/officePicture.js';
 
 const CAINE_DISTANCE = 3; // how far in front of the spawn point Caine stands
 const CAINE_WALL_GAP = 0.8; // keep him at least this far off any wall in the way
+
+const PICTURE_ID = 'ca1';
+const PICTURE_URL = './models/objects/ca1.png';
+const PICTURE_HEIGHT = 1.4;
 
 // The glTF export carries these as "Door Frame.024" / "Door Slab.024";
 // three.js's GLTFLoader sanitizes node names (spaces and the disambiguating
@@ -17,7 +22,7 @@ const DOOR_SLAB_NAME = 'Door_Slab024';
 // Exported from "Pomnis Room V3.blend" by tools/blender/export_pomnis_room_v3.py,
 // which converts the materials the glTF exporter can't read — re-run it
 // after editing the .blend.
-export function loadPomniRoom(onProgress, { from } = {}) {
+export function loadPomniRoom(onProgress, { from, items } = {}) {
   return Promise.all([
     loadRoomModel('./models/character%20rooms/pomnis-room-v3.glb', onProgress),
     loadCaine(),
@@ -29,6 +34,13 @@ export function loadPomniRoom(onProgress, { from } = {}) {
     // Caine always stands relative to the room's own default spawn, even
     // when `from` below moves the player's actual spawn to the doorway.
     const defaultSpawn = room.spawn;
+
+    if (items) {
+      const origin = new THREE.Vector3(defaultSpawn.x, defaultSpawn.y + PICTURE_HEIGHT, defaultSpawn.z);
+      const spot = findWallSpot(room.group, origin, new THREE.Vector3(1, 0, 0))
+        ?? findWallSpot(room.group, origin, new THREE.Vector3(-1, 0, 0));
+      if (spot) placeOfficePicture(room, items, PICTURE_ID, PICTURE_URL, spot.position, spot.rotationY);
+    }
 
     const door = openHingedDoor(room.group, DOOR_FRAME_NAME, DOOR_SLAB_NAME, room.spawn, room.collisionMeshes);
     if (door) {

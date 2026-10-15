@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { loadRoomModel } from './loadRoomModel.js';
 import { setupLobbyDoors } from './lobbyDoors.js';
 import { createCurtainPortal } from './portals.js';
+import { findWallSpot, placeOfficePicture } from '../props/officePicture.js';
 
 // The castle's brick walls (arched windows, battlements), taken from the
 // Sketchfab "The Digital Circus" model. The lobby's own export only has a
@@ -16,7 +17,15 @@ const CASTLE_WALL_SETBACK = 0.2;
 // toward +Z, into the lobby.
 const DORM_ARCH_CURTAIN = 'Plane081';
 
-export function loadTadcRoom(onProgress, { from } = {}) {
+const PICTURE_ID = 'ca2';
+const PICTURE_URL = './models/objects/ca2.png';
+const PICTURE_HEIGHT = 1.5;
+const PICTURE_DIRECTIONS = Array.from({ length: 8 }, (_, i) => {
+  const angle = (i / 8) * Math.PI * 2;
+  return new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle));
+});
+
+export function loadTadcRoom(onProgress, { from, items } = {}) {
   return Promise.all([
     loadRoomModel('./models/world/Circus%20Lobby%20V10%20colored.glb', onProgress),
     new GLTFLoader().loadAsync(CASTLE_WALLS_URL),
@@ -28,6 +37,16 @@ export function loadTadcRoom(onProgress, { from } = {}) {
     room.update = doors.update;
     // The lobby's real metals (railings, stage trim) need something to reflect.
     room.environment = true;
+
+    if (items) {
+      const origin = new THREE.Vector3(room.spawn.x, room.spawn.y + PICTURE_HEIGHT, room.spawn.z);
+      let spot = null;
+      for (const direction of PICTURE_DIRECTIONS) {
+        spot = findWallSpot(room.group, origin, direction, 20);
+        if (spot) break;
+      }
+      if (spot) placeOfficePicture(room, items, PICTURE_ID, PICTURE_URL, spot.position, spot.rotationY);
+    }
 
     const dormArch = createCurtainPortal(room.group, DORM_ARCH_CURTAIN, 1, 'dorm');
     if (dormArch) {

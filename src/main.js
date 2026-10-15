@@ -12,6 +12,8 @@ import { createDialogueUI } from './ui/DialogueUI.js';
 import { createTitleScreen } from './ui/titleScreen.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, ribbitTalkDialogue,
+  level2HandIn1Dialogue, level2HandIn2Dialogue, level2HandIn3Dialogue,
+  level2IdleDialogue, level2CompleteDialogue,
 } from './data/dialogues.js';
 
 // Collision fires dozens of short rays a frame (wall probe, floor probes,
@@ -29,6 +31,11 @@ const DIALOGUE_SCRIPTS = {
   preLevel1: { script: preLevel1Dialogue, room: 'pomni' },
   level1Open: { script: level1OpenDialogue, room: 'pomni' },
   level2Opening: { script: level2OpeningDialogue, room: 'kaufmo' },
+  level2HandIn1: { script: level2HandIn1Dialogue, room: 'kaufmo' },
+  level2HandIn2: { script: level2HandIn2Dialogue, room: 'kaufmo' },
+  level2HandIn3: { script: level2HandIn3Dialogue, room: 'kaufmo' },
+  level2Idle: { script: level2IdleDialogue, room: 'kaufmo' },
+  level2Complete: { script: level2CompleteDialogue, room: 'kaufmo' },
   ribbitTalk: { script: ribbitTalkDialogue, room: 'ribbit' },
 };
 
@@ -391,6 +398,33 @@ function playRoomDialogue(key, { lookAt, onChoice, onComplete, onCancel } = {}) 
   dialogueUI.play(entry.script, { onChoice, onComplete, onCancel });
 }
 
+// --- Level 2 item collection -------------------------------------------
+// Minimal, scoped to just this mechanic (not the full Escape-Threshold
+// score service the story doc eventually wants — that's a separate
+// piece). Survives room changes on purpose: these aren't reset in
+// selectRoom()/returnToHome() the way per-room scene state is, since a
+// picture picked up in one room has to still be held when the player
+// reaches Kaufmo in a different one.
+const collectedItems = new Set(); // picked up, not yet handed in
+const presentedItems = new Set(); // already handed to Kaufmo
+
+const itemState = {
+  hasCollected: (id) => collectedItems.has(id) || presentedItems.has(id),
+  collect(id) {
+    if (this.hasCollected(id)) return;
+    collectedItems.add(id);
+    showHint(`Picked up a photo. (${collectedItems.size + presentedItems.size}/3)`);
+  },
+  heldCount: () => collectedItems.size,
+  totalPresented: () => presentedItems.size,
+  /** Hands over everything currently held; returns the new running total. */
+  presentHeld() {
+    for (const id of collectedItems) presentedItems.add(id);
+    collectedItems.clear();
+    return presentedItems.size;
+  },
+};
+
 function selectRoom(roomKey, { onReady, from } = {}) {
   const loadRoom = ROOM_LOADERS[roomKey];
   if (!loadRoom) return;
@@ -435,7 +469,7 @@ function selectRoom(roomKey, { onReady, from } = {}) {
     loadRoom((ratio) => {
       if (myToken !== loadToken) return; // a newer selectRoom()/returnToHome() superseded this one
       overlaySubtitle.textContent = `Fetching room model (${Math.round(ratio * 100)}%)`;
-    }, { from, playDialogue: playRoomDialogue }),
+    }, { from, playDialogue: playRoomDialogue, items: itemState }),
     pomniReady,
   ])
     .then(([result]) => {

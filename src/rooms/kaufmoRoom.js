@@ -16,7 +16,7 @@ const DOOR_SLAB_NAME = 'Door_Slab';
  * Walking up and pressing E plays the Level 2 opening script, via the
  * `playDialogue` hook main.js passes every room loader (see selectRoom()).
  */
-export function loadKaufmoRoom(onProgress, { playDialogue, from } = {}) {
+export function loadKaufmoRoom(onProgress, { playDialogue, from, items } = {}) {
   return Promise.all([
     loadRoomModel('./models/character%20rooms/kaufmos-room.glb', onProgress),
     loadKaufmo(),
@@ -48,13 +48,37 @@ export function loadKaufmoRoom(onProgress, { playDialogue, from } = {}) {
       });
       room.interactables = [{
         objects,
-        prompt: () => 'Talk to Kaufmo',
-        interact: () => playDialogue('level2Opening'),
+        prompt: () => (items?.heldCount() > 0 ? 'Give photos to Kaufmo' : 'Talk to Kaufmo'),
+        interact: () => playDialogue(pickKaufmoScript(items)),
       }];
     }
 
     return room;
   });
+}
+
+/**
+ * Which Level 2 script to play when Pomni interacts with Kaufmo, driven
+ * entirely by the shared item state (main.js's itemState) rather than any
+ * room-local flag:
+ *   - holding one or more pictures: hands them all over at once and plays
+ *     the reaction for however many have now been presented in total
+ *     (1-3) — not necessarily the opening script first, since a player
+ *     who collects all three before ever talking to him should still get
+ *     the big "three" reveal, not a replay of the intro.
+ *   - nothing held, nothing presented yet: the opening script.
+ *   - nothing held, some presented: a short idle line.
+ *   - nothing held, all three presented: a short "working on it" line.
+ */
+function pickKaufmoScript(items) {
+  if (!items) return 'level2Opening';
+  if (items.heldCount() > 0) {
+    const total = items.presentHeld();
+    return `level2HandIn${total}`;
+  }
+  if (items.totalPresented() >= 3) return 'level2Complete';
+  if (items.totalPresented() > 0) return 'level2Idle';
+  return 'level2Opening';
 }
 
 /**

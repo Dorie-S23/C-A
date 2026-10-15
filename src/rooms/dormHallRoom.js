@@ -1,6 +1,8 @@
+import * as THREE from 'three';
 import { loadRoomModel } from './loadRoomModel.js';
 import { createCurtainPortal, createDoorPortal } from './portals.js';
 import { openHingedDoor } from './doors.js';
+import { findWallSpot, placeOfficePicture } from '../props/officePicture.js';
 
 // Exported from "Dorm Hall V7.blend" by tools/blender/export_dorm_hall_v7.py,
 // which converts the materials the glTF exporter can't read — re-run it
@@ -29,10 +31,25 @@ const ROOM_DOORS = [
   { frame: 'Door_Frame015', slab: 'Door_Slab015', to: 'ribbit' },
 ];
 
-export function loadDormHallRoom(onProgress, { from } = {}) {
+const PICTURE_ID = 'ca3';
+const PICTURE_URL = './models/objects/ca3.png';
+const PICTURE_HEIGHT = 1.5;
+
+export function loadDormHallRoom(onProgress, { from, items } = {}) {
   return loadRoomModel(DORM_HALL_URL, onProgress, { spawnAt: SPAWN }).then((room) => {
     // The door handles and light fittings are real metals.
     room.environment = true;
+    // Placed before `from` below can move room.spawn to a different
+    // arrival point — the picture always hangs near the hall's own
+    // default entrance, regardless of which door the player walked in.
+    const defaultSpawn = room.spawn;
+
+    if (items) {
+      const origin = new THREE.Vector3(defaultSpawn.x, defaultSpawn.y + PICTURE_HEIGHT, defaultSpawn.z);
+      const spot = findWallSpot(room.group, origin, new THREE.Vector3(1, 0, 0), 8)
+        ?? findWallSpot(room.group, origin, new THREE.Vector3(-1, 0, 0), 8);
+      if (spot) placeOfficePicture(room, items, PICTURE_ID, PICTURE_URL, spot.position, spot.rotationY);
+    }
 
     const entrance = createCurtainPortal(room.group, ENTRANCE_CURTAIN, -1, 'tadc');
     const portals = entrance ? [entrance] : [];
