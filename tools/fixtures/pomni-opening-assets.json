@@ -1,0 +1,7 @@
+{
+    "asset_sha256":  "6f3d6deccc6df885e1ca41812e00c56aac81bb86acf26be84a34a7f16704e6ea",
+    "protected_source_hashes":  {
+                                    "public/models/characters/pomni/pomni.glb":  "823073e7c4dd0db0f23fbf50cf5002500c93e8f058abf88f079232b262d93b1c",
+                                    "public/models/character rooms/pomnis-room-v3.glb":  "e7cfbd1b56f89370d38a412fe236c9dafeeeff3ebe583879cf8df29ac4464698"
+                                }
+}
