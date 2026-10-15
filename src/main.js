@@ -341,12 +341,6 @@ function returnToHome({ toRoomPicker = false } = {}) {
   }
 }
 
-// How far each side of spawn.x the pass-by crosses, and how far into the
-// room (along spawn's own -Z "forward") it happens — spawn-relative so it
-// still lands somewhere sane if Pomni's Room's spawn point ever moves,
-// rather than pinned to this one room's absolute coordinates.
-const JAX_PASSBY_SPAN = 3;
-const JAX_PASSBY_DEPTH = 1.6;
 const JAX_PASSBY_DURATION = 1.8; // seconds — brisk, matches "storms past"
 
 /**
@@ -393,12 +387,12 @@ function playDialoguePreview(key) {
         dialogueUI.play(script, {
           onNode: (node) => {
             if (node.id !== 'jaxPassBy' || !jaxApi) return;
-            const z = player.position.z - JAX_PASSBY_DEPTH;
-            jaxApi.playPassBy(
-              new THREE.Vector3(player.position.x - JAX_PASSBY_SPAN, floorY, z),
-              new THREE.Vector3(player.position.x + JAX_PASSBY_SPAN, floorY, z),
-              JAX_PASSBY_DURATION,
-            );
+            // Computed by the room itself (pomniRoom.js) from the doorway's
+            // actual position, so he crosses the hallway glimpsed through
+            // the open door instead of wandering through the room itself.
+            const path = currentRoom.userData.jaxPassBy;
+            if (!path) return;
+            jaxApi.playPassBy(path.from, path.to, JAX_PASSBY_DURATION);
           },
           onComplete: () => {
             readyToPlay = true;
