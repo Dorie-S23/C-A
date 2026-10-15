@@ -8,6 +8,19 @@ const ARRIVAL_DISTANCE = 3.5;  // where a player coming the other way appears
 const DOOR_TRIGGER_DEPTH = 1.0;
 const DOOR_TRIGGER_SIDE_INSET = 0.1;
 const DOOR_ARRIVAL_DISTANCE = 1.8;
+// A plain open doorway shows the scene's background colour through it —
+// reads as a black void, not "there's a hallway through here". A warm,
+// unlit panel just past the frame (plus a soft light bleeding back onto
+// the frame itself) suggests a lit passage instead, without needing an
+// actual rendered view of the other room.
+const GLIMPSE_INSET = 0.92; // shrink from the frame's full opening so it doesn't poke past the trim
+// Unlit (MeshBasicMaterial), so this renders at exactly this brightness no
+// matter how dim the room around it is — needs to actually look bright
+// next to the door's own wood tones, not just "a different dark colour".
+const GLIMPSE_COLOR = 0xf2c488;
+const GLIMPSE_LIGHT_COLOR = 0xffce8a;
+const GLIMPSE_LIGHT_INTENSITY = 4;
+const GLIMPSE_LIGHT_RANGE = 4.5;
 
 /**
  * A curtained archway that leads to another room: walking up into the
@@ -84,7 +97,30 @@ export function createDoorPortal(group, frameBox, spawn, to) {
   arrivalSpawn.y = floorBelow(group, arrivalSpawn.x, frameBox.max.y + 5, arrivalSpawn.z) ?? frameBox.min.y;
   const arrivalFacing = Math.atan2(intoRoom.x, intoRoom.z);
 
+  addDoorwayGlimpse(group, frameBox, center, intoRoom, wideAxis);
+
   return { box, to, arrival: { spawn: arrivalSpawn, facing: arrivalFacing } };
+}
+
+/**
+ * A warm unlit panel + soft light just past the open door, facing back
+ * into the room — so looking at an open doorway shows a dim lit passage
+ * instead of the flat black of empty, unmodelled space beyond it.
+ */
+function addDoorwayGlimpse(group, frameBox, center, intoRoom, wideAxis) {
+  const size = frameBox.getSize(new THREE.Vector3());
+  const panel = new THREE.Mesh(
+    new THREE.PlaneGeometry(size[wideAxis] * GLIMPSE_INSET, size.y * GLIMPSE_INSET),
+    new THREE.MeshBasicMaterial({ color: GLIMPSE_COLOR, side: THREE.DoubleSide }),
+  );
+  panel.name = 'DoorwayGlimpse';
+  panel.position.copy(center).addScaledVector(intoRoom, -0.25);
+  panel.rotation.y = Math.atan2(intoRoom.x, intoRoom.z);
+  group.add(panel);
+
+  const glow = new THREE.PointLight(GLIMPSE_LIGHT_COLOR, GLIMPSE_LIGHT_INTENSITY, GLIMPSE_LIGHT_RANGE, 2);
+  glow.position.copy(center).addScaledVector(intoRoom, -0.4);
+  group.add(glow);
 }
 
 function floorBelow(group, x, fromY, z) {

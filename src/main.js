@@ -10,6 +10,7 @@ import { loadKaufmoRoom } from './rooms/kaufmoRoom.js';
 import { loadPomni } from './characters/pomni.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
 import { createTitleScreen } from './ui/titleScreen.js';
+import { createMinimap } from './ui/minimap.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, ribbitTalkDialogue,
   level2HandIn1Dialogue, level2HandIn2Dialogue, level2HandIn3Dialogue,
@@ -145,7 +146,7 @@ const hint = document.getElementById('hint');
 const interactPrompt = document.getElementById('prompt');
 
 const dialogueUI = createDialogueUI({ speakers: SPEAKERS });
-
+const minimap = createMinimap();
 let currentRoom = null;
 let currentRoomKey = null;
 let readyToPlay = false;
@@ -294,6 +295,7 @@ function showRoomPicker() {
 function returnToHome() {
   if (isLocked) document.exitPointerLock();
   if (dialogueUI.isActive) dialogueUI.cancel();
+  minimap.hide();
   loadToken++; // discard any load still in flight for the room we're leaving
   paused = false;
   resetMoveState();
@@ -543,6 +545,10 @@ function applyLoadedRoom({
   interactables = roomInteractables ?? [];
   portals = roomPortals ?? [];
   scene.environment = wantsEnvironment ? environmentMap : null;
+  // Only meaningful in the hub with multiple unmarked doors — every other
+  // room either has no portals or just the one obvious way back.
+  if (roomKey === 'dorm' && portals.length > 0) minimap.show(portals);
+  else minimap.hide();
 
   player.position.set(spawn.x, floorY + PLAYER_HEIGHT, spawn.z);
   // Rooms can request a starting yaw (the maze points the player down
@@ -1413,6 +1419,7 @@ function animate() {
     else updatePomniWalk(delta, 0); // settle the waddle while paused/talking
     updateCamera(delta);
   }
+  minimap.update(player.position.x, player.position.z, cameraYaw);
   updateInteractionFocus();
   if (titleScreen.active) {
     titleScreen.update(delta);
