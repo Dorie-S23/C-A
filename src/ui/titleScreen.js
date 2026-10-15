@@ -24,13 +24,16 @@ const BUTTONS = [
 ];
 const GLOVE = 'Cursor_Rig';
 
-// The tent's dark doorway. The authored fly-in ends a little to one side of
-// it, in the striped wall, so the last stretch is steered onto the
-// doorway's centre line and faded to black as the camera reaches it.
+// The tent's dark doorway. The authored fly-in swings in an S (about a
+// width left, then two right) and ends in the striped wall beside it, so
+// from the bottom of the hill on its sideways drift is replaced by one
+// smooth glide onto the doorway's centre line, and the shot fades to black
+// as the camera reaches it.
 const DOORWAY = 'Plane014';
-const STEER_FROM = 12; // start steering this many doorway-widths away…
-const STEER_TO = 4;    // …and be fully on the centre line by this many
-const FADE_FROM = 1.5; // fade to black over the last this-many widths
+const STEER_FROM = 38; // take over this many doorway-widths away, as the descent begins…
+const STEER_TO = 6;    // …and be on the centre line, looking straight in, by this many
+const FADE_FROM = 3;   // fade to black over the last this-many widths…
+const FADE_TO = 0.3;   // …fully black this far out, before the frame's edges fill the view
 const HOVER_SCALE = 1.08;
 const HOVER_EASE = 12; // per second; how quickly a block grows/shrinks
 
@@ -98,6 +101,8 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
   const doorwayNormal = new THREE.Vector3(); // out of the tent, toward the camera's approach
   let doorwayWidth = 1;
   const steeredPosition = new THREE.Vector3();
+  const doorwaySide = new THREE.Vector3(); // level, across the doorway
+  let startSide = null; // sideways offset (in widths) when steering took over
   const authoredQuaternion = new THREE.Quaternion();
   const gloveRest = new THREE.Vector3(); // its position at HOLD_TIME, pointing at PLAY
   const gloveTarget = new THREE.Vector3();
@@ -348,13 +353,22 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
     box.getCenter(doorwayCenter);
     const size = box.getSize(new THREE.Vector3());
     doorwayWidth = Math.max(size.x, size.y, size.z) || 1;
-    // A flat panel: its normals all agree, so the first one will do.
-    doorwayNormal.fromBufferAttribute(doorway.geometry.attributes.normal, 0)
-      .transformDirection(doorway.matrixWorld);
+    // The panel curves with the tent, so average all its normals for the
+    // way it faces as a whole.
+    const normals = doorway.geometry.attributes.normal;
+    const normal = new THREE.Vector3();
+    doorwayNormal.set(0, 0, 0);
+    for (let i = 0; i < normals.count; i++) doorwayNormal.add(normal.fromBufferAttribute(normals, i));
+    doorwayNormal.transformDirection(doorway.matrixWorld);
+    // It leans back with the tent's slope; the way in is level, or the
+    // centre line would come up out of the grass.
+    doorwayNormal.y = 0;
+    doorwayNormal.normalize();
     camera.updateWorldMatrix(true, false);
     const toCamera = camera.getWorldPosition(new THREE.Vector3()).sub(doorwayCenter);
     if (toCamera.dot(doorwayNormal) < 0) doorwayNormal.negate();
-    console.log("DBG door", JSON.stringify({ c: doorwayCenter.toArray(), n: doorwayNormal.toArray(), w: doorwayWidth, size: size.toArray(), cam: camera.position.toArray() })); // DBG
+    doorwaySide.set(-doorwayNormal.z, 0, doorwayNormal.x);
+    startSide = null;
   }
 
   /**
@@ -368,9 +382,17 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
     const distance = position.distanceTo(doorwayCenter) / doorwayWidth;
     const steer = THREE.MathUtils.smoothstep(STEER_FROM - distance, 0, STEER_FROM - STEER_TO);
 
-    const along = steeredPosition.copy(position).sub(doorwayCenter).dot(doorwayNormal);
-    steeredPosition.copy(doorwayCenter).addScaledVector(doorwayNormal, along);
-    position.lerp(steeredPosition, steer);
+    const offset = steeredPosition.copy(position).sub(doorwayCenter);
+    const along = offset.dot(doorwayNormal);
+    const authoredSide = offset.dot(doorwaySide) / doorwayWidth;
+    if (steer > 0) {
+      // Ignore the authored drift from here: glide from where it was when
+      // steering took over straight to the centre line, never past it.
+      startSide ??= authoredSide;
+      const side = startSide * (1 - steer);
+      position.addScaledVector(doorwaySide, (side - authoredSide) * doorwayWidth);
+      position.y += (doorwayCenter.y - position.y) * steer;
+    }
 
     authoredQuaternion.copy(camera.quaternion);
     camera.lookAt(doorwayCenter);
@@ -378,8 +400,7 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
     camera.updateMatrixWorld();
 
     const outside = along / doorwayWidth;
-    if (Math.random() < 0.15) console.log("DBG step", JSON.stringify({ t: +time.toFixed(2), d: +distance.toFixed(1), along: +outside.toFixed(2), steer: +steer.toFixed(2), cam: camera.position.toArray().map((v) => +v.toFixed(1)) })); // DBG
-    setFade(state === 'done' ? 1 : 1 - THREE.MathUtils.clamp(outside / FADE_FROM, 0, 1));
+    setFade(state === 'done' ? 1 : 1 - THREE.MathUtils.clamp((outside - FADE_TO) / (FADE_FROM - FADE_TO), 0, 1));
   }
 
   function setFade(opacity) {

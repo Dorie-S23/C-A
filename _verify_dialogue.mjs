@@ -4,7 +4,7 @@ import { createDialogueEngine } from './src/dialogue/dialogueEngine.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, ribbitTalkDialogue,
   level2HandIn1Dialogue, level2HandIn2Dialogue, level2HandIn3Dialogue,
-  level2IdleDialogue, level2CompleteDialogue,
+  level2IdleDialogue, level2CompleteDialogue, level2PayoffDialogue,
 } from './src/data/dialogues.js';
 import { SPRITES, MOODS } from './src/ui/portraitSprites.js';
 
@@ -31,7 +31,7 @@ for (const [name, script] of [
   ['preLevel1', preLevel1Dialogue], ['level1Open', level1OpenDialogue],
   ['level2HandIn1', level2HandIn1Dialogue], ['level2HandIn2', level2HandIn2Dialogue],
   ['level2HandIn3', level2HandIn3Dialogue], ['level2Idle', level2IdleDialogue],
-  ['level2Complete', level2CompleteDialogue],
+  ['level2Complete', level2CompleteDialogue], ['level2Payoff', level2PayoffDialogue],
 ]) {
   const seen = runLinear(script);
   check(`${name}: visits every node once, in order`, seen.length === script.length

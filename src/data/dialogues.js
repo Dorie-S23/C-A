@@ -774,3 +774,65 @@ export const level2CompleteDialogue = [
     next: null,
   },
 ];
+
+// The payoff level2CompleteDialogue promises: the next time Pomni comes
+// back, Kaufmo has an answer. Plays once in place of the idle "still
+// working on it" line, then main.js keeps replaying it for any later
+// visits — same as every other idle/complete script in this file.
+export const level2PayoffDialogue = [
+  {
+    type: 'beat',
+    text: "Kaufmo's on his feet before the door's even shut behind her.",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'shocked',
+    text: "Okay — okay, don't leave yet, I laid them all out, just— look.",
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'neutral',
+    text: "You found something.",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'happy',
+    text: "Same carpet in all three. Same baseboard. There's a water stain in the corner of two of them, same shape, same spot. It's not three places, Pomni. It's one room.",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    direction: 'quieter',
+    mood: 'worried',
+    text: "And Caine's been keeping pictures of it. Hiding them, even. You don't hide a photo of nothing.",
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'annoyed',
+    text: "Okay. Slow down. A room — where?",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'worried',
+    text: "That's the part I don't have yet. But a room that real doesn't just float in nowhere. It's behind something. A wall that isn't a wall. A door marked as something it's not.",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'neutral',
+    text: "Remember that? 'The door that wasn't a door'? I wrote it off as a glitch. I don't think it was.",
+    next: null,
+  },
+];

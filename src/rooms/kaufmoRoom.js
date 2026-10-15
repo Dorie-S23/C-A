@@ -68,7 +68,9 @@ export function loadKaufmoRoom(onProgress, { playDialogue, from, items } = {}) {
  *     the big "three" reveal, not a replay of the intro.
  *   - nothing held, nothing presented yet: the opening script.
  *   - nothing held, some presented: a short idle line.
- *   - nothing held, all three presented: a short "working on it" line.
+ *   - nothing held, all three presented: a short "working on it" line the
+ *     first time, then the actual payoff (what he found) every visit
+ *     after that — see itemState.pickPostHandInScript() in main.js.
  */
 function pickKaufmoScript(items) {
   if (!items) return 'level2Opening';
@@ -76,7 +78,7 @@ function pickKaufmoScript(items) {
     const total = items.presentHeld();
     return `level2HandIn${total}`;
   }
-  if (items.totalPresented() >= 3) return 'level2Complete';
+  if (items.totalPresented() >= 3) return items.pickPostHandInScript();
   if (items.totalPresented() > 0) return 'level2Idle';
   return 'level2Opening';
 }
