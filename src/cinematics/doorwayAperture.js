@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { computeBoundsTree } from 'three-mesh-bvh';
 
 /** The exported bedroom has a solid wall behind its decorative door.
  * Cut only that rectangle in temporary runtime copies, retaining UVs/materials.
@@ -50,6 +51,8 @@ export function createDoorwayAperture(room, panelBox) {
     }
     for(const [key,attr] of attributes) geometry.setAttribute(key,new THREE.Float32BufferAttribute(output[key],attr.itemSize,attr.normalized));
     geometry.computeBoundingBox(); geometry.computeBoundingSphere(); source.dispose();
+    // Ground and camera probes also hit these runtime copies during the entrance.
+    computeBoundsTree.call(geometry);
     const replacement=original.clone(false);replacement.geometry=geometry;replacement.name=name+'CinematicAperture';
     original.parent.add(replacement);replacement.visible=false;
     replacements.push({original,replacement,entries:room.collisionMeshes.filter(e=>e.mesh===original)});

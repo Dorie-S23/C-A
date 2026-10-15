@@ -7,7 +7,8 @@ const RETURN_SECONDS = 1.25;
 const ease = (t, a, b) => THREE.MathUtils.smootherstep(t, a, b);
 
 /** Room-owned staged arrival. No substitute character or bedroom asset edits. */
-export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast, onDialogue, onComplete }) {
+export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast, onDialogue, onComplete,
+  onDoorOpening, canStartDialogue = () => true, onSkipOpening, advanceOpening }) {
   const slab = room.group.getObjectByName('Door_Slab024');
   const frame = room.group.getObjectByName('Door_Frame024');
   if (!slab || !frame) throw new Error('Bedroom entrance door is unavailable');
@@ -41,6 +42,12 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
   let stage = 'opening', stageTime = 0, routeIndex = 0, stride = 0;
   let previousPosition = actor?.position.clone();
   let exitElapsed = 0;
+  let doorOpeningStarted = false;
+  const coordinatedOpening = Boolean(onDoorOpening);
+  function beginDoorOpening() {
+    if (doorOpeningStarted) return;
+    doorOpeningStarted = true; onDoorOpening?.();
+  }
   const groundRay = new THREE.Raycaster();
   const bodyBox = new THREE.Box3();
   // Side-on two-shot: both characters in the foreground, doorway behind them.
@@ -80,7 +87,7 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
     camera.lookAt(target);
   }
   function beginDialogue() {
-    if (phase !== 'entering') return;
+    if (phase !== 'entering' || !canStartDialogue()) return;
     if (!cast) { elapsed = ENTRANCE_SECONDS; door(1); sound('dispose'); }
     else { stage = 'greeting'; door(1); sound('pause'); cast.setPose('listen'); cast.setSpeaking(false); }
     phase = 'dialogue';
@@ -120,9 +127,10 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
     if (phase === 'entering') {
       elapsed += dt;
       if (stage === 'opening') {
+        if (stageTime >= .65) beginDoorOpening();
         const fraction = ease(stageTime, .65, 1.95); door(fraction);
         if (stageTime >= .65 && !actor.visible) {
-          actor.visible = true; blocking.backdrop.visible = true; blocking.aperture.setEnabled(true); sound('cue', 'creak', center);
+          actor.visible = true; blocking.setVisible(true); blocking.aperture.setEnabled(true); sound('cue', 'creak', center);
         }
         if (stageTime >= 1.95) {
           setStage('walking-in');
@@ -135,10 +143,11 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
         if (stageTime >= 1.8) beginDialogue();
       }
       moveActor(dt);
+      advanceOpening?.(dt);
       const approach = ease(elapsed, 0, 1.1);
       const chat = stage === 'greeting' ? ease(stageTime, 0, 1.5) : 0;
-      const position = startPosition.clone().lerp(shotPosition, approach).lerp(talkCamera, chat);
-      const target = startTarget.clone().lerp(shotTarget, approach).lerp(talkTarget, chat);
+      const position = startPosition.clone().lerp(coordinatedOpening ? talkCamera : shotPosition, approach).lerp(talkCamera, chat);
+      const target = startTarget.clone().lerp(coordinatedOpening ? talkTarget : shotTarget, approach).lerp(talkTarget, chat);
       view(position, target);
     } else if (phase === 'dialogue') {
       moveActor(dt); view(talkCamera, talkTarget);
@@ -194,6 +203,8 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
       }
       if (phase === 'entering') {
         elapsed = Math.min(ENTRANCE_SECONDS, elapsed + Math.max(0, delta));
+        if (elapsed >= .65) beginDoorOpening();
+        advanceOpening?.(Math.max(0, delta));
         sound('update', elapsed);
         door(ease(elapsed, .65, 1.95));
         const blend = ease(elapsed, 0, 1.1);
@@ -213,6 +224,7 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
     },
     skip() {
       if (paused) return;
+      if (phase === 'entering') { beginDoorOpening(); onSkipOpening?.(); }
       if (cast && phase === 'exiting') { beginReturn(); return; }
       if (cast && phase === 'entering') {
         // Cancel the walk target by making it arrive immediately.
@@ -220,7 +232,7 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
         cast.update(.75); // settle the old stride without replaying movement/audio
         previousPosition.copy(actor.position); stride = 0;
         cast.faceTowards(room.spawn); actor.rotation.y = Math.atan2(room.spawn.x - actor.position.x, room.spawn.z - actor.position.z);
-        actor.visible = true; blocking.backdrop.visible = true; blocking.aperture.setEnabled(true); sound('pause');
+        actor.visible = true; blocking.setVisible(true); blocking.aperture.setEnabled(true); sound('pause');
         moveActor(0);
       }
       beginDialogue();
@@ -236,7 +248,7 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
     dispose() {
       if (phase === 'disposed') return;
       phase = 'disposed'; sound('dispose'); door(0);
-      if (actor) { actor.visible = false; blocking.backdrop.visible = false; blocking.aperture.setEnabled(false); }
+      if (actor) { actor.visible = false; blocking.setVisible(false); blocking.aperture.setEnabled(false); }
       if(exitTarget){const index=exitInteraction.objects.indexOf(exitTarget);if(index!==-1)exitInteraction.objects.splice(index,1);}
       // No callback: leaving a room must never resurrect it or start dialogue.
     },

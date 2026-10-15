@@ -6,6 +6,7 @@ import { createDoorConnection } from './portals.js';
 import { createBedroomLighting } from './bedroomLighting.js';
 import { loadPomniOpening } from '../cinematics/pomniOpening.js';
 import { loadRagatha } from '../characters/ragatha.js';
+import { loadDormHallPreview } from './dormHallPreview.js';
 
 const PICTURE_ID = 'ca1';
 const PICTURE_URL = './models/objects/ca1.png';
@@ -19,7 +20,8 @@ const PICTURE_OFFSET = new THREE.Vector3(-0.5, 0, 0.35);
 // Exported from "Pomnis Room V3.blend" by tools/blender/export_pomnis_room_v3.py,
 // which converts the materials the glTF exporter can't read — re-run it
 // after editing the .blend.
-export function loadPomniRoom(onProgress, { from, travel, openingMode, items } = {}) {
+export function loadPomniRoom(onProgress, { from, travel, openingMode, items,
+  hallPreview = typeof window !== 'undefined' } = {}) {
   return loadRoomModel('./models/character%20rooms/pomnis-room-v3.glb', onProgress).then(async (room) => {
     // Its metal trim needs something to reflect.
     room.environment = true;
@@ -74,6 +76,20 @@ export function loadPomniRoom(onProgress, { from, travel, openingMode, items } =
         room.group.userData.ragathaCast = cast;
       } catch (error) {
         console.warn('Ragatha model unavailable; using the staged arrival fallback.', error);
+      }
+    }
+    // A static visual backdrop only: no hall NPCs, portals, colliders or lights.
+    // CPU-only Node room tests can explicitly opt in when testing this view.
+    // Explicit low-cost fallback also works on the static production build.
+    const disabled = new URLSearchParams(globalThis.location?.search).get('hallPreview') === '0';
+    if (hallPreview && !disabled) {
+      try {
+        const preview = await loadDormHallPreview();
+        room.group.add(preview.group);
+        room.group.userData.dormHallPreview = preview;
+      } catch (error) {
+        room.group.userData.dormHallPreviewError = String(error.message ?? error);
+        console.warn('Hall preview unavailable; retaining the temporary vestibule.', error);
       }
     }
     return room;
