@@ -1,9 +1,14 @@
 import * as THREE from 'three';
 import { loadRoomModel } from './loadRoomModel.js';
 import { loadKaufmo } from '../characters/kaufmo.js';
+import { openHingedDoor } from './doors.js';
+import { createDoorPortal } from './portals.js';
 
 const KAUFMO_DISTANCE = 2.2; // how far in front of spawn he stands, pulled in by furniture
 const KAUFMO_WALL_GAP = 0.6;
+
+const DOOR_FRAME_NAME = 'Door_Frame';
+const DOOR_SLAB_NAME = 'Door_Slab';
 
 /**
  * Loads Kaufmo's Room, exported from "Kaufmos Room V4.blend" via
@@ -11,13 +16,27 @@ const KAUFMO_WALL_GAP = 0.6;
  * Walking up and pressing E plays the Level 2 opening script, via the
  * `playDialogue` hook main.js passes every room loader (see selectRoom()).
  */
-export function loadKaufmoRoom(onProgress, { playDialogue } = {}) {
+export function loadKaufmoRoom(onProgress, { playDialogue, from } = {}) {
   return Promise.all([
     loadRoomModel('./models/character%20rooms/kaufmos-room.glb', onProgress),
     loadKaufmo(),
   ]).then(([room, { kaufmo, collider }]) => {
     fixExportedMaterials(room.group);
-    placeInFrontOfSpawn(kaufmo, room);
+    // Kaufmo always stands relative to the room's own default spawn, even
+    // when `from` below moves the player's actual spawn to the doorway.
+    const defaultSpawn = room.spawn;
+
+    const door = openHingedDoor(room.group, DOOR_FRAME_NAME, DOOR_SLAB_NAME, room.spawn, room.collisionMeshes);
+    if (door) {
+      const portal = createDoorPortal(room.group, door.frameBox, room.spawn, 'dorm');
+      room.portals = [portal];
+      if (from === 'dorm') {
+        room.spawn = portal.arrival.spawn;
+        room.spawnFacing = portal.arrival.facing;
+      }
+    }
+
+    placeInFrontOfSpawn(kaufmo, { group: room.group, spawn: defaultSpawn });
     room.group.add(kaufmo);
     kaufmo.updateMatrixWorld(true);
     room.collisionMeshes.push({ mesh: collider, box: new THREE.Box3().setFromObject(collider) });

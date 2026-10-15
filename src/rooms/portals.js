@@ -5,6 +5,10 @@ const TRIGGER_SIDE_INSET = 0.3; // keep the edges of the arch from triggering it
 const TRIGGER_HEIGHT = 4;
 const ARRIVAL_DISTANCE = 3.5;  // where a player coming the other way appears
 
+const DOOR_TRIGGER_DEPTH = 1.0;
+const DOOR_TRIGGER_SIDE_INSET = 0.1;
+const DOOR_ARRIVAL_DISTANCE = 1.8;
+
 /**
  * A curtained archway that leads to another room: walking up into the
  * curtain's open side travels there. The same archway is also where a
@@ -39,6 +43,44 @@ export function createCurtainPortal(group, curtainName, facing, to) {
   const arrivalFacing = facing > 0 ? Math.PI : 0;
 
   return { box, to, arrival: { spawn, facing: arrivalFacing } };
+}
+
+/**
+ * A portal through an already-open hinged door (see doors.js), rather than
+ * a walk-through curtain. Unlike createCurtainPortal, which direction leads
+ * into the room isn't a hand-specified sign — it's worked out from `spawn`,
+ * the same point doors.js already uses to decide which way the leaf swings.
+ *
+ * @param {THREE.Group} group the loaded room
+ * @param {THREE.Box3} frameBox the opened door's frame bounding box
+ * @param {THREE.Vector3} spawn a point inside the room (the doorway's trigger
+ *   and arrival direction are both worked out relative to this)
+ * @param {string} to the ROOM_LOADERS key it leads to
+ * @returns {{ box: THREE.Box3, to: string, arrival: { spawn: THREE.Vector3, facing: number } }}
+ */
+export function createDoorPortal(group, frameBox, spawn, to) {
+  const size = frameBox.getSize(new THREE.Vector3());
+  const wideAxis = size.x >= size.z ? 'x' : 'z';
+  const thinAxis = wideAxis === 'x' ? 'z' : 'x';
+  const center = frameBox.getCenter(new THREE.Vector3());
+
+  const intoRoom = new THREE.Vector3().subVectors(spawn, center).setY(0);
+  if (intoRoom.lengthSq() < 1e-6) intoRoom.set(0, 0, 1); // spawn directly on the doorway: arbitrary but valid
+  intoRoom.normalize();
+
+  const box = frameBox.clone();
+  box.min[wideAxis] += DOOR_TRIGGER_SIDE_INSET;
+  box.max[wideAxis] -= DOOR_TRIGGER_SIDE_INSET;
+  box.min[thinAxis] -= DOOR_TRIGGER_DEPTH;
+  box.max[thinAxis] += DOOR_TRIGGER_DEPTH;
+  box.min.y -= 0.2;
+
+  // Appear just outside, on the far side from the room — then face back in.
+  const arrivalSpawn = center.clone().addScaledVector(intoRoom, -DOOR_ARRIVAL_DISTANCE);
+  arrivalSpawn.y = floorBelow(group, arrivalSpawn.x, frameBox.max.y + 5, arrivalSpawn.z) ?? frameBox.min.y;
+  const arrivalFacing = Math.atan2(intoRoom.x, intoRoom.z);
+
+  return { box, to, arrival: { spawn: arrivalSpawn, facing: arrivalFacing } };
 }
 
 function floorBelow(group, x, fromY, z) {

@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { loadRoomModel } from './loadRoomModel.js';
 import { loadRibbit } from '../characters/ribbit.js';
+import { openHingedDoor } from './doors.js';
+import { createDoorPortal } from './portals.js';
 
 // Exported from "Ribbits-Room.blend" by tools/blender/export_ribbits_room.py,
 // which converts the materials the glTF exporter can't read — re-run it
@@ -12,6 +14,9 @@ const RIBBIT_ROOM_URL = './models/character%20rooms/ribbits-room.glb';
 // Pomni. The loader's centroid guess would land on the bed instead.
 const SPAWN = { x: 2.0, z: -0.1 };
 const SPAWN_FACING = -Math.PI / 2; // yaw 0 faces -Z; a quarter turn right faces +X
+
+const DOOR_FRAME_NAME = 'Door_Frame';
+const DOOR_SLAB_NAME = 'Door_Slab';
 
 // Ribbit stands in the open in front of her bed, a short walk from the
 // door, facing it — so walking in, the player meets her face to face.
@@ -36,7 +41,7 @@ const ACCENT_LIGHTS = [
  * plays her conversation via the `playDialogue` hook main.js passes every
  * room loader (see selectRoom()).
  */
-export function loadRibbitRoom(onProgress, { playDialogue } = {}) {
+export function loadRibbitRoom(onProgress, { playDialogue, from } = {}) {
   return Promise.all([
     loadRoomModel(RIBBIT_ROOM_URL, onProgress, { spawnAt: SPAWN }),
     loadRibbit(),
@@ -45,10 +50,23 @@ export function loadRibbitRoom(onProgress, { playDialogue } = {}) {
     room.environment = true;
     room.spawnFacing = SPAWN_FACING;
     room.group.add(createAccentLights());
+    // Ribbit always stands relative to the room's own default spawn, even
+    // when `from` below moves the player's actual spawn to the doorway.
+    const defaultSpawn = room.spawn;
 
-    const floorY = floorHeightAt(room.group, RIBBIT_SPOT.x, RIBBIT_SPOT.z) ?? room.spawn.y;
+    const door = openHingedDoor(room.group, DOOR_FRAME_NAME, DOOR_SLAB_NAME, room.spawn, room.collisionMeshes);
+    if (door) {
+      const portal = createDoorPortal(room.group, door.frameBox, room.spawn, 'dorm');
+      room.portals = [portal];
+      if (from === 'dorm') {
+        room.spawn = portal.arrival.spawn;
+        room.spawnFacing = portal.arrival.facing;
+      }
+    }
+
+    const floorY = floorHeightAt(room.group, RIBBIT_SPOT.x, RIBBIT_SPOT.z) ?? defaultSpawn.y;
     ribbit.position.set(RIBBIT_SPOT.x, floorY, RIBBIT_SPOT.z);
-    const restYaw = Math.atan2(room.spawn.x - RIBBIT_SPOT.x, room.spawn.z - RIBBIT_SPOT.z);
+    const restYaw = Math.atan2(defaultSpawn.x - RIBBIT_SPOT.x, defaultSpawn.z - RIBBIT_SPOT.z);
     ribbit.rotation.y = restYaw;
     room.group.add(ribbit);
     ribbit.updateMatrixWorld(true);
