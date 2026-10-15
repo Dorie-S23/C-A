@@ -418,9 +418,24 @@ function playDialoguePreview(key) {
           overlayTitle.textContent = 'Click to Play';
           overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
         }
+
+        // One-shot assets (a whole extra copy of the Dorm Hall) — free
+        // their GPU resources once used, whether that's right after the
+        // cutscene plays or because the player backed out before it got
+        // that far, rather than leaking VRAM every time this gets replayed.
+        let cutsceneDisposed = false;
+        function disposeCutsceneAssets() {
+          if (cutsceneDisposed || !cutsceneAssets) return;
+          cutsceneDisposed = true;
+          disposeObject3D(cutsceneAssets.scene);
+        }
+
         // Escape mid-preview: don't leave the player stuck with both the
         // dialogue and the home overlay hidden — bail all the way out.
-        const cancel = () => returnToHome();
+        const cancel = () => {
+          disposeCutsceneAssets();
+          returnToHome();
+        };
 
         if (cutsceneAssets) {
           // Played in two parts around the cutscene: dialogueUI.play()'s
@@ -430,6 +445,7 @@ function playDialoguePreview(key) {
             stopAt: 'afterJaxPassBy',
             onComplete: () => {
               runCutscene(playJaxHallwayCutscene(renderer, cutsceneAssets), () => {
+                disposeCutsceneAssets();
                 dialogueUI.play(script, { startAt: 'afterJaxPassBy', onComplete: finish, onCancel: cancel });
               });
             },
