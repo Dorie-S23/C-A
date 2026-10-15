@@ -189,7 +189,7 @@ btnResume.addEventListener('click', (event) => {
 
 btnHome.addEventListener('click', (event) => {
   event.stopPropagation();
-  returnToHome();
+  returnToHome({ toRoomPicker: true });
 });
 
 btnTitle.addEventListener('click', (event) => {
@@ -291,9 +291,13 @@ function showRoomPicker() {
 }
 
 /**
- * Tears down the current room and returns to the title screen.
+ * Tears down the current room and backs out of it — to the room picker
+ * (pause menu's "Back to Home", since that's the hub a player actually
+ * wants mid-session) or all the way to the title screen (the room
+ * picker's own "Title screen" button, and the dialogue-preview escape
+ * hatch below, which can fire before any room's ever been picked).
  */
-function returnToHome() {
+function returnToHome({ toRoomPicker = false } = {}) {
   if (isLocked) document.exitPointerLock();
   if (dialogueUI.isActive) dialogueUI.cancel();
   minimap.hide();
@@ -326,10 +330,14 @@ function returnToHome() {
   caught = false;
   scene.environment = null;
 
-  overlay.classList.add('hidden');
   pauseMenu.hidden = true;
   crosshair.hidden = true;
-  titleScreen.show({ playIntro: false });
+  if (toRoomPicker) {
+    showRoomPicker();
+  } else {
+    overlay.classList.add('hidden');
+    titleScreen.show({ playIntro: false });
+  }
 }
 
 /**
