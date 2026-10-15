@@ -273,6 +273,33 @@ sensitivityInput.addEventListener('input', () => {
     // Storage blocked (private window etc.) — the setting just won't persist.
   }
 });
+// Dev mode: open straight onto the title menu instead of playing the intro
+// every reload. Ticked in Options, or ?dev=1 / ?dev=0 in the URL; either
+// way it's remembered in this browser.
+const DEV_SKIP_INTRO_KEY = 'tadc.devSkipIntro';
+const devSkipIntroInput = document.getElementById('dev-skip-intro');
+
+function setDevSkipIntro(on) {
+  devSkipIntroInput.checked = on;
+  try {
+    if (on) localStorage.setItem(DEV_SKIP_INTRO_KEY, '1');
+    else localStorage.removeItem(DEV_SKIP_INTRO_KEY);
+  } catch {
+    // Storage blocked — it just won't persist past this page.
+  }
+}
+const devParam = new URLSearchParams(window.location.search).get('dev');
+if (devParam !== null) {
+  setDevSkipIntro(devParam !== '0');
+} else {
+  try {
+    devSkipIntroInput.checked = localStorage.getItem(DEV_SKIP_INTRO_KEY) === '1';
+  } catch {
+    devSkipIntroInput.checked = false;
+  }
+}
+devSkipIntroInput.addEventListener('change', () => setDevSkipIntro(devSkipIntroInput.checked));
+
 document.getElementById('btn-replay-intro').addEventListener('click', () => {
   titleOptions.hidden = true;
   titleScreen.show({ playIntro: true });
@@ -298,7 +325,7 @@ titleScreen.ready
   .then(() => {
     overlay.classList.add('hidden');
     overlay.classList.remove('loading');
-    titleScreen.show({ playIntro: true });
+    titleScreen.show({ playIntro: !devSkipIntroInput.checked });
   })
   .catch((err) => {
     console.error('Failed to load title screen', err);
