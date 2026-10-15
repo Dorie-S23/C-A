@@ -1,0 +1,56 @@
+{
+  "source_sha256": "051fdd6bba484b7f16cd77f2819f2a4bd96f0e3403f7dd453aa6f74ec6b294aa",
+  "fps": 30,
+  "markers": [
+    {
+      "name": "Sleeping",
+      "frame": 1,
+      "clip_time": 0.0
+    },
+    {
+      "name": "Stirring",
+      "frame": 43,
+      "clip_time": 1.4
+    },
+    {
+      "name": "Head lift",
+      "frame": 66,
+      "clip_time": 2.1666666666666665
+    },
+    {
+      "name": "Sit up",
+      "frame": 98,
+      "clip_time": 3.2333333333333334
+    },
+    {
+      "name": "Sitting",
+      "frame": 119,
+      "clip_time": 3.933333333333333
+    },
+    {
+      "name": "Bed edge",
+      "frame": 150,
+      "clip_time": 4.966666666666667
+    },
+    {
+      "name": "Dismount release",
+      "frame": 160,
+      "clip_time": 5.3
+    },
+    {
+      "name": "Landing",
+      "frame": 174,
+      "clip_time": 5.766666666666667
+    },
+    {
+      "name": "Standing",
+      "frame": 191,
+      "clip_time": 6.333333333333333
+    },
+    {
+      "name": "Idle match",
+      "frame": 210,
+      "clip_time": 6.966666666666667
+    }
+  ]
+}

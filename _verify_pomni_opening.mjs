@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { computeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 import { loadPomniRoom } from './src/rooms/pomniRoom.js';
-import { OPENING_HANDOFF, sampleOpeningShot, OPENING_SLEEP_SECONDS, OPENING_PLAYBACK_SECONDS, openingClipTime } from './src/cinematics/pomniOpening.js';
+import { OPENING_HANDOFF, sampleOpeningShot, OPENING_SLEEP_SECONDS, OPENING_WAKE_SECONDS, OPENING_PLAYBACK_SECONDS, openingClipTime } from './src/cinematics/pomniOpening.js';
 import { KNOCK_TIMES, makeOpeningBuffers } from './src/cinematics/openingAudio.js';
 import { POMNI_INVITATION } from './src/cinematics/pomniInvitation.js';
 globalThis.ProgressEvent ??= class {};
@@ -52,9 +52,11 @@ check('First five seconds reuse sleeping samples with moving blanket and closed 
 });
 opening.setPaused(true);opening.setPaused(false);
 opening.update(.1);
-check('Knock/waking boundary is five seconds at actual source frame 43',()=>{assert.equal(room.lighting.state,'WAKING');assert.ok(Math.abs(opening.time-1.4)<1e-10);assert.ok(cueCalls.some(c=>c[0]==='pause'));assert.ok(cueCalls.some(c=>c[0]==='resume'))});
+check('All three knocks precede waking and snoring stops at five seconds',()=>{assert.equal(room.lighting.state,'SLEEPING');assert.ok(Math.abs(opening.time-1.4)<1e-10);assert.ok(KNOCK_TIMES.at(-1)+.16<=OPENING_WAKE_SECONDS+1e-10)});
+opening.update(OPENING_WAKE_SECONDS-OPENING_SLEEP_SECONDS);
+check('Waking begins at actual source frame 43 after the knocks',()=>{assert.equal(room.lighting.state,'WAKING');assert.ok(Math.abs(opening.time-1.4)<1e-10);assert.ok(cueCalls.some(c=>c[0]==='pause'));assert.ok(cueCalls.some(c=>c[0]==='resume'))});
 check('Waking remains at 1x; standing marker shifts by only the added sleep time',()=>{
- assert.ok(Math.abs(openingClipTime(5.5)-openingClipTime(5)-.5)<1e-10);assert.equal(OPENING_PLAYBACK_SECONDS,11.1);
+ assert.ok(Math.abs(openingClipTime(6.1)-openingClipTime(5.6)-.5)<1e-10);assert.ok(Math.abs(OPENING_PLAYBACK_SECONDS-11.7)<1e-10);
 });
 opening.update(190/30-1.4);
 check('GAMEPLAY threshold follows standing at source frame 191',()=>assert.equal(room.lighting.state,'GAMEPLAY'));

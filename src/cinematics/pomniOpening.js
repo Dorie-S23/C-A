@@ -8,14 +8,19 @@ export const OPENING_HANDOFF = Object.freeze({
   yaw: Math.PI / 2, idleTime: 0.1,
 });
 const WAKING_TIME = 42 / 30;
+// Frozen R5 authoring marker "Sitting": frame 119 at 30 fps, frame 1 = t=0.
+export const OPENING_SEATED_TIME = 118 / 30;
 const STANDING_TIME = 190 / 30;
 // Original authoring markers: Sleeping 1, Stirring 43, Head lift 66,
 // Standing 191. Export maps frame 1 to t=0; keep all waking motion at 1x.
 export const OPENING_SLEEP_SECONDS = 5;
-export const OPENING_PLAYBACK_SECONDS = OPENING_SLEEP_SECONDS + OPENING_DURATION - WAKING_TIME;
+// Three knocks at 5, 5.22, 5.44 seconds; the last 0.16 s buffer ends at 5.6.
+export const OPENING_WAKE_SECONDS = OPENING_SLEEP_SECONDS + .6;
+export const OPENING_PLAYBACK_SECONDS = OPENING_WAKE_SECONDS + OPENING_DURATION - WAKING_TIME;
 export function openingClipTime(elapsed) {
   if (elapsed >= OPENING_PLAYBACK_SECONDS) return OPENING_DURATION;
-  if (elapsed >= OPENING_SLEEP_SECONDS) return Math.min(OPENING_DURATION, WAKING_TIME + elapsed - OPENING_SLEEP_SECONDS);
+  if (elapsed >= OPENING_WAKE_SECONDS) return Math.min(OPENING_DURATION, WAKING_TIME + elapsed - OPENING_WAKE_SECONDS);
+  if (elapsed >= OPENING_SLEEP_SECONDS) return WAKING_TIME;
   // Three smoothly reversing passes over ONLY the existing sleep samples.
   // Body breathing, eye state and blanket morphs use the same source time.
   const u = THREE.MathUtils.clamp(elapsed / OPENING_SLEEP_SECONDS, 0, 1);
@@ -102,6 +107,7 @@ export function createPomniOpening({ root, animations, room }) {
   action.play();
   mixer.setTime(0);
   let phase = 'loaded', time = 0, elapsed = 0, blendTime = 0, callbacks = {}, audio = null;
+  let paused = false, seatedReached = false, coordinated = false;
   let startPosition = null, startTarget = null;
   const snapshotWeights = () => Array.from(blanket.morphTargetInfluences);
   function freeze() {
@@ -113,7 +119,7 @@ export function createPomniOpening({ root, animations, room }) {
     release(actor);
   }
   function handoff(camera) {
-    if (phase !== 'playing') return;
+    if (!['playing', 'seated'].includes(phase)) return;
     startTarget = sampleOpeningShot(cameraTime()).target;
     time = OPENING_DURATION;
     elapsed = OPENING_PLAYBACK_SECONDS;
@@ -128,18 +134,21 @@ export function createPomniOpening({ root, animations, room }) {
     blendTime = 0;
     startPosition = camera.position.clone();
     callbacks.onHandoff?.();
+    if (coordinated) { phase = 'done'; callbacks.onComplete?.(); }
   }
   const controller = {
     get phase() { return phase; }, get time() { return time; },
     get elapsed() { return elapsed; },
-    get active() { return phase === 'playing' || phase === 'blending'; },
+    get active() { return ['playing', 'seated', 'blending'].includes(phase); },
+    get coordinated() { return coordinated; },
+    get skippable() { return ['playing', 'seated'].includes(phase); },
     get blanket() { return blanket; },
     loadMilliseconds: 0,
     setAudio(session) { audio?.dispose(); audio = session; if (phase === 'playing') audio.start(elapsed); },
-    setPaused(value) { if (value) audio?.pause(); else if (phase === 'playing') audio?.resume(elapsed); },
-    start({ camera, resolveCamera, onHandoff, onComplete }) {
+    setPaused(value) { paused = value; if (value) audio?.pause(); else if (phase === 'playing') audio?.resume(elapsed); },
+    start({ camera, resolveCamera, onHandoff, onComplete, onSeated }) {
       if (phase !== 'loaded') throw new Error('Opening can only start once');
-      callbacks = { camera, resolveCamera, onHandoff, onComplete };
+      callbacks = { camera, resolveCamera, onHandoff, onComplete, onSeated };
       room.lighting.setState('SLEEPING', { duration: 0 });
       phase = 'playing';
       controller.update(0);
@@ -150,16 +159,23 @@ export function createPomniOpening({ root, animations, room }) {
       freeze(); time = OPENING_DURATION; elapsed = OPENING_PLAYBACK_SECONDS; phase = 'done'; room.lighting.reset();
     },
     skip() {
-      if (phase === 'playing') handoff(callbacks.camera);
+      if (!paused && ['playing', 'seated'].includes(phase)) handoff(callbacks.camera);
+    },
+    resumeForEntrance() {
+      if (phase !== 'seated' || paused) return;
+      // Ragatha now owns the camera; this mixer still owns both skin and blanket.
+      coordinated = true; phase = 'playing'; audio?.resume(elapsed);
     },
     update(dt, follow) {
-      if (!controller.active) return;
+      if (!controller.active || paused || phase === 'seated') return;
       const { camera, resolveCamera } = callbacks;
       if (phase === 'playing') {
-        const end = Math.min(OPENING_PLAYBACK_SECONDS, elapsed + Math.max(0, dt));
+        const seatBoundary = OPENING_WAKE_SECONDS + OPENING_SEATED_TIME - WAKING_TIME;
+        const hold = callbacks.onSeated && !seatedReached;
+        const end = Math.min(hold ? seatBoundary : OPENING_PLAYBACK_SECONDS, elapsed + Math.max(0, dt));
         // Advance lights in segments so threshold timing is independent of FPS.
-        for (const [boundary, state] of [[OPENING_SLEEP_SECONDS, 'WAKING'],
-          [OPENING_SLEEP_SECONDS + STANDING_TIME - WAKING_TIME, 'GAMEPLAY']]) {
+        for (const [boundary, state] of [[OPENING_WAKE_SECONDS, 'WAKING'],
+          [OPENING_WAKE_SECONDS + STANDING_TIME - WAKING_TIME, 'GAMEPLAY']]) {
           if (elapsed < boundary && end >= boundary) {
             room.lighting.update(boundary - elapsed); elapsed = boundary;
             room.lighting.setState(state, { duration: state === 'WAKING' ? 2 : OPENING_DURATION - STANDING_TIME });
@@ -169,9 +185,15 @@ export function createPomniOpening({ root, animations, room }) {
         time = openingClipTime(elapsed);
         audio?.update(elapsed);
         mixer.setTime(time);
-        const shot = sampleOpeningShot(cameraTime());
-        camera.position.copy(resolveCamera(shot.target, shot.position));
-        camera.lookAt(shot.target);
+        if (!coordinated) {
+          const shot = sampleOpeningShot(cameraTime());
+          camera.position.copy(resolveCamera(shot.target, shot.position));
+          camera.lookAt(shot.target);
+        }
+        if (hold && elapsed >= seatBoundary) {
+          seatedReached = true; phase = 'seated'; audio?.pause(); callbacks.onSeated();
+          return;
+        }
         if (elapsed >= OPENING_PLAYBACK_SECONDS) handoff(camera);
         return;
       }

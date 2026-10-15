@@ -28,6 +28,7 @@ export const SPEAKERS = {
 // worried. A cue holds until the next one.
 export const preLevel1Dialogue = [
   {
+    id: 'pomniMorningRemark',
     type: 'line',
     anim: { ragatha: 'walkIn' },
     speaker: 'pomni',
@@ -37,6 +38,7 @@ export const preLevel1Dialogue = [
     text: 'Another day trapped in a nightmare circus run by a sentient cartoon. Same as yesterday.',
   },
   {
+    id: 'ragathaMorningGreeting',
     type: 'line',
     anim: { ragatha: 'wave' },
     speaker: 'ragatha',

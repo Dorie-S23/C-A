@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { loadPomniRoom } from '../src/rooms/pomniRoom.js';
 import { createBedroomDoorHinge } from '../src/cinematics/bedroomDoor.js';
+import { createDoorwayAperture } from '../src/cinematics/doorwayAperture.js';
 export async function createDoorReview() {
  const base=document.createElement('base');base.href='/';document.head.append(base);
  const room=await loadPomniRoom();
@@ -13,6 +14,7 @@ export async function createDoorReview() {
  const environment=new THREE.PMREMGenerator(renderer);scene.environment=environment.fromScene(new RoomEnvironment(),.04).texture;environment.dispose();scene.environmentIntensity=.6;
  scene.add(new THREE.AmbientLight(0xffffff,.15));scene.add(room.group);room.lighting.attach(scene);
  const hinge=createBedroomDoorHinge({group:room.group,collisionMeshes:room.collisionMeshes,insidePoint:room.spawn});
+ const aperture=createDoorwayAperture(room,new THREE.Box3().setFromObject(hinge.panel));
  const center=new THREE.Box3().setFromObject(hinge.frame).getCenter(new THREE.Vector3());
  const inward=new THREE.Vector3().fromArray(hinge.measurements.inward),side=new THREE.Vector3().crossVectors(inward,new THREE.Vector3(0,1,0));
  // The existing entrance shot, kept unchanged for an apples-to-apples review.
@@ -23,7 +25,15 @@ export async function createDoorReview() {
  const frameMatrix=hinge.frame.matrixWorld.toArray();
  return {
   measurements:hinge.measurements,
+  cameraPose(position,target) {camera.position.fromArray(position);camera.lookAt(new THREE.Vector3().fromArray(target));},
+  renderPreview(visible) {room.group.userData.dormHallPreview?.setVisible(visible);renderer.render(scene,camera);},
+  view(offset) {
+   camera.position.copy(center).addScaledVector(inward,2.5).addScaledVector(side,offset);
+   camera.position.y=1.75;camera.lookAt(target);renderer.render(scene,camera);
+   return camera.position.toArray();
+  },
   pose(fraction) {
+   aperture.setEnabled(fraction>0);room.group.userData.dormHallPreview?.setVisible(fraction>0);
    hinge.setOpenFraction(fraction);label.textContent=fraction===0?'Closed':fraction===1?'Fully open | inward 90 deg':'Halfway open | inward 45 deg';
    renderer.render(scene,camera);
    return {fraction,angle:hinge.pivot.rotation.y,hinge:hinge.pivot.getWorldPosition(new THREE.Vector3()).toArray(),handle:new THREE.Box3().setFromObject(hinge.handle).getCenter(new THREE.Vector3()).toArray(),slab:hinge.slab.matrixWorld.toArray(),frame:hinge.frame.matrixWorld.toArray(),originalFrame:frameMatrix,children:hinge.slab.children.map(o=>({name:o.name,parent:o.parent.name,matrix:o.matrix.toArray()}))};
