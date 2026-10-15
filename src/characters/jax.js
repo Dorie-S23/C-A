@@ -20,6 +20,15 @@ const KNEE_BEND = THREE.MathUtils.degToRad(24);
 const ARM_SWING = THREE.MathUtils.degToRad(24);
 const BOB_HEIGHT = 0.035;
 
+// A light of his own, attached to his group so it travels with him and
+// doesn't depend on whatever a given room's own lighting happens to be —
+// without it he can silhouette against anything bright behind him (e.g.
+// a doorway glow) despite his own materials being lit correctly.
+const KEY_LIGHT_COLOR = 0xfff4e0;
+const KEY_LIGHT_INTENSITY = 3;
+const KEY_LIGHT_RANGE = 3;
+const KEY_LIGHT_HEIGHT = 1.9; // roughly head height above his feet, which sit at the group's own origin
+
 /**
  * Finds a bone by a loose, punctuation-insensitive match on its name.
  * glTF export mangles "upper_leg.L_53_59" in ways that vary by loader
@@ -58,6 +67,10 @@ export function loadJax() {
     jax.name = 'Jax';
     jax.add(model);
     jax.visible = false;
+
+    const keyLight = new THREE.PointLight(KEY_LIGHT_COLOR, KEY_LIGHT_INTENSITY, KEY_LIGHT_RANGE, 2);
+    keyLight.position.set(0, KEY_LIGHT_HEIGHT, 0);
+    jax.add(keyLight);
 
     const bones = {
       upperLegL: findBone(model, 'upperlegl'),
