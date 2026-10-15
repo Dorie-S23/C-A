@@ -202,7 +202,7 @@
                 position: fixed;
                 bottom: 1em;
                 right: 1em;
-                z-index: 6;
+                z-index: 11; /* above #overlay so it works on the home and pause screens */
                 color: #fff;
                 background: rgba(0, 0, 0, 0.4);
                 border: 1px solid rgba(255, 255, 255, 0.3);
@@ -212,6 +212,91 @@
                 cursor: pointer;
             }
 
+            #controls-btn {
+                position: fixed;
+                bottom: 1em;
+                right: 6.5em;
+                z-index: 11; /* above #overlay so it works on the home and pause screens */
+                color: #fff;
+                background: rgba(0, 0, 0, 0.4);
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                border-radius: 4px;
+                padding: 0.4em 0.8em;
+                font-size: 0.85em;
+                cursor: pointer;
+            }
+            #controls {
+                position: fixed;
+                inset: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: rgba(0, 0, 0, 0.55);
+                z-index: 20;
+            }
+            #controls[hidden] {
+                display: none;
+            }
+            #controls-card {
+                position: relative;
+                min-width: 300px;
+                padding: 1.4em 1.8em 1.6em;
+                background: rgba(10, 8, 14, 0.95);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 10px;
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+                color: #fff;
+            }
+            #controls-card h2 {
+                margin: 0 0 0.8em;
+                font-size: 1.3em;
+            }
+            #controls-close {
+                position: absolute;
+                top: 0.5em;
+                right: 0.8em;
+                font-size: 1.4em;
+                cursor: pointer;
+                opacity: 0.8;
+            }
+            #controls-list {
+                display: grid;
+                grid-template-columns: auto 1fr;
+                gap: 0.7em 1.4em;
+                align-items: center;
+                margin: 0;
+            }
+            #controls-list dt {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 0.25em;
+            }
+            #controls-list dd {
+                margin: 0;
+                opacity: 0.85;
+            }
+            #controls-list .or,
+            #controls-list .plus {
+                opacity: 0.6;
+                font-size: 0.85em;
+                margin: 0 0.2em;
+            }
+            kbd {
+                display: inline-block;
+                min-width: 1.6em;
+                padding: 0.2em 0.45em;
+                text-align: center;
+                font-family: inherit;
+                font-size: 0.85em;
+                font-weight: 700;
+                color: #fff;
+                background: rgba(255, 255, 255, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.35);
+                border-bottom-width: 3px;
+                border-radius: 5px;
+                box-sizing: border-box;
+            }
             /* --- Title screen panels (Options / Quit) --- */
             .title-panel {
                 position: fixed;
@@ -566,7 +651,31 @@
         <div id="crosshair" hidden></div>
         <div id="hint"></div>
         <div id="prompt" hidden></div>
+        <button id="controls-btn">Controls</button>
         <button id="credits-btn">Credits</button>
+
+        <div id="controls" hidden>
+            <div id="controls-card">
+                <span id="controls-close">&times;</span>
+                <h2>Controls</h2>
+                <dl id="controls-list">
+                    <dt>
+                        <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+                        <span class="or">or</span>
+                        <kbd>&uarr;</kbd><kbd>&larr;</kbd><kbd>&darr;</kbd><kbd>&rarr;</kbd>
+                    </dt>
+                    <dd>Move</dd>
+                    <dt><kbd>Shift</kbd><span class="plus">+</span>move</dt>
+                    <dd>Run</dd>
+                    <dt><kbd>E</kbd></dt>
+                    <dd>Interact</dd>
+                    <dt><kbd>Mouse</kbd></dt>
+                    <dd>Look around</dd>
+                    <dt><kbd>Esc</kbd></dt>
+                    <dd>Pause / release the mouse</dd>
+                </dl>
+            </div>
+        </div>
 
         <div id="dialogue" class="hidden">
             <div

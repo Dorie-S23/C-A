@@ -1004,3 +1004,214 @@ export const level1RibbitDialogue = [
     next: null,
   },
 ];
+
+// --- Level 2 hand-in: presenting pictures to Kaufmo ---------------------
+// main.js picks which of these to play based on how many pictures have
+// been presented in total once this hand-in is counted (see itemState in
+// main.js and the interact() callback in kaufmoRoom.js) — these aren't
+// player choices, they're Kaufmo's reaction to the running count.
+
+export const level2HandIn1Dialogue = [
+  {
+    type: 'beat',
+    text: 'Pomni holds out a photo. Kaufmo stops pacing.',
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'shocked',
+    text: "Wait — wait, is that— that's one of them! That's a real one!",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    direction: 'turning it over in his hands',
+    mood: 'worried',
+    text: "Okay. Okay, this is good. This is one. There's more though, right? I remember there being more.",
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'neutral',
+    text: "I'll keep looking.",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'worried',
+    text: "Please. One isn't enough to prove anything. One is just a coincidence. I need the rest.",
+    next: null,
+  },
+];
+
+export const level2HandIn2Dialogue = [
+  {
+    type: 'beat',
+    text: 'Pomni holds out another photo.',
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'happy',
+    text: "Two! That's two now! Look — look at the corner of this one, that's the same carpet as the first. Same place.",
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'neutral',
+    text: "So it's really one office. Not just random junk.",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'worried',
+    text: "Right! Exactly! So close. There was a third — I know there was. Find the third and it stops being a theory.",
+    next: null,
+  },
+];
+
+export const level2HandIn3Dialogue = [
+  {
+    type: 'beat',
+    text: 'Pomni holds out the last photo. Kaufmo goes very still.',
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'shocked',
+    text: 'Three.',
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    direction: 'quiet, almost to himself',
+    mood: 'happy',
+    text: "Three. These were it. These were the missing pieces, Pomni — I wasn't imagining it, I wasn't crazy, I just didn't have the whole picture. Now I do.",
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'happy',
+    text: "So what happens now?",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'worried',
+    text: "Now I work out what it means. Give me — I don't know how long. But I'll come find you once I have the answer. I promise.",
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    direction: 'small smile',
+    mood: 'happy',
+    text: "Try not to lose them this time.",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'happy',
+    text: "…No promises.",
+    next: null,
+  },
+];
+
+// Idle lines for revisiting him between hand-ins (holding nothing new).
+export const level2IdleDialogue = [
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'worried',
+    text: "Still looking? Don't stop on my account. Well — do stop. Just not for long.",
+    next: null,
+  },
+];
+
+// Idle line once all three have been handed in, before he comes to find her.
+export const level2CompleteDialogue = [
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    direction: 'quieter than usual, focused',
+    mood: 'neutral',
+    text: "I'm working on it. I'll find you. Go — do whatever it is you were doing.",
+    next: null,
+  },
+];
+
+// The payoff level2CompleteDialogue promises: the next time Pomni comes
+// back, Kaufmo has an answer. Plays once in place of the idle "still
+// working on it" line, then main.js keeps replaying it for any later
+// visits — same as every other idle/complete script in this file.
+export const level2PayoffDialogue = [
+  {
+    type: 'beat',
+    text: "Kaufmo's on his feet before the door's even shut behind her.",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'shocked',
+    text: "Okay — okay, don't leave yet, I laid them all out, just— look.",
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'neutral',
+    text: "You found something.",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'happy',
+    text: "Same carpet in all three. Same baseboard. There's a water stain in the corner of two of them, same shape, same spot. It's not three places, Pomni. It's one room.",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    direction: 'quieter',
+    mood: 'worried',
+    text: "And Caine's been keeping pictures of it. Hiding them, even. You don't hide a photo of nothing.",
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'annoyed',
+    text: "Okay. Slow down. A room — where?",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'worried',
+    text: "That's the part I don't have yet. But a room that real doesn't just float in nowhere. It's behind something. A wall that isn't a wall. A door marked as something it's not.",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'neutral',
+    text: "Remember that? 'The door that wasn't a door'? I wrote it off as a glitch. I don't think it was.",
+    next: null,
+  },
+];

@@ -8,6 +8,8 @@ import {
 } from './src/state/escapeThreshold.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
+  level2HandIn1Dialogue, level2HandIn2Dialogue, level2HandIn3Dialogue,
+  level2IdleDialogue, level2CompleteDialogue, level2PayoffDialogue,
 } from './src/data/dialogues.js';
 import { SPRITES, MOODS } from './src/ui/portraitSprites.js';
 
@@ -30,7 +32,12 @@ function runLinear(script) {
 // 1) both real scripts play start-to-end without throwing, visit every
 // node exactly once (pure linear, no branching), and reference only
 // speakers that exist in the registry.
-for (const [name, script] of [['preLevel1', preLevel1Dialogue], ['level1Open', level1OpenDialogue]]) {
+for (const [name, script] of [
+  ['preLevel1', preLevel1Dialogue], ['level1Open', level1OpenDialogue],
+  ['level2HandIn1', level2HandIn1Dialogue], ['level2HandIn2', level2HandIn2Dialogue],
+  ['level2HandIn3', level2HandIn3Dialogue], ['level2Idle', level2IdleDialogue],
+  ['level2Complete', level2CompleteDialogue], ['level2Payoff', level2PayoffDialogue],
+]) {
   const seen = runLinear(script);
   check(`${name}: visits every node once, in order`, seen.length === script.length
     && seen.every((n, i) => n === script[i]), `visited=${seen.length}/${script.length}`);

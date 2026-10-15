@@ -11,10 +11,13 @@ import { loadPomni } from './characters/pomni.js';
 import { bendBone, SIDEWAYS } from './characters/bendBone.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
 import { createTitleScreen } from './ui/titleScreen.js';
-import { resetEscapeThreshold } from './state/escapeThreshold.js';
+import { resetEscapeThreshold, setLevelPoints } from './state/escapeThreshold.js';
 import { runLevel1 } from './levels/level1.js';
+import { createMinimap } from './ui/minimap.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
+  level2HandIn1Dialogue, level2HandIn2Dialogue, level2HandIn3Dialogue,
+  level2IdleDialogue, level2CompleteDialogue, level2PayoffDialogue,
 } from './data/dialogues.js';
 
 // Collision fires dozens of short rays a frame (wall probe, floor probes,
@@ -33,6 +36,12 @@ const DIALOGUE_SCRIPTS = {
   level1Open: { script: level1OpenDialogue, room: 'pomni' },
   level2Opening: { script: level2OpeningDialogue, room: 'kaufmo' },
   level1Ribbit: { script: level1RibbitDialogue, room: 'ribbit' },
+  level2HandIn1: { script: level2HandIn1Dialogue, room: 'kaufmo' },
+  level2HandIn2: { script: level2HandIn2Dialogue, room: 'kaufmo' },
+  level2HandIn3: { script: level2HandIn3Dialogue, room: 'kaufmo' },
+  level2Idle: { script: level2IdleDialogue, room: 'kaufmo' },
+  level2Complete: { script: level2CompleteDialogue, room: 'kaufmo' },
+  level2Payoff: { script: level2PayoffDialogue, room: 'kaufmo' },
 };
 
 const ROOM_LOADERS = {
@@ -46,9 +55,9 @@ const ROOM_LOADERS = {
 
 const PLAYER_HEIGHT = 1.7;
 const PLAYER_RADIUS = 0.35;
-// Kept close to the speeds Pomni's Walk/Run clips are authored at (see
-// WALK_CLIP_SPEED/RUN_CLIP_SPEED) so her feet don't skate or blur.
-const WALK_SPEED = 2.0; // metres per second
+// Faster than her Walk/Run clips are authored at (WALK_CLIP_SPEED/RUN_CLIP_SPEED);
+// updatePomniWalk speeds the clips up to match, so her feet stay planted.
+const WALK_SPEED = 3.2; // metres per second
 const SPRINT_MULTIPLIER = 2.0; // running speed = WALK_SPEED × this
 const WALL_MARGIN = 0.4; // keep the camera this far from any wall
 const STEP_HEIGHT = 0.4; // ledges up to this tall are stepped onto; taller ones block
@@ -154,7 +163,7 @@ const hint = document.getElementById('hint');
 const interactPrompt = document.getElementById('prompt');
 
 const dialogueUI = createDialogueUI({ speakers: SPEAKERS });
-
+const minimap = createMinimap();
 let currentRoom = null;
 let currentRoomKey = null;
 let readyToPlay = false;
@@ -198,7 +207,7 @@ btnResume.addEventListener('click', (event) => {
 
 btnHome.addEventListener('click', (event) => {
   event.stopPropagation();
-  returnToHome();
+  returnToHome({ toRoomPicker: true });
 });
 
 btnTitle.addEventListener('click', (event) => {
@@ -219,7 +228,11 @@ const titleScreen = createTitleScreen({
   isBlocked: () => !titleOptions.hidden || !titleQuit.hidden || !creditsPanel.classList.contains('hidden'),
   onAction: (action) => {
     if (action === 'play') {
-      resetEscapeThreshold(); // PLAY starts a fresh run
+      // PLAY starts a fresh run: hidden score and Level 2's photos.
+      resetEscapeThreshold();
+      collectedItems.clear();
+      presentedItems.clear();
+      level2StallSeen = false;
       titleScreen.hide();
       showRoomPicker();
     } else if (action === 'options') {
@@ -301,11 +314,16 @@ function showRoomPicker() {
 }
 
 /**
- * Tears down the current room and returns to the title screen.
+ * Tears down the current room and backs out of it — to the room picker
+ * (pause menu's "Back to Home", since that's the hub a player actually
+ * wants mid-session) or all the way to the title screen (the room
+ * picker's own "Title screen" button, and the dialogue-preview escape
+ * hatch below, which can fire before any room's ever been picked).
  */
-function returnToHome() {
+function returnToHome({ toRoomPicker = false } = {}) {
   if (isLocked) document.exitPointerLock();
   if (dialogueUI.isActive) dialogueUI.cancel();
+  minimap.hide();
   loadToken++; // discard any load still in flight for the room we're leaving
   paused = false;
   resetMoveState();
@@ -336,10 +354,14 @@ function returnToHome() {
   caught = false;
   scene.environment = null;
 
-  overlay.classList.add('hidden');
   pauseMenu.hidden = true;
   crosshair.hidden = true;
-  titleScreen.show({ playIntro: false });
+  if (toRoomPicker) {
+    showRoomPicker();
+  } else {
+    overlay.classList.add('hidden');
+    titleScreen.show({ playIntro: false });
+  }
 }
 
 /**
@@ -466,6 +488,48 @@ function startMission(key) {
   MISSIONS[key]?.(missionApi);
 }
 
+// --- Level 2 item collection -------------------------------------------
+// Minimal, scoped to just this mechanic (not the full Escape-Threshold
+// score service the story doc eventually wants — that's a separate
+// piece). Survives room changes on purpose: these aren't reset in
+// selectRoom()/returnToHome() the way per-room scene state is, since a
+// picture picked up in one room has to still be held when the player
+// reaches Kaufmo in a different one.
+const collectedItems = new Set(); // picked up, not yet handed in
+const presentedItems = new Set(); // already handed to Kaufmo
+// Whether Kaufmo's "I'm working on it, I'll find you" stall line has
+// already played once. Lets the first idle revisit after the 3rd hand-in
+// show that line, and only every visit after that deliver the actual
+// payoff (level2Payoff) — instead of looping the stall line forever.
+let level2StallSeen = false;
+
+const itemState = {
+  hasCollected: (id) => collectedItems.has(id) || presentedItems.has(id),
+  collect(id) {
+    if (this.hasCollected(id)) return;
+    collectedItems.add(id);
+    showHint(`Picked up a photo. (${collectedItems.size + presentedItems.size}/3)`);
+  },
+  heldCount: () => collectedItems.size,
+  totalPresented: () => presentedItems.size,
+  /** Hands over everything currently held; returns the new running total. */
+  presentHeld() {
+    for (const id of collectedItems) presentedItems.add(id);
+    collectedItems.clear();
+    // Only pictures actually presented to Kaufmo score: one Escape point each.
+    setLevelPoints('level2', presentedItems.size);
+    return presentedItems.size;
+  },
+  /** Which script to play on an idle revisit once all 3 are presented. */
+  pickPostHandInScript() {
+    if (!level2StallSeen) {
+      level2StallSeen = true;
+      return 'level2Complete';
+    }
+    return 'level2Payoff';
+  },
+};
+
 function selectRoom(roomKey, { onReady, from } = {}) {
   const loadRoom = ROOM_LOADERS[roomKey];
   if (!loadRoom) return;
@@ -511,7 +575,7 @@ function selectRoom(roomKey, { onReady, from } = {}) {
     loadRoom((ratio) => {
       if (myToken !== loadToken) return; // a newer selectRoom()/returnToHome() superseded this one
       overlaySubtitle.textContent = `Fetching room model (${Math.round(ratio * 100)}%)`;
-    }, { from, playDialogue: playRoomDialogue, endLevel, stage }),
+    }, { from, playDialogue: playRoomDialogue, endLevel, stage, items: itemState }),
     pomniReady,
   ])
     .then(([result]) => {
@@ -585,6 +649,10 @@ function applyLoadedRoom({
   interactables = roomInteractables ?? [];
   portals = roomPortals ?? [];
   scene.environment = wantsEnvironment ? environmentMap : null;
+  // Only meaningful in the hub with multiple unmarked doors — every other
+  // room either has no portals or just the one obvious way back.
+  if (roomKey === 'dorm' && portals.length > 0) minimap.show(portals);
+  else minimap.hide();
 
   player.position.set(spawn.x, floorY + PLAYER_HEIGHT, spawn.z);
   // Rooms can request a starting yaw (the maze points the player down
@@ -633,6 +701,21 @@ document.getElementById('credits-btn').addEventListener('click', () => {
 });
 document.getElementById('credits-close').addEventListener('click', () => {
   creditsPanel.classList.add('hidden');
+});
+
+// --- Controls panel ---
+const controlsPanel = document.getElementById('controls');
+document.getElementById('controls-btn').addEventListener('click', () => {
+  controlsPanel.hidden = false;
+});
+document.getElementById('controls-close').addEventListener('click', () => {
+  controlsPanel.hidden = true;
+});
+controlsPanel.addEventListener('click', (e) => {
+  if (e.target === controlsPanel) controlsPanel.hidden = true; // clicked the backdrop
+});
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape') controlsPanel.hidden = true;
 });
 
 // --- Keyboard movement ---
@@ -1621,6 +1704,7 @@ function animate() {
     else updatePomniWalk(delta, 0); // settle the waddle while paused/talking
     updateCamera(delta);
   }
+  minimap.update(player.position.x, player.position.z, cameraYaw);
   updateInteractionFocus();
   if (titleScreen.active) {
     titleScreen.update(delta);
