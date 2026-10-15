@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { loadRoomModel } from './loadRoomModel.js';
 import { loadKaufmo } from '../characters/kaufmo.js';
-import { openHingedDoor } from './doors.js';
+import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { createDoorPortal } from './portals.js';
 
 const KAUFMO_DISTANCE = 2.2; // how far in front of spawn he stands, pulled in by furniture
@@ -27,6 +27,7 @@ export function loadKaufmoRoom(onProgress, { playDialogue, from, items } = {}) {
     const defaultSpawn = room.spawn;
 
     const door = openHingedDoor(room.group, DOOR_FRAME_NAME, DOOR_SLAB_NAME, room.spawn, room.collisionMeshes);
+    let doorControl = null;
     if (door) {
       const portal = createDoorPortal(room.group, door.frameBox, room.spawn, 'dorm');
       room.portals = [portal];
@@ -34,6 +35,8 @@ export function loadKaufmoRoom(onProgress, { playDialogue, from, items } = {}) {
         room.spawn = portal.arrival.spawn;
         room.spawnFacing = portal.arrival.facing;
       }
+      // Shut until Pomni opens it with E (see makeDoorOpenable).
+      doorControl = makeDoorOpenable(room, door, { portal });
     }
 
     placeInFrontOfSpawn(kaufmo, { group: room.group, spawn: defaultSpawn });
@@ -46,11 +49,15 @@ export function loadKaufmoRoom(onProgress, { playDialogue, from, items } = {}) {
       kaufmo.traverse((child) => {
         if (child.isMesh && child !== collider) objects.push(child);
       });
-      room.interactables = [{
+      room.interactables = [...(room.interactables ?? []), {
         objects,
         prompt: () => (items?.heldCount() > 0 ? 'Give photos to Kaufmo' : 'Talk to Kaufmo'),
         interact: () => playDialogue(pickKaufmoScript(items)),
       }];
+    }
+    if (doorControl) {
+      room.interactables = [...(room.interactables ?? []), doorControl.interactable];
+      room.update = doorControl.update;
     }
 
     return room;

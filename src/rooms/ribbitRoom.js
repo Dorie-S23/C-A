@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { loadRoomModel } from './loadRoomModel.js';
 import { loadRibbit } from '../characters/ribbit.js';
-import { openHingedDoor } from './doors.js';
+import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { createDoorPortal } from './portals.js';
 
 // Exported from "Ribbits-Room.blend" by tools/blender/export_ribbits_room.py,
@@ -29,7 +29,6 @@ const POINTS = {
   RIBBIT_ON_BED: { x: 5.6, z: -2.0 }, // her hips on the mattress, head to the pillows (-Z)
 };
 
-const DOOR_SHARPNESS = 3;
 
 // The .blend's lighting (coloured lamps on the tree shelves, the warm star
 // projector) doesn't survive glTF export, so its key lights are recreated
@@ -47,8 +46,8 @@ const ACCENT_LIGHTS = [
 /**
  * Ribbit's bedroom, as a place: Ribbit lies curled up on her bed, as she is
  * when Level 1 finds her. Picked from the room list it's just for
- * exploring — no conversation, no scoring — and its open door leads back
- * to the Dorm Hall. Level 1 (src/levels/level1.js)
+ * exploring — no conversation, no scoring — and its door (opened with E)
+ * leads back to the Dorm Hall. Level 1 (src/levels/level1.js)
  * travels here mid-mission and drives the scene through `room.ribbitScene`:
  * the door, Ribbit's poses and distress, and the spots Pomni moves between.
  */
@@ -64,8 +63,9 @@ export function loadRibbitRoom(onProgress, { from } = {}) {
     // Her door opens onto the Dorm Hall: walking into the doorway goes
     // back there (doors.js/portals.js), and coming from there arrives in it.
     const hinged = openHingedDoor(room.group, DOOR_FRAME_NAME, DOOR_SLAB_NAME, room.spawn, room.collisionMeshes);
+    let portal = null;
     if (hinged) {
-      const portal = createDoorPortal(room.group, hinged.frameBox, room.spawn, 'dorm');
+      portal = createDoorPortal(room.group, hinged.frameBox, room.spawn, 'dorm');
       room.portals = [portal];
       if (from === 'dorm') {
         room.spawn = portal.arrival.spawn;
@@ -82,7 +82,12 @@ export function loadRibbitRoom(onProgress, { from } = {}) {
     ribbit.updateMatrixWorld(true);
     room.collisionMeshes.push({ mesh: collider, box: new THREE.Box3().setFromObject(collider) });
 
-    const door = controlDoor(room, hinged);
+    // Shut until Pomni opens it (Level 1 opens and closes it itself); her
+    // face plate swings with it.
+    const door = hinged
+      ? makeDoorOpenable(room, hinged, { portal, attach: [room.group.getObjectByName(DOOR_PLATE_NAME)] })
+      : { open() {}, close() {}, lock() {}, update() {}, interactable: null };
+    if (door.interactable) room.interactables = [...(room.interactables ?? []), door.interactable];
 
     room.ribbitScene = { door, setPose, setDistress, seatY, points: POINTS };
     room.update = (deltaSeconds) => {
@@ -91,54 +96,6 @@ export function loadRibbitRoom(onProgress, { from } = {}) {
     };
     return room;
   });
-}
-
-/**
- * Lets Level 1 swing the door that openHingedDoor (doors.js) already hung
- * and opened: it stays open for exploring — it's the way back to the Dorm
- * Hall — and the mission closes it behind Pomni once she's inside.
- * Ribbit's face plate is hung on the same hinge so it moves with the slab,
- * and both collide wherever the door currently is.
- */
-function controlDoor(room, hinged) {
-  const pivot = hinged?.slab.parent;
-  if (!pivot) return { open() {}, close() {}, update() {} };
-  const openAngle = pivot.rotation.y; // whichever way doors.js found swings into the room
-
-  const plate = room.group.getObjectByName(DOOR_PLATE_NAME);
-  if (plate) {
-    // Attach at the closed pose, where the plate still lines up with the slab.
-    pivot.rotation.y = 0;
-    pivot.updateMatrixWorld(true);
-    pivot.attach(plate);
-    pivot.rotation.y = openAngle;
-    pivot.updateMatrixWorld(true);
-  }
-
-  const meshes = [];
-  for (const part of [hinged.slab, plate].filter(Boolean)) {
-    part.traverse((child) => { if (child.isMesh) meshes.push(child); });
-  }
-  for (const entry of room.collisionMeshes) {
-    if (meshes.includes(entry.mesh)) entry.dynamic = true;
-  }
-
-  let angle = openAngle;
-  let target = openAngle;
-  return {
-    open({ immediate = false } = {}) {
-      target = openAngle;
-      if (immediate) angle = target;
-    },
-    close({ immediate = false } = {}) {
-      target = 0;
-      if (immediate) angle = 0;
-    },
-    update(deltaSeconds) {
-      angle = THREE.MathUtils.damp(angle, target, DOOR_SHARPNESS, deltaSeconds);
-      pivot.rotation.y = angle;
-    },
-  };
 }
 
 function createAccentLights() {

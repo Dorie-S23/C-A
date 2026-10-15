@@ -62,6 +62,10 @@ export function runLevel1(game) {
   async function atTheDoor() {
     ribbitScene = null;
     const hall = await game.enterRoom('dorm');
+    // Her door normally stands open as the way into her room; for the
+    // knock it's shut (and its doorway won't carry Pomni through) until
+    // the script lets her in.
+    hall.hallDoors?.ribbit?.shut();
     const door = ribbitsDormDoor(hall.group);
     stage.place({ ...KNOCK_SPOT, lookAt: RIBBIT_DOOR });
     game.addInteractable({
