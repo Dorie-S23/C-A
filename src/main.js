@@ -13,7 +13,8 @@ import { preloadJaxHallwayCutscene, playJaxHallwayCutscene } from './cutscenes/j
 import { preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
 import { createTitleScreen } from './ui/titleScreen.js';
-import { resetEscapeThreshold, setLevelPoints } from './state/escapeThreshold.js';
+import { resetEscapeThreshold } from './state/escapeThreshold.js';
+import { createLevel2Items } from './state/level2Items.js';
 import { runLevel1 } from './levels/level1.js';
 import { createMinimap } from './ui/minimap.js';
 import {
@@ -234,9 +235,7 @@ const titleScreen = createTitleScreen({
     if (action === 'play') {
       // PLAY starts a fresh run: hidden score and Level 2's photos.
       resetEscapeThreshold();
-      collectedItems.clear();
-      presentedItems.clear();
-      level2StallSeen = false;
+      itemState.reset();
       titleScreen.hide();
       showRoomPicker();
     } else if (action === 'options') {
@@ -640,46 +639,10 @@ function turnPomniTowards(point, cameraOffset = 0) {
 }
 
 // --- Level 2 item collection -------------------------------------------
-// Minimal, scoped to just this mechanic (not the full Escape-Threshold
-// score service the story doc eventually wants — that's a separate
-// piece). Survives room changes on purpose: these aren't reset in
-// selectRoom()/returnToHome() the way per-room scene state is, since a
-// picture picked up in one room has to still be held when the player
-// reaches Kaufmo in a different one.
-const collectedItems = new Set(); // picked up, not yet handed in
-const presentedItems = new Set(); // already handed to Kaufmo
-// Whether Kaufmo's "I'm working on it, I'll find you" stall line has
-// already played once. Lets the first idle revisit after the 3rd hand-in
-// show that line, and only every visit after that deliver the actual
-// payoff (level2Payoff) — instead of looping the stall line forever.
-let level2StallSeen = false;
-
-const itemState = {
-  hasCollected: (id) => collectedItems.has(id) || presentedItems.has(id),
-  collect(id) {
-    if (this.hasCollected(id)) return;
-    collectedItems.add(id);
-    showHint(`Picked up a photo. (${collectedItems.size + presentedItems.size}/3)`);
-  },
-  heldCount: () => collectedItems.size,
-  totalPresented: () => presentedItems.size,
-  /** Hands over everything currently held; returns the new running total. */
-  presentHeld() {
-    for (const id of collectedItems) presentedItems.add(id);
-    collectedItems.clear();
-    // Only pictures actually presented to Kaufmo score: one Escape point each.
-    setLevelPoints('level2', presentedItems.size);
-    return presentedItems.size;
-  },
-  /** Which script to play on an idle revisit once all 3 are presented. */
-  pickPostHandInScript() {
-    if (!level2StallSeen) {
-      level2StallSeen = true;
-      return 'level2Complete';
-    }
-    return 'level2Payoff';
-  },
-};
+// One shared instance survives room changes and menu visits; PLAY resets it.
+const itemState = createLevel2Items({
+  onCollect: (count) => showHint(`Picked up a photo. (${count}/3)`),
+});
 
 function updatePictureCounter() {
   // Only free exploration shows the HUD, including between room visits.
@@ -691,7 +654,7 @@ function updatePictureCounter() {
 
   // Handed-in pictures still count as found. Only update the live region
   // when its text changes, rather than announcing it every animation frame.
-  const text = `Pictures found: ${collectedItems.size + presentedItems.size}/3`;
+  const text = `Pictures found: ${itemState.totalFound()}/3`;
   if (pictureCounter.textContent !== text) pictureCounter.textContent = text;
 }
 

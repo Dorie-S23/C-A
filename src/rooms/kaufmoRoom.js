@@ -3,6 +3,7 @@ import { loadRoomModel } from './loadRoomModel.js';
 import { loadKaufmo } from '../characters/kaufmo.js';
 import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { createDoorPortal } from './portals.js';
+import { pickKaufmoScript } from '../state/level2Items.js';
 
 const KAUFMO_DISTANCE = 2.2; // how far in front of spawn he stands, pulled in by furniture
 const KAUFMO_WALL_GAP = 0.6;
@@ -62,32 +63,6 @@ export function loadKaufmoRoom(onProgress, { playDialogue, from, items } = {}) {
 
     return room;
   });
-}
-
-/**
- * Which Level 2 script to play when Pomni interacts with Kaufmo, driven
- * entirely by the shared item state (main.js's itemState) rather than any
- * room-local flag:
- *   - holding one or more pictures: hands them all over at once and plays
- *     the reaction for however many have now been presented in total
- *     (1-3) — not necessarily the opening script first, since a player
- *     who collects all three before ever talking to him should still get
- *     the big "three" reveal, not a replay of the intro.
- *   - nothing held, nothing presented yet: the opening script.
- *   - nothing held, some presented: a short idle line.
- *   - nothing held, all three presented: a short "working on it" line the
- *     first time, then the actual payoff (what he found) every visit
- *     after that — see itemState.pickPostHandInScript() in main.js.
- */
-function pickKaufmoScript(items) {
-  if (!items) return 'level2Opening';
-  if (items.heldCount() > 0) {
-    const total = items.presentHeld();
-    return `level2HandIn${total}`;
-  }
-  if (items.totalPresented() >= 3) return items.pickPostHandInScript();
-  if (items.totalPresented() > 0) return 'level2Idle';
-  return 'level2Opening';
 }
 
 /**
