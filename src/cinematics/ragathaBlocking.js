@@ -15,6 +15,9 @@ export function createRagathaBlocking(room, inward, side) {
   const width = box.getSize(new THREE.Vector3())[Math.abs(inward.z) > .5 ? 'x' : 'z'];
   const height = box.max.y - floor, depth = 2.3;
   const material = new THREE.MeshStandardMaterial({ color: 0x37233b, roughness: .9, side: THREE.DoubleSide });
+  const preview = room.group.userData.dormHallPreview;
+  // Keep the proven bounded collision corridor, but show the real hall instead.
+  if (preview) material.visible = false;
   const add = (size, position) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
     mesh.position.copy(position); mesh.receiveShadow = true; backdrop.add(mesh);
@@ -27,7 +30,9 @@ export function createRagathaBlocking(room, inward, side) {
   add([.08, height, depth], new THREE.Vector3(-width / 2 - .1, height / 2, -depth / 2));
   add([.08, height, depth], new THREE.Vector3(width / 2 + .1, height / 2, -depth / 2));
   add([width + .3, height, .06], new THREE.Vector3(0, height / 2, -depth));
-  const light = new THREE.PointLight(0xffddba, 1.2, 4); light.position.set(0, height - .3, -1); backdrop.add(light);
+  if (!preview) {
+    const light = new THREE.PointLight(0xffddba, 1.2, 4); light.position.set(0, height - .3, -1); backdrop.add(light);
+  }
   backdrop.position.copy(center).setY(floor);
   backdrop.rotation.y = Math.atan2(inward.x, inward.z);
   room.group.add(backdrop);
@@ -38,7 +43,8 @@ export function createRagathaBlocking(room, inward, side) {
     room.collisionMeshes.push({mesh,box,paddedBox:box.clone().expandByScalar(.35)});
   });
   backdrop.visible = false;
-  return { start, threshold, talk, backdrop, aperture, measurements: {
+  return { start, threshold, talk, backdrop, aperture,
+    setVisible(value) { backdrop.visible = value; preview?.setVisible(value); }, measurements: {
     panelMin: box.min.toArray(), panelMax: box.max.toArray(), width, height,
     start: start.toArray(), threshold: threshold.toArray(), talk: talk.toArray(),
   } };

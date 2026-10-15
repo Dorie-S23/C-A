@@ -11,7 +11,7 @@ import { loadPomni } from './characters/pomni.js';
 import { OPENING_HANDOFF } from './cinematics/pomniOpening.js';
 import { createOpeningAudio } from './cinematics/openingAudio.js';
 import { createRagathaEntrance } from './cinematics/ragathaEntrance.js';
-import { POMNI_INVITATION, RAGATHA_ENTRANCE_EVENT } from './cinematics/pomniInvitation.js';
+import { POMNI_INVITATION, POMNI_SEATED_DIALOGUE, RAGATHA_ENTRANCE_EVENT } from './cinematics/pomniInvitation.js';
 import { bendBone, SIDEWAYS } from './characters/bendBone.js';
 import { preloadJaxHallwayCutscene, playJaxHallwayCutscene } from './cutscenes/jaxHallwayCutscene.js';
 import { preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
@@ -341,7 +341,9 @@ document.getElementById('btn-room-previews').addEventListener('click', () => {
   showRoomPicker();
 });
 cinematicSkip.addEventListener('click', () => {
-  if (!paused) activeCinematic()?.skip();
+  if (paused) return;
+  if (activeOpening?.phase === 'seated' && dialogueUI.isActive) dialogueUI.cancel();
+  else activeCinematic()?.skip();
 });
 document.getElementById('btn-options-credits').addEventListener('click', () => {
   creditsPanel.classList.remove('hidden');
@@ -468,6 +470,7 @@ function playMorningDialogue(finish) {
   const token = loadToken, room = currentRoom;
   const valid = () => preLevel1Session && token === loadToken && room === currentRoom;
   playRoomDialogue('preLevel1', {
+    startAt: 'ragathaMorningGreeting',
     onNode: node => room.userData.ragathaEntrance?.dialogueNode(node),
     onComplete: () => {
       if (!valid()) return;
@@ -489,7 +492,9 @@ function pauseOpening(value) {
   const cinematic = activeCinematic();
   if (!cinematic?.active) return;
   paused = value;
-  cinematic.setPaused(value);
+  activeOpening?.setPaused(value);
+  activeEntrance?.setPaused(value);
+  dialogueUI.setPaused(value);
   if (!value) clock.getDelta(); // a background-tab pause must not fast-forward on resume
   resetMoveState();
   cinematicSkip.hidden = value || !(cinematic.skippable ?? cinematic.phase === 'playing');
@@ -523,13 +528,36 @@ function handoffOpening() {
 }
 
 function completeOpening() {
+  const coordinated = activeOpening?.coordinated;
   activeOpening = null;
+  if (currentRoom?.userData.afterPomniStanding) {
+    currentRoom.userData.afterPomniStanding();
+    return;
+  }
+  if (coordinated) {
+    cinematicSkip.hidden = !activeEntrance?.skippable;
+    return; // Ragatha retains the camera and owns the eventual gameplay release.
+  }
   readyToPlay = false;
   paused = false;
   resetMoveState();
   overlay.classList.add('hidden');
   const token = loadToken;
+  if (currentRoom?.userData.openingInvitationCancelled) {
+    resumeOpeningGameplay(token);
+    showHint('Morning conversation interrupted. Press T to continue.', 8000);
+    return;
+  }
   dialogueUI.play(POMNI_INVITATION, {
+    onComplete: () => finishOpeningInvitation(token, false),
+    onCancel: () => finishOpeningInvitation(token, true),
+  });
+}
+
+function seatedOpeningDialogue() {
+  const token = loadToken;
+  readyToPlay = false; resetMoveState();
+  dialogueUI.play(POMNI_SEATED_DIALOGUE, {
     onComplete: () => finishOpeningInvitation(token, false),
     onCancel: () => finishOpeningInvitation(token, true),
   });
@@ -537,6 +565,17 @@ function completeOpening() {
 
 function finishOpeningInvitation(token, cancelled) {
   if (token !== loadToken || currentRoomKey !== 'pomni') return;
+  if (cancelled && activeOpening?.phase === 'seated') {
+    currentRoom.userData.openingInvitationCancelled = true;
+    morningDialoguePending = true;
+    activeOpening.skip(); // Stand and blend to gameplay before offering T retry.
+    cinematicSkip.hidden = true;
+    return;
+  }
+  if (cancelled) {
+    morningDialoguePending = true;
+    showHint('Morning conversation interrupted. Press T to continue.', 8000);
+  }
   // The active bedroom entrance claims this hook; cancellation resumes play.
   if (!cancelled) {
     const event = new CustomEvent(RAGATHA_ENTRANCE_EVENT, { cancelable: true,
@@ -558,7 +597,7 @@ function resumeOpeningGameplay(token) {
 
 window.addEventListener(RAGATHA_ENTRANCE_EVENT, (event) => {
   if (currentRoomKey !== 'pomni' || !currentRoom || readyToPlay
-    || currentRoom.userData.pomniOpening?.phase !== 'done'
+    || !['done', 'seated'].includes(currentRoom.userData.pomniOpening?.phase)
     || currentRoom.userData.ragathaEntranceStarted) return;
   event.preventDefault(); // Claim synchronously before the invitation falls through.
   const token = loadToken, room = currentRoom;
@@ -584,8 +623,14 @@ window.addEventListener(RAGATHA_ENTRANCE_EVENT, (event) => {
     catch (error) { console.warn('Temporary entrance audio unavailable.', error); }
     try {
       activeEntrance = createRagathaEntrance({
-        room: { group: room, spawn: player.position.clone().setY(floorY), collisionMeshes, interactables },
+        room: { group: room, spawn: new THREE.Vector3(OPENING_HANDOFF.x, OPENING_HANDOFF.y, OPENING_HANDOFF.z), collisionMeshes, interactables },
         camera, resolveCamera: resolveOpeningCamera, audio, cast: room.userData.ragathaCast,
+        ...(activeOpening?.phase === 'seated' ? {
+          onDoorOpening: () => activeOpening?.resumeForEntrance(),
+          canStartDialogue: () => !activeOpening?.active,
+          onSkipOpening: () => activeOpening?.skip(),
+          advanceOpening: dt => activeOpening?.update(dt),
+        } : {}),
         onDialogue: dialogue, onComplete: resume,
       });
     } catch (error) { audio?.dispose(); throw error; }
@@ -595,7 +640,10 @@ window.addEventListener(RAGATHA_ENTRANCE_EVENT, (event) => {
     clock.getDelta();
   } catch (error) {
     console.warn('Staged entrance unavailable; continuing with morning dialogue.', error);
-    dialogue(resume);
+    if (activeOpening?.phase === 'seated') {
+      room.userData.afterPomniStanding = () => { delete room.userData.afterPomniStanding; if (stillHere()) dialogue(resume); };
+      activeOpening.skip();
+    } else dialogue(resume);
   }
 });
 
@@ -1012,7 +1060,7 @@ function applyLoadedRoom({
     activeOpening = roomOpening;
     player.visible = false;
     roomOpening.start({ camera, resolveCamera: resolveOpeningCamera,
-      onHandoff: handoffOpening, onComplete: completeOpening });
+      onHandoff: handoffOpening, onComplete: completeOpening, onSeated: seatedOpeningDialogue });
   }
 
   player.position.set(spawn.x, floorY + PLAYER_HEIGHT, spawn.z);
@@ -1044,7 +1092,8 @@ function applyLoadedRoom({
   }
   if (playOpening && openingError) {
     openingCompleted = true;
-    showHint('Opening could not load. You can still explore the bedroom.', 7000);
+    morningDialoguePending = preLevel1Session;
+    showHint('Opening could not load. You can explore, or press T to continue the morning conversation.', 9000);
   }
   if (onReady) {
     onReady();
@@ -1061,6 +1110,7 @@ function disposeObject3D(root) {
   root.userData.ragathaEntrance?.dispose();
   root.userData.pomniOpening?.dispose();
   root.userData.bedroomLighting?.dispose();
+  root.userData.dormHallPreview?.dispose(); // removes its exclusively owned meshes before generic disposal
   root.traverse((child) => {
     if (!child.isMesh) return;
     child.dispose?.(); // e.g. a mirror's Reflector frees its render target
@@ -1107,6 +1157,7 @@ const move = { forward: false, back: false, left: false, right: false, sprint: f
 
 window.addEventListener('keydown', (e) => {
   if (activeCinematic()?.active) {
+    if (e.code === 'KeyP' && !e.repeat) { e.preventDefault(); pauseOpening(!paused); }
     if (e.code === 'Escape' && !e.repeat && !e.defaultPrevented) { e.preventDefault(); pauseOpening(!paused); }
     return;
   }
@@ -2220,14 +2271,23 @@ function focusedBedroomDoor() {
   return currentRoomKey === 'pomni' && focusedInteractable?.prompt() === 'Exit to Hallway';
 }
 
+/** Development-only A/B review: no gameplay/input settings or production API. */
+export function setDormHallPreviewForReview(visible) {
+  if (!import.meta.env.DEV) return false;
+  const preview = currentRoom?.userData.dormHallPreview;
+  preview?.setVisible(Boolean(visible));
+  return Boolean(preview);
+}
+
 /** Read-only development diagnostics for the opening's browser regressions. */
 export function getOpeningDiagnostics() {
   if (!import.meta.env.DEV) return null;
   const opening = currentRoom?.userData.pomniOpening;
-  let cover, actorMeshes = 0;
+  let cover, actorMeshes = 0, mirrorCount = 0;
   currentRoom?.traverse((o) => {
     if (o.userData.name === 'Plane.003') cover = o;
     if (o.isSkinnedMesh && o.parent && o.name !== 'Caine') actorMeshes++;
+    if (o.isReflector) mirrorCount++;
   });
   return {
     room: currentRoomKey, phase: opening?.phase ?? null, time: opening?.time ?? null,
@@ -2238,6 +2298,8 @@ export function getOpeningDiagnostics() {
     caineWarningComplete: objectives.isComplete('find-caine'),
     focusedPrompt: focusedInteractable?.prompt() ?? null,
     openingElapsed: opening?.elapsed ?? null, dialogueActive: dialogueUI.isActive,
+    openingCoordinated: opening?.coordinated ?? false,
+    dialogueText: document.getElementById('dialogue-text').textContent,
     entrancePhase: currentRoom?.userData.ragathaEntrance?.phase ?? null,
     ragatha: currentRoom?.userData.ragathaEntrance?.diagnostics ?? null,
     ragathaCount: currentRoom?.children.filter(child => child.name === 'Ragatha').length ?? 0,
@@ -2264,6 +2326,12 @@ export function getOpeningDiagnostics() {
     blanketWeights: opening ? Array.from(opening.blanket.morphTargetInfluences) : null,
     idleTime: pomniActions.idle?.time, loadMilliseconds: opening?.loadMilliseconds,
     frameProfile: { ...openingFrameProfile }, memory: { ...renderer.info.memory },
+    hallPreview: currentRoom?.userData.dormHallPreview ? {
+      ...currentRoom.userData.dormHallPreview.metrics,
+      visible: currentRoom.userData.dormHallPreview.group.visible,
+    } : null,
+    hallPreviewError: currentRoom?.userData.dormHallPreviewError ?? null,
+    bedroomMirrorCount: mirrorCount, lastRender: { ...renderer.info.render },
     interactables: interactables.map((i) => ({ prompt: i.prompt(),
       enabled: i.enabled?.() !== false, radius: i.radius ?? null,
       anchor: i.anchor?.getWorldPosition(new THREE.Vector3()).toArray() ?? null,
