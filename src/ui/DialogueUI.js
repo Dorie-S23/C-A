@@ -142,6 +142,16 @@ export function createDialogueUI({ speakers }) {
     }
     onNode?.(node);
 
+    // A silent sync point for the scene behind the dialogue (e.g. cueing a
+    // background animation) rather than anything the player reads — skip
+    // it with no visible change and no click required, instead of making
+    // them advance past an empty box.
+    if (node.type === 'cue') {
+      engine.advance();
+      renderNode();
+      return;
+    }
+
     if (node.type === 'line' && node.side) {
       if (node.side === 'left') {
         leftSpeaker = node.speaker;
@@ -322,12 +332,15 @@ export function createDialogueUI({ speakers }) {
     /**
      * @param {Array} script - see src/data/dialogues.js for node shapes
      * @param {{ onComplete?: () => void, onChoice?: (option, nextNode) => void, onCancel?: () => void,
-     *   distressFor?: (lineNode) => number }} [handlers] distressFor: 0-3 per
-     *   line as it's shown (see setDistress), for reactions that depend on
-     *   the player's earlier picks rather than on the script itself.
-     *   onNode: every node as it's shown — e.g. to act out a node's
-     *   `action` (a stage direction) in the 3D scene. startAt/stopAt play
-     *   just part of the script (see createDialogueEngine)
+     *   onNode?: (node) => void, distressFor?: (lineNode) => number,
+     *   startAt?: string, stopAt?: string }} [handlers] onNode fires for every node as it
+     *   becomes current — including 'cue' nodes, which otherwise never render anything, so a
+     *   caller can sync scene-level side effects (e.g. cueing a background animation, or
+     *   acting out a node's `action` stage direction) to a specific point in the script
+     *   without the player seeing a dialogue line for it. distressFor: 0-3 per line as it's
+     *   shown (see setDistress), for reactions that depend on the player's earlier picks
+     *   rather than on the script itself. startAt/stopAt play just part of the script (see
+     *   createDialogueEngine).
      */
     play(script, {
       onComplete: complete, onChoice: choice, onCancel: cancel, distressFor: distress, onNode: node,
