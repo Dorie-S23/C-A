@@ -24,10 +24,17 @@ const BOB_HEIGHT = 0.035;
 // doesn't depend on whatever a given room's own lighting happens to be —
 // without it he can silhouette against anything bright behind him (e.g.
 // a doorway glow) despite his own materials being lit correctly.
+//
+// Point-light brightness follows an inverse-square falloff, so a light
+// sitting AT (or inside) the surface it's meant to light overexposes it
+// to near-white — which is exactly what putting this at (0, height, 0),
+// dead centre with zero offset, did: it sat inside his own head/torso.
+// Offset out to a real working distance instead, like an actual key
+// light would be, with intensity/range raised to still reach him from there.
 const KEY_LIGHT_COLOR = 0xfff4e0;
-const KEY_LIGHT_INTENSITY = 3;
-const KEY_LIGHT_RANGE = 3;
-const KEY_LIGHT_HEIGHT = 1.9; // roughly head height above his feet, which sit at the group's own origin
+const KEY_LIGHT_INTENSITY = 6;
+const KEY_LIGHT_RANGE = 5;
+const KEY_LIGHT_OFFSET = new THREE.Vector3(0.9, 1.6, 1.1); // forward-up-right of his centre, clear of his own mesh
 
 /**
  * Finds a bone by a loose, punctuation-insensitive match on its name.
@@ -69,7 +76,7 @@ export function loadJax() {
     jax.visible = false;
 
     const keyLight = new THREE.PointLight(KEY_LIGHT_COLOR, KEY_LIGHT_INTENSITY, KEY_LIGHT_RANGE, 2);
-    keyLight.position.set(0, KEY_LIGHT_HEIGHT, 0);
+    keyLight.position.copy(KEY_LIGHT_OFFSET);
     jax.add(keyLight);
 
     const bones = {
