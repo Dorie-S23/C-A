@@ -9,6 +9,7 @@ import { loadMazeRoom } from './rooms/mazeRoom.js';
 import { loadKaufmoRoom } from './rooms/kaufmoRoom.js';
 import { loadPomni } from './characters/pomni.js';
 import { bendBone, SIDEWAYS } from './characters/bendBone.js';
+import { preloadJaxHallwayCutscene, playJaxHallwayCutscene } from './cutscenes/jaxHallwayCutscene.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
 import { createTitleScreen } from './ui/titleScreen.js';
 import { resetEscapeThreshold, setLevelPoints } from './state/escapeThreshold.js';
@@ -362,6 +363,19 @@ function returnToHome({ toRoomPicker = false } = {}) {
   }
 }
 
+// While set, animate() renders this instead of the normal scene/camera —
+// see runCutscene() and the render branch below.
+let activeCutscene = null;
+
+/**
+ * Hands the render loop over to a cutscene (e.g. Jax's hallway run) until
+ * it reports itself done, then calls onDone — typically to resume
+ * whatever dialogue/preview was paused for it.
+ */
+function runCutscene(cutscene, onDone) {
+  activeCutscene = { update: cutscene.update, onDone };
+}
+
 /**
  * Loads a room as a backdrop and plays a dialogue script over it instead
  * of the usual "Click to Play" prompt. The pointer is never locked during
@@ -379,21 +393,65 @@ function playDialoguePreview(key) {
   if (!entry) return;
   const { script, room } = entry;
 
+  // Pre-Level 1's "Jax storms past" plays as a cutscene cut away to the
+  // real Dorm Hall (see jaxHallwayCutscene.js) rather than anything
+  // happening inside this preview's own room — load it alongside the
+  // room rather than after, so it's never what the player ends up
+  // waiting on.
+  const cutsceneReady = key === 'preLevel1' ? preloadJaxHallwayCutscene() : Promise.resolve(null);
+
   selectRoom(room, {
     onReady: () => {
       overlay.classList.add('hidden');
       readyToPlay = false;
       resetMoveState();
-      dialogueUI.play(script, {
-        onComplete: () => {
+      const roomAtLoad = currentRoom;
+
+      cutsceneReady.then((cutsceneAssets) => {
+        if (currentRoom !== roomAtLoad) return; // player backed out before it finished loading
+
+        function finish() {
           readyToPlay = true;
           overlay.classList.remove('hidden');
           overlayTitle.textContent = 'Click to Play';
           overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
-        },
+        }
+
+        // One-shot assets (a whole extra copy of the Dorm Hall) — free
+        // their GPU resources once used, whether that's right after the
+        // cutscene plays or because the player backed out before it got
+        // that far, rather than leaking VRAM every time this gets replayed.
+        let cutsceneDisposed = false;
+        function disposeCutsceneAssets() {
+          if (cutsceneDisposed || !cutsceneAssets) return;
+          cutsceneDisposed = true;
+          disposeObject3D(cutsceneAssets.scene);
+        }
+
         // Escape mid-preview: don't leave the player stuck with both the
         // dialogue and the home overlay hidden — bail all the way out.
-        onCancel: () => returnToHome(),
+        const cancel = () => {
+          disposeCutsceneAssets();
+          returnToHome();
+        };
+
+        if (cutsceneAssets) {
+          // Played in two parts around the cutscene: dialogueUI.play()'s
+          // own finish() already hides the dialogue box once stopAt ends
+          // part one, so there's nothing extra to hide/show by hand here.
+          dialogueUI.play(script, {
+            stopAt: 'afterJaxPassBy',
+            onComplete: () => {
+              runCutscene(playJaxHallwayCutscene(renderer, cutsceneAssets), () => {
+                disposeCutsceneAssets();
+                dialogueUI.play(script, { startAt: 'afterJaxPassBy', onComplete: finish, onCancel: cancel });
+              });
+            },
+            onCancel: cancel,
+          });
+        } else {
+          dialogueUI.play(script, { onComplete: finish, onCancel: cancel });
+        }
       });
     },
   });
@@ -1206,7 +1264,8 @@ function checkPortals() {
   if (portals.length === 0) return;
   // Her actual feet, not floorY: the dorm arch stands on a few steps.
   triggerProbe.set(player.position.x, player.position.y - PLAYER_HEIGHT + 0.5, player.position.z);
-  const portal = portals.find((p) => !p.disabled && p.box.containsPoint(triggerProbe));
+  // A door portal (see rooms/doors.js) only leads anywhere once it's open.
+  const portal = portals.find((p) => p.box.containsPoint(triggerProbe) && (p.enabled?.() ?? true));
   if (portal) travelTo(portal.to);
 }
 
@@ -1706,7 +1765,14 @@ function animate() {
   }
   minimap.update(player.position.x, player.position.z, cameraYaw);
   updateInteractionFocus();
-  if (titleScreen.active) {
+  if (activeCutscene) {
+    const finished = activeCutscene.update(delta);
+    if (finished) {
+      const { onDone } = activeCutscene;
+      activeCutscene = null;
+      onDone();
+    }
+  } else if (titleScreen.active) {
     titleScreen.update(delta);
     titleScreen.render();
   } else {

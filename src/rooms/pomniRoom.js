@@ -59,6 +59,7 @@ export function loadPomniRoom(onProgress, { from, items } = {}) {
         room.spawn = portal.arrival.spawn;
         room.spawnFacing = portal.arrival.facing;
       }
+
       // Shut until Pomni opens it with E (see makeDoorOpenable).
       doorControl = makeDoorOpenable(room, door, { portal });
       room.interactables = [...(room.interactables ?? []), doorControl.interactable];

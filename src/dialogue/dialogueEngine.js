@@ -9,6 +9,11 @@
  *   { type: 'line', id?, speaker, side: 'left'|'right', direction?, text, next? }
  *   { type: 'beat', id?, text, next? }                      — stage direction, no speaker
  *   { type: 'choice', id?, speaker?, text?, options: [{ text, next, points? }] }
+ *   { type: 'cue', id?, next? }                              — no box at all; DialogueUI
+ *                                                               auto-advances through it and
+ *                                                               fires onNode so a caller can
+ *                                                               sync a scene-level side effect
+ *                                                               to this point in the script
  *
  * `next` is a node `id` to jump to, or omitted to fall through to the next
  * array entry, or `null` to end the script. Choice nodes only advance via

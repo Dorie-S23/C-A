@@ -16,10 +16,11 @@ export const SPEAKERS = {
 // --- Pre-Level 1: "Business as Usual" ---------------------------------
 // Jax's wordless pass-by (the design doc's "tell that something is wrong
 // before anyone says so directly") is a pure 3D/animation beat with no
-// dialogue box in the source script — represented here as a `beat` node
-// so the overlay still carries the moment during a text-only playtest,
-// but it has no speaker/portrait and is meant to be replaced by an actual
-// animated Jax walking through the background once that exists.
+// dialogue box in the source script at all — played as an actual cutscene
+// (see jaxHallwayCutscene.js), not anything inline here. main.js plays
+// this script in two parts with stopAt/startAt both set to 'afterJaxPassBy'
+// below: part one ends right before that line, the cutscene plays between
+// the two Ragatha lines, then part two resumes from 'afterJaxPassBy'.
 export const preLevel1Dialogue = [
   {
     type: 'line',
@@ -57,10 +58,7 @@ export const preLevel1Dialogue = [
     text: 'Thrilling. Another one of his "brilliant" ideas.',
   },
   {
-    type: 'beat',
-    text: 'Jax storms past in the background — no dialogue, just animation/SFX.',
-  },
-  {
+    id: 'afterJaxPassBy',
     type: 'line',
     speaker: 'ragatha',
     side: 'right',
