@@ -28,8 +28,6 @@ import {
 // (~120k triangles, almost all of it around the player). A BVH per mesh lets
 // each ray test only the handful of triangles near it. Meshes without one
 // (skinned meshes) fall back to the regular raycast.
-THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
-THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 // Each preview plays over whichever room backdrop its own scene is set in.
@@ -164,6 +162,7 @@ const btnResume = document.getElementById('btn-resume');
 const btnHome = document.getElementById('btn-home');
 const btnTitle = document.getElementById('btn-title');
 const crosshair = document.getElementById('crosshair');
+const pictureCounter = document.getElementById('picture-counter');
 const hint = document.getElementById('hint');
 const interactPrompt = document.getElementById('prompt');
 
@@ -682,6 +681,20 @@ const itemState = {
   },
 };
 
+function updatePictureCounter() {
+  // Only free exploration shows the HUD, including between room visits.
+  const visible = isLocked && readyToPlay && !paused && !dialogueUI.isActive
+    && !activeCutscene && !stageBusy() && !titleScreen.active
+    && overlay.classList.contains('hidden') && controlsPanel.hidden
+    && creditsPanel.classList.contains('hidden');
+  if (pictureCounter.hidden === visible) pictureCounter.hidden = !visible;
+
+  // Handed-in pictures still count as found. Only update the live region
+  // when its text changes, rather than announcing it every animation frame.
+  const text = `Pictures found: ${collectedItems.size + presentedItems.size}/3`;
+  if (pictureCounter.textContent !== text) pictureCounter.textContent = text;
+}
+
 function selectRoom(roomKey, { onReady, from, preview } = {}) {
   const loadRoom = ROOM_LOADERS[roomKey];
   if (!loadRoom) return;
@@ -796,7 +809,7 @@ function applyLoadedRoom({
   dynamicCollisionMeshes = collisionMeshes.filter((entry) => entry.dynamic);
   for (const { mesh } of collisionMeshes) {
     // BVHs are in the mesh's local space, so swinging doors keep theirs.
-    if (!mesh.isSkinnedMesh && !mesh.geometry.boundsTree) mesh.geometry.computeBoundsTree();
+    if (!mesh.isSkinnedMesh && !mesh.geometry.boundsTree) computeBoundsTree.call(mesh.geometry);
   }
   triggers = roomTriggers ?? null;
   movers = roomMovers ?? [];
@@ -840,8 +853,10 @@ function disposeObject3D(root) {
   root.traverse((child) => {
     if (!child.isMesh) return;
     child.dispose?.(); // e.g. a mirror's Reflector frees its render target
-    child.geometry?.disposeBoundsTree();
-    child.geometry?.dispose();
+    if (child.geometry) {
+      disposeBoundsTree.call(child.geometry);
+      child.geometry.dispose();
+    }
     const materials = Array.isArray(child.material) ? child.material : [child.material];
     for (const material of materials) {
       for (const key of Object.keys(material)) {
@@ -1870,6 +1885,7 @@ function animate() {
   }
   minimap.update(player.position.x, player.position.z, cameraYaw);
   updateInteractionFocus();
+  updatePictureCounter();
   if (activeCutscene) {
     const finished = activeCutscene.update(delta);
     if (finished) {
