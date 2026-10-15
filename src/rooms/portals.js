@@ -30,6 +30,39 @@ const GLIMPSE_LIGHT_COLOR = 0xffce8a;
 const GLIMPSE_LIGHT_INTENSITY = 2.5;
 const GLIMPSE_LIGHT_RANGE = 4.5;
 
+/** A closed, axis-aligned door used explicitly with E, rather than a walk-in trigger. */
+export function createDoorConnection(room, { doorName, detailNames = [], to, prompt, travel }) {
+  const { group, collisionMeshes, spawn } = room;
+  const door = group.getObjectByName(doorName);
+  if (!door?.isMesh) throw new Error(`Missing room door: ${doorName}`);
+  group.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(door);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  // Both exported doors are vertical, axis-aligned panels. Face toward the
+  // room's existing interior spawn, using the panel's thin horizontal axis.
+  const axis = size.x < size.z ? 'x' : 'z';
+  const sign = spawn[axis] >= center[axis] ? 1 : -1;
+  const inward = new THREE.Vector3();
+  inward[axis] = sign;
+  const arrival = center.clone();
+  // 1.2 m from the visible panel face: measured clear in both current models.
+  arrival[axis] = (sign > 0 ? box.max[axis] : box.min[axis]) + sign * 1.2;
+  const floorRay = new THREE.Raycaster(arrival.clone(), new THREE.Vector3(0, -1, 0), 0, size.y + 1);
+  const floorHit = floorRay.intersectObjects(collisionMeshes.map(({ mesh }) => mesh), false)[0];
+  if (!floorHit) throw new Error(`No arrival floor inside door: ${doorName}`);
+  arrival.y = floorHit.point.y;
+
+  return {
+    arrival: { spawn: arrival, facing: Math.atan2(-inward.x, -inward.z) },
+    interactable: {
+      objects: [door, ...detailNames.map((name) => group.getObjectByName(name))].filter((object) => object?.isMesh),
+      prompt: () => prompt,
+      interact: () => travel?.(to),
+    },
+  };
+}
+
 let glimpseTexture = null;
 function getGlimpseTexture() {
   if (glimpseTexture) return glimpseTexture;

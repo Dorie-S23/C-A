@@ -8,6 +8,10 @@ import { loadTadcRoom } from './rooms/tadcRoom.js';
 import { loadMazeRoom } from './rooms/mazeRoom.js';
 import { loadKaufmoRoom } from './rooms/kaufmoRoom.js';
 import { loadPomni } from './characters/pomni.js';
+import { OPENING_HANDOFF } from './cinematics/pomniOpening.js';
+import { createOpeningAudio } from './cinematics/openingAudio.js';
+import { createRagathaEntrance } from './cinematics/ragathaEntrance.js';
+import { POMNI_INVITATION, RAGATHA_ENTRANCE_EVENT } from './cinematics/pomniInvitation.js';
 import { bendBone, SIDEWAYS } from './characters/bendBone.js';
 import { preloadJaxHallwayCutscene, playJaxHallwayCutscene } from './cutscenes/jaxHallwayCutscene.js';
 import { preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
@@ -16,6 +20,12 @@ import { createTitleScreen } from './ui/titleScreen.js';
 import { resetEscapeThreshold, setLevelPoints } from './state/escapeThreshold.js';
 import { runLevel1 } from './levels/level1.js';
 import { createMinimap } from './ui/minimap.js';
+import { createObjectiveController } from './game/objectives.js';
+import { createObjectiveHUD } from './ui/objectiveHUD.js';
+import { shouldShowObjective } from './ui/objectiveHUD.js';
+import { createControlsTutorial } from './game/controlsTutorial.js';
+import { createTutorialHUD } from './ui/tutorialHUD.js';
+import { createCaineConversation } from './game/caineConversation.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
   level2HandIn1Dialogue, level2HandIn2Dialogue, level2HandIn3Dialogue,
@@ -101,6 +111,7 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   500,
 );
+const openingAudio = createOpeningAudio(camera);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -165,9 +176,20 @@ const crosshair = document.getElementById('crosshair');
 const pictureCounter = document.getElementById('picture-counter');
 const hint = document.getElementById('hint');
 const interactPrompt = document.getElementById('prompt');
+const cinematicSkip = document.getElementById('cinematic-skip');
 
 const dialogueUI = createDialogueUI({ speakers: SPEAKERS });
 const minimap = createMinimap();
+const objectives = createObjectiveController();
+const objectiveHUD = createObjectiveHUD({ objectives, root: document.getElementById('objective-hud') });
+const controlsTutorial = createControlsTutorial();
+const tutorialHUD = createTutorialHUD({ tutorial: controlsTutorial, root: document.getElementById('tutorial-hud') });
+let preLevel1Session = false;
+let morningDialoguePending = false;
+const caineConversation = createCaineConversation({
+  objectives, isStorySession: () => preLevel1Session,
+  playDialogue: playRoomDialogue, showHint,
+});
 let currentRoom = null;
 let currentRoomKey = null;
 let readyToPlay = false;
@@ -180,6 +202,11 @@ let paused = false;
 // after the player has already moved on (or started another load) can tell
 // it's stale and dispose itself instead of overwriting newer state.
 let loadToken = 0;
+let activeOpening = null;
+let activeEntrance = null;
+const activeCinematic = () => activeEntrance?.active ? activeEntrance : activeOpening;
+let openingCompleted = false; // per new game; room previews do not start a game
+let openingFrameProfile = { frames: 0, seconds: 0, maxSeconds: 0 };
 
 function showHint(text, durationMs = 3000) {
   hint.textContent = text;
@@ -188,9 +215,11 @@ function showHint(text, durationMs = 3000) {
   hintTimeout = setTimeout(() => hint.classList.remove('visible'), durationMs);
 }
 
-roomPicker.querySelectorAll('button').forEach((button) => {
+roomPicker.querySelectorAll('button[data-room]').forEach((button) => {
   button.addEventListener('click', (event) => {
     event.stopPropagation(); // don't also trigger the overlay's lock-on-click
+    openingCompleted = false;
+    resetObjectiveSession();
     selectRoom(button.dataset.room);
   });
 });
@@ -206,6 +235,7 @@ dialoguePicker.querySelectorAll('button').forEach((button) => {
 
 btnResume.addEventListener('click', (event) => {
   event.stopPropagation();
+  if (activeCinematic()?.active) { pauseOpening(false); return; }
   if (readyToPlay && currentRoom) renderer.domElement.requestPointerLock();
 });
 
@@ -238,7 +268,7 @@ const titleScreen = createTitleScreen({
       presentedItems.clear();
       level2StallSeen = false;
       titleScreen.hide();
-      showRoomPicker();
+      startNewGame();
     } else if (action === 'options') {
       titleOptions.hidden = false;
     } else if (action === 'quit') {
@@ -303,6 +333,17 @@ document.getElementById('btn-replay-intro').addEventListener('click', () => {
   titleOptions.hidden = true;
   titleScreen.show({ playIntro: true });
 });
+document.getElementById('btn-new-game').addEventListener('click', (event) => {
+  event.stopPropagation(); startNewGame();
+});
+document.getElementById('btn-room-previews').addEventListener('click', () => {
+  titleOptions.hidden = true;
+  titleScreen.hide();
+  showRoomPicker();
+});
+cinematicSkip.addEventListener('click', () => {
+  if (!paused) activeCinematic()?.skip();
+});
 document.getElementById('btn-options-credits').addEventListener('click', () => {
   creditsPanel.classList.remove('hidden');
 });
@@ -325,6 +366,7 @@ btnTitle.hidden = true;
 if (devSkipIntroInput.checked) showRoomPicker();
 titleScreen.ready
   .then(() => {
+    if (loadToken !== 0) return; // a room/new game has already superseded the title load
     if (devSkipIntroInput.checked) return;
     overlay.classList.add('hidden');
     overlay.classList.remove('loading');
@@ -332,7 +374,7 @@ titleScreen.ready
   })
   .catch((err) => {
     console.error('Failed to load title screen', err);
-    showRoomPicker();
+    if (loadToken === 0) showRoomPicker();
   });
 
 /** The room/dialogue picker the PLAY button leads to. */
@@ -356,10 +398,14 @@ function showRoomPicker() {
  * hatch below, which can fire before any room's ever been picked).
  */
 function returnToHome({ toRoomPicker = false } = {}) {
+  resetObjectiveSession();
+  loadToken++; // invalidate dialogue callbacks before cancelling the old UI
+  activeEntrance?.dispose(); activeEntrance = null;
+  activeOpening = null;
+  cinematicSkip.hidden = true;
   if (isLocked) document.exitPointerLock();
   if (dialogueUI.isActive) dialogueUI.cancel();
   minimap.hide();
-  loadToken++; // discard any load still in flight for the room we're leaving
   paused = false;
   resetMoveState();
   resetStage();
@@ -400,6 +446,159 @@ function returnToHome({ toRoomPicker = false } = {}) {
     titleScreen.show({ playIntro: false });
   }
 }
+
+function startNewGame() {
+  resetObjectiveSession(true);
+  openingAudio.unlock();
+  if (isLocked) document.exitPointerLock();
+  titleScreen.hide();
+  openingCompleted = false;
+  selectRoom('pomni', { openingMode: 'play' });
+}
+
+function resetObjectiveSession(active = false) {
+  caineConversation.cancelPending();
+  preLevel1Session = active;
+  morningDialoguePending = false;
+  objectives.reset(); objectiveHUD.hide();
+  controlsTutorial.reset(); tutorialHUD.hide();
+}
+
+/** Only story conversations use this: preview completion never awards progress. */
+function playMorningDialogue(finish) {
+  const token = loadToken, room = currentRoom;
+  const valid = () => preLevel1Session && token === loadToken && room === currentRoom;
+  playRoomDialogue('preLevel1', {
+    onNode: node => room.userData.ragathaEntrance?.dialogueNode(node),
+    onComplete: () => {
+      if (!valid()) return;
+      morningDialoguePending = false;
+      objectives.activate('find-caine');
+      controlsTutorial.unlock();
+      finish();
+    },
+    onCancel: () => {
+      if (!valid()) return;
+      morningDialoguePending = true;
+      showHint('Morning conversation interrupted. Press T in Pomni\'s room to retry.', 8000);
+      finish();
+    },
+  });
+}
+
+function pauseOpening(value) {
+  const cinematic = activeCinematic();
+  if (!cinematic?.active) return;
+  paused = value;
+  cinematic.setPaused(value);
+  if (!value) clock.getDelta(); // a background-tab pause must not fast-forward on resume
+  resetMoveState();
+  cinematicSkip.hidden = value || !(cinematic.skippable ?? cinematic.phase === 'playing');
+  overlay.classList.toggle('hidden', !value);
+  overlayTitle.textContent = 'Paused';
+  overlaySubtitle.textContent = 'Resume the opening or return to the title screen';
+  pauseMenu.hidden = !value;
+}
+
+function handoffOpening() {
+  const { x, y, z, yaw, idleTime } = OPENING_HANDOFF;
+  openingCompleted = true;
+  resetMoveState();
+  floorY = y;
+  player.position.set(x, y + PLAYER_HEIGHT, z);
+  player.visible = true;
+  pomni.position.set(0, -PLAYER_HEIGHT, 0);
+  pomni.rotation.set(0, yaw, 0);
+  pomni.visible = true;
+  animSpeed = walkPhase = walkAmount = 0;
+  pomniMixer?.stopAllAction();
+  const idle = pomniActions.idle;
+  if (idle) {
+    idle.reset().setEffectiveWeight(1).setEffectiveTimeScale(1).play();
+    idle.time = idleTime; currentAction = idle; pomniMixer.update(0);
+  }
+  cameraYaw = yaw - Math.PI;
+  cameraPitch = DEFAULT_PITCH;
+  currentCameraDistance = CAMERA_DISTANCE;
+  cinematicSkip.hidden = true;
+}
+
+function completeOpening() {
+  activeOpening = null;
+  readyToPlay = false;
+  paused = false;
+  resetMoveState();
+  overlay.classList.add('hidden');
+  const token = loadToken;
+  dialogueUI.play(POMNI_INVITATION, {
+    onComplete: () => finishOpeningInvitation(token, false),
+    onCancel: () => finishOpeningInvitation(token, true),
+  });
+}
+
+function finishOpeningInvitation(token, cancelled) {
+  if (token !== loadToken || currentRoomKey !== 'pomni') return;
+  // The active bedroom entrance claims this hook; cancellation resumes play.
+  if (!cancelled) {
+    const event = new CustomEvent(RAGATHA_ENTRANCE_EVENT, { cancelable: true,
+      detail: { resumeGameplay: () => resumeOpeningGameplay(token) } });
+    if (!window.dispatchEvent(event)) return;
+  }
+  resumeOpeningGameplay(token);
+}
+
+function resumeOpeningGameplay(token) {
+  if (token !== loadToken || currentRoomKey !== 'pomni') return;
+  readyToPlay = true;
+  paused = false;
+  resetMoveState();
+  overlay.classList.remove('hidden');
+  overlayTitle.textContent = 'Click to Play';
+  overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact';
+}
+
+window.addEventListener(RAGATHA_ENTRANCE_EVENT, (event) => {
+  if (currentRoomKey !== 'pomni' || !currentRoom || readyToPlay
+    || currentRoom.userData.pomniOpening?.phase !== 'done'
+    || currentRoom.userData.ragathaEntranceStarted) return;
+  event.preventDefault(); // Claim synchronously before the invitation falls through.
+  const token = loadToken, room = currentRoom;
+  room.userData.ragathaEntranceStarted = true;
+  const stillHere = () => token === loadToken && currentRoom === room;
+  const resume = () => {
+    if (!stillHere()) return;
+    activeEntrance = null; cinematicSkip.hidden = true;
+    event.detail.resumeGameplay();
+  };
+  const dialogue = (finish) => {
+    if (!stillHere()) return;
+    cinematicSkip.hidden = true;
+    playMorningDialogue(() => {
+      if (!stillHere()) return;
+      finish(); cinematicSkip.hidden = !activeEntrance?.skippable;
+    });
+  };
+  readyToPlay = false; resetMoveState();
+  try {
+    let audio = null;
+    try { audio = openingAudio.createEntranceSession(room, { manual: Boolean(room.userData.ragathaCast) }); }
+    catch (error) { console.warn('Temporary entrance audio unavailable.', error); }
+    try {
+      activeEntrance = createRagathaEntrance({
+        room: { group: room, spawn: player.position.clone().setY(floorY), collisionMeshes, interactables },
+        camera, resolveCamera: resolveOpeningCamera, audio, cast: room.userData.ragathaCast,
+        onDialogue: dialogue, onComplete: resume,
+      });
+    } catch (error) { audio?.dispose(); throw error; }
+    room.userData.ragathaEntrance = activeEntrance;
+    dynamicCollisionMeshes = collisionMeshes.filter(entry => entry.dynamic);
+    cinematicSkip.hidden = false;
+    clock.getDelta();
+  } catch (error) {
+    console.warn('Staged entrance unavailable; continuing with morning dialogue.', error);
+    dialogue(resume);
+  }
+});
 
 // While set, animate() renders this instead of the normal scene/camera —
 // see runCutscene() and the render branch below.
@@ -469,7 +668,9 @@ function withKaufmoHallwayCutscene(key, baseOnNode) {
 function playDialoguePreview(key) {
   const entry = DIALOGUE_SCRIPTS[key];
   if (!entry) return;
+  resetObjectiveSession();
   const { script, room } = entry;
+  openingCompleted = false;
 
   // Pre-Level 1's "Jax storms past" plays as a cutscene cut away to the
   // real Dorm Hall (see jaxHallwayCutscene.js) rather than anything
@@ -521,7 +722,7 @@ function playDialoguePreview(key) {
           // own finish() already hides the dialogue box once stopAt ends
           // part one, so there's nothing extra to hide/show by hand here.
           dialogueUI.play(script, {
-            stopAt: 'afterJaxPassBy',
+            stopAt: 'jaxPassByText',
             onNode: roomDialogueCue,
             onComplete: () => {
               runCutscene(playJaxHallwayCutscene(renderer, cutsceneAssets), () => {
@@ -572,13 +773,14 @@ function playRoomDialogue(key, {
   lookAt, onChoice, onComplete, onCancel, distressFor, onNode, startAt, stopAt,
 } = {}) {
   const entry = DIALOGUE_SCRIPTS[key];
-  if (!entry || dialogueUI.isActive) return;
+  if (!entry || dialogueUI.isActive) return false;
   resetMoveState();
   if (lookAt) turnPomniTowards(lookAt);
   dialogueUI.play(entry.script, {
     onChoice, onComplete, onCancel, distressFor, startAt, stopAt,
     onNode: withKaufmoHallwayCutscene(key, onNode),
   });
+  return true;
 }
 
 // --- Missions: levels that run across rooms (src/levels/) ---
@@ -684,7 +886,7 @@ const itemState = {
 function updatePictureCounter() {
   // Only free exploration shows the HUD, including between room visits.
   const visible = isLocked && readyToPlay && !paused && !dialogueUI.isActive
-    && !activeCutscene && !stageBusy() && !titleScreen.active
+    && !activeCutscene && !activeCinematic()?.active && !stageBusy() && !titleScreen.active
     && overlay.classList.contains('hidden') && controlsPanel.hidden
     && creditsPanel.classList.contains('hidden');
   if (pictureCounter.hidden === visible) pictureCounter.hidden = !visible;
@@ -695,12 +897,18 @@ function updatePictureCounter() {
   if (pictureCounter.textContent !== text) pictureCounter.textContent = text;
 }
 
-function selectRoom(roomKey, { onReady, from, preview } = {}) {
+function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
   const loadRoom = ROOM_LOADERS[roomKey];
   if (!loadRoom) return;
+  objectiveHUD.hide();
+  caineConversation.cancelPending();
 
-  if (dialogueUI.isActive) dialogueUI.cancel();
+  activeEntrance?.dispose(); activeEntrance = null;
+  // Invalidate callbacks before cancelling a dialogue owned by the old room.
   const myToken = ++loadToken; // any older in-flight load becomes stale the instant this fires
+  if (dialogueUI.isActive) dialogueUI.cancel();
+  activeOpening = null;
+  cinematicSkip.hidden = true;
   paused = false;
   resetMoveState();
   resetStage();
@@ -730,19 +938,26 @@ function selectRoom(roomKey, { onReady, from, preview } = {}) {
   caught = false;
   roomPicker.hidden = true;
   dialoguePicker.hidden = true;
-  btnTitle.hidden = true;
+  btnTitle.hidden = false; // allow cancellation even while the GLBs are loading
   pauseMenu.hidden = true;
   overlay.classList.add('loading');
+  overlay.classList.remove('hidden');
   // Otherwise she stands alone in the void behind the loading screen.
   player.visible = false;
   overlayTitle.textContent = 'Loading…';
   overlaySubtitle.textContent = 'Fetching room model (0%)';
 
   Promise.all([
-    loadRoom((ratio) => {
+    loadRoom((ratio, stage) => {
       if (myToken !== loadToken) return; // a newer selectRoom()/returnToHome() superseded this one
-      overlaySubtitle.textContent = `Fetching room model (${Math.round(ratio * 100)}%)`;
-    }, { from, preview, playDialogue: playRoomDialogue, endLevel, stage, items: itemState }),
+      overlaySubtitle.textContent = `Fetching ${stage === 'opening' ? 'opening animation' : 'room model'} (${Math.round(ratio * 100)}%)`;
+    }, { from, playDialogue: playRoomDialogue, preview, endLevel, stage, items: itemState, travel: travelTo,
+      caineStory: {
+        enabled: () => caineConversation.enabled,
+        talk: lookAt => caineConversation.talk(lookAt,
+          () => myToken === loadToken && currentRoomKey === 'dorm'),
+      },
+      openingMode: openingMode ?? (roomKey === 'pomni' && from && openingCompleted ? 'settled' : undefined) }),
     pomniReady,
   ])
     .then(([result]) => {
@@ -753,7 +968,7 @@ function selectRoom(roomKey, { onReady, from, preview } = {}) {
         disposeObject3D(result.group);
         return;
       }
-      applyLoadedRoom(result, onReady && (() => onReady(result)), roomKey);
+      applyLoadedRoom(result, onReady && (() => onReady(result)), roomKey, openingMode === 'play');
     })
     .catch((err) => {
       if (myToken !== loadToken) return; // superseded — the active room already shows its own state
@@ -783,9 +998,13 @@ function applyLoadedRoom({
   interactables: roomInteractables,
   portals: roomPortals,
   environment: wantsEnvironment,
-}, onReady, roomKey) {
+  lighting: roomLighting,
+  opening: roomOpening,
+  openingError,
+}, onReady, roomKey, playOpening = false) {
   currentRoom = group;
   currentRoomKey = roomKey;
+  controlsTutorial.enterRoom(roomKey);
   player.visible = true;
   scene.add(group);
 
@@ -824,6 +1043,14 @@ function applyLoadedRoom({
   // room either has no portals or just the one obvious way back.
   if (roomKey === 'dorm' && portals.length > 0) minimap.show(portals);
   else minimap.hide();
+  roomLighting?.attach(scene);
+
+  if (playOpening && roomOpening) {
+    activeOpening = roomOpening;
+    player.visible = false;
+    roomOpening.start({ camera, resolveCamera: resolveOpeningCamera,
+      onHandoff: handoffOpening, onComplete: completeOpening });
+  }
 
   player.position.set(spawn.x, floorY + PLAYER_HEIGHT, spawn.z);
   // Rooms can request a starting yaw (the maze points the player down
@@ -841,15 +1068,36 @@ function applyLoadedRoom({
 
   readyToPlay = true;
   overlay.classList.remove('loading');
+  if (activeOpening?.active) {
+    openingFrameProfile = { frames: 0, seconds: 0, maxSeconds: 0 };
+    clock.getDelta(); // loading/compile time is not cinematic playback time
+    try { activeOpening.setAudio(openingAudio.createSession(currentRoom)); }
+    catch (error) { console.warn('Temporary opening audio unavailable; continuing silently.', error); }
+    readyToPlay = false;
+    overlay.classList.add('hidden');
+    btnTitle.hidden = true;
+    cinematicSkip.hidden = false;
+    return;
+  }
+  if (playOpening && openingError) {
+    openingCompleted = true;
+    showHint('Opening could not load. You can still explore the bedroom.', 7000);
+  }
   if (onReady) {
     onReady();
   } else {
     overlayTitle.textContent = 'Click to Play';
     overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
   }
+  if (roomKey === 'pomni' && morningDialoguePending) {
+    showHint('Press T to retry the morning conversation with Ragatha.', 8000);
+  }
 }
 
 function disposeObject3D(root) {
+  root.userData.ragathaEntrance?.dispose();
+  root.userData.pomniOpening?.dispose();
+  root.userData.bedroomLighting?.dispose();
   root.traverse((child) => {
     if (!child.isMesh) return;
     child.dispose?.(); // e.g. a mirror's Reflector frees its render target
@@ -895,17 +1143,55 @@ document.addEventListener('keydown', (e) => {
 const move = { forward: false, back: false, left: false, right: false, sprint: false };
 
 window.addEventListener('keydown', (e) => {
+  if (activeCinematic()?.active) {
+    if (e.code === 'Escape' && !e.repeat && !e.defaultPrevented) { e.preventDefault(); pauseOpening(!paused); }
+    return;
+  }
   setMove(e.code, true);
-  if (e.code === 'KeyE' && !e.repeat && isLocked && focusedInteractable) {
+  if (e.code === 'KeyX' && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey
+    && shouldShowObjective(gameplayHUDContext())) controlsTutorial.dismiss();
+  if (e.code === 'KeyT' && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey
+    && isLocked && readyToPlay && !paused && !dialogueUI.isActive
+    && currentRoomKey === 'pomni' && morningDialoguePending && preLevel1Session) {
+    e.preventDefault(); resetMoveState();
+    playMorningDialogue(() => resetMoveState());
+    return;
+  }
+  if (e.code === 'KeyE' && !e.repeat && isLocked && readyToPlay && !dialogueUI.isActive && focusedInteractable) {
+    if (shouldShowObjective(gameplayHUDContext()) && focusedBedroomDoor()) controlsTutorial.interact();
     focusedInteractable.interact(interactionContext);
   }
 });
 window.addEventListener('keyup', (e) => setMove(e.code, false));
+
+// Bedroom lighting previews never ship as active player controls.
+if (import.meta.env.DEV) {
+  window.addEventListener('keydown', (event) => {
+    if (event.repeat || event.ctrlKey || event.altKey || event.metaKey || !isLocked || !readyToPlay
+      || paused || dialogueUI.isActive || currentRoomKey !== 'pomni') return;
+    const lighting = currentRoom?.userData.bedroomLighting;
+    if (!lighting) return;
+    if (event.code === 'KeyL') {
+      const next = { GAMEPLAY: 'SLEEPING', SLEEPING: 'WAKING', WAKING: 'GAMEPLAY' }[lighting.state];
+      lighting.setState(next);
+      showHint(`Lighting preview: ${next} · L: next state · R: reset`, 4500);
+    } else if (event.code === 'KeyR') {
+      lighting.reset();
+      showHint('Lighting preview reset: GAMEPLAY', 3000);
+    }
+  });
+}
 // A keyup can be missed entirely (Alt-tabbing away, the OS eating a key
 // combo), which leaves that direction stuck "held" until the same key is
 // pressed again. Clear all of them on blur and on every transition that
 // suspends normal play, so a stale flag never survives into the next state.
-window.addEventListener('blur', resetMoveState);
+window.addEventListener('blur', () => {
+  resetMoveState();
+  if (activeCinematic()?.active) pauseOpening(true);
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && activeCinematic()?.active) pauseOpening(true);
+});
 
 function resetMoveState() {
   move.forward = false;
@@ -994,8 +1280,8 @@ let currentCameraDistance = CAMERA_DISTANCE;
 const TURN_SHARPNESS = 14;     // higher = snappier turning
 // Ground speed each clip's feet move at, measured at POMNI_HEIGHT; the clip
 // is sped up/slowed down by actual speed ÷ this so her feet stay planted.
-const WALK_CLIP_SPEED = 1.24; // 1.1 at the old 1.6 m height, scaled by 1.8/1.6
-const RUN_CLIP_SPEED = 3.2;   // 2.85 at the old 1.6 m height, scaled by 1.8/1.6
+const WALK_CLIP_SPEED = 1.1; // Retain the R5-compatible 1.6 m character scale.
+const RUN_CLIP_SPEED = 2.85;
 const RUN_THRESHOLD = WALK_SPEED * 1.4; // above this she's sprinting
 const ACTION_FADE = 0.2;       // seconds to cross-fade between clips
 let animSpeed = 0;             // smoothed ground speed, so clips don't flicker
@@ -1042,12 +1328,16 @@ document.addEventListener('mousemove', (e) => {
   // Frozen during an in-room conversation (e.g. talking to Kaufmo), same as
   // movement below — looking around while portraits/text are up is just
   // disorienting, and nothing stops the mouse once the pointer is locked.
-  if (!isLocked || dialogueUI.isActive || stageBusy()) return;
+  if (!isLocked || !readyToPlay || activeCinematic()?.active || dialogueUI.isActive || stageBusy() || activeCutscene) return;
   const sensitivity = MOUSE_SENSITIVITY * mouseSensitivityScale;
+  const oldYaw = cameraYaw, oldPitch = cameraPitch;
   cameraYaw -= e.movementX * sensitivity;
   cameraPitch = THREE.MathUtils.clamp(
     cameraPitch + e.movementY * sensitivity, PITCH_MIN, PITCH_MAX,
   );
+  if (shouldShowObjective(gameplayHUDContext())) {
+    controlsTutorial.look(Math.hypot(cameraYaw - oldYaw, cameraPitch - oldPitch));
+  }
 });
 
 // Two collision systems, picked by what the loaded room supplies:
@@ -1385,7 +1675,7 @@ function checkPortals() {
   // Her actual feet, not floorY: the dorm arch stands on a few steps.
   triggerProbe.set(player.position.x, player.position.y - PLAYER_HEIGHT + 0.5, player.position.z);
   // A door portal (see rooms/doors.js) only leads anywhere once it's open.
-  const portal = portals.find((p) => p.box.containsPoint(triggerProbe) && (p.enabled?.() ?? true));
+  const portal = portals.find((p) => p.box.containsPoint(triggerProbe) && !p.disabled && (p.enabled?.() ?? true));
   if (portal) travelTo(portal.to);
 }
 
@@ -1394,6 +1684,7 @@ function checkPortals() {
  * shows over the game and play carries straight on once the room is in.
  */
 function travelTo(roomKey) {
+  if (!readyToPlay) return; // Ignore further interaction while a transition is loading.
   overlay.classList.remove('hidden');
   selectRoom(roomKey, {
     from: currentRoomKey,
@@ -1510,6 +1801,9 @@ function updateMovement(deltaSeconds) {
 
   // Animate from how far she actually got, so walking into a wall doesn't bob.
   const moved = Math.hypot(player.position.x - frameStartX, player.position.z - frameStartZ);
+  if (shouldShowObjective(gameplayHUDContext()) && (move.forward || move.back || move.left || move.right)) {
+    controlsTutorial.move(moved, move.sprint);
+  }
   updatePomniWalk(deltaSeconds, deltaSeconds > 0 ? moved / deltaSeconds : 0);
 
   checkTriggers(player);
@@ -1747,6 +2041,15 @@ function updateCamera(dt) {
   pomni.visible = currentCameraDistance > MIN_VISIBLE_DISTANCE;
 }
 
+/** The cinematic uses the same exact room-ray camera collision as gameplay. */
+function resolveOpeningCamera(target, desired) {
+  const offset = desired.clone().sub(target);
+  const length = offset.length();
+  if (length < 1e-6) return desired.clone();
+  offset.divideScalar(length);
+  return target.clone().addScaledVector(offset, cameraCollisionDistance(target, offset, length));
+}
+
 /** How far the camera can sit along `direction` before hitting the room. */
 function cameraCollisionDistance(origin, direction, maxDistance) {
   const reach = maxDistance + CAMERA_COLLISION_PAD;
@@ -1789,15 +2092,16 @@ function refreshDynamicColliders() {
  */
 function updateInteractionFocus() {
   let focused = null;
-  if (isLocked && !dialogueUI.isActive && !stageBusy() && interactables.length > 0) {
+  if (isLocked && readyToPlay && !dialogueUI.isActive && !stageBusy() && !activeCutscene && interactables.length > 0) {
     // The crosshair ray starts behind Pomni, so reach is measured from her.
     interactRaycaster.setFromCamera(SCREEN_CENTER, camera);
     interactRaycaster.far = INTERACT_DISTANCE + currentCameraDistance;
-    const hit = interactRaycaster.intersectObjects(interactables.flatMap((i) => i.objects), false)[0];
+    const available = interactables.filter(isInteractionAvailable);
+    const hit = interactRaycaster.intersectObjects(available.flatMap((i) => i.objects), false)[0];
     if (hit && hit.point.distanceTo(player.position) <= INTERACT_DISTANCE) {
-      focused = interactables.find((i) => i.objects.includes(hit.object));
+      focused = available.find((i) => i.objects.includes(hit.object));
     }
-    focused ??= nearestInRange();
+    focused ??= nearestInRange(available);
   }
 
   focusedInteractable = focused;
@@ -1805,15 +2109,24 @@ function updateInteractionFocus() {
   if (focused) interactPrompt.textContent = `E — ${focused.prompt()}`;
 }
 
+/** Optional room-specific enable/range gates also apply to direct ray hits. */
+function isInteractionAvailable(interactable) {
+  if (interactable.enabled?.() === false) return false;
+  if (!interactable.anchor || interactable.radius == null) return true;
+  interactable.anchor.getWorldPosition(anchorPosition);
+  return Math.abs(anchorPosition.y - (player.position.y - PLAYER_HEIGHT)) <= STOREY_TOLERANCE
+    && Math.hypot(anchorPosition.x - player.position.x, anchorPosition.z - player.position.z) <= interactable.radius;
+}
+
 /**
  * The closest anchored interactable within its `radius` of Pomni (on the
  * floor plane, and roughly the same storey) that she can actually see —
  * so an NPC on the far side of a wall never offers to talk.
  */
-function nearestInRange() {
+function nearestInRange(available = interactables) {
   let nearest = null;
   let nearestDistance = Infinity;
-  for (const interactable of interactables) {
+  for (const interactable of available) {
     if (!interactable.anchor) continue;
     interactable.anchor.getWorldPosition(anchorPosition);
     const feetY = player.position.y - PLAYER_HEIGHT;
@@ -1865,26 +2178,52 @@ window.addEventListener('resize', () => {
 const clock = new THREE.Clock();
 
 function animate() {
-  const delta = Math.min(clock.getDelta(), MAX_DELTA);
+  const rawDelta = clock.getDelta();
+  const delta = Math.min(rawDelta, MAX_DELTA);
   // Hazards/doors/room idle animation stay live through a dialogue preview
   // (the pointer is unlocked there too, but it's not a pause) — only the
   // actual pause menu freezes them, so a patrolling hazard can't close in
   // on a player who is sitting in the pause menu.
   if (!paused) {
     updateMovers(delta);
-    roomUpdate?.(delta);
+    if (!activeOpening?.active) roomUpdate?.(delta);
     refreshDynamicColliders();
   }
   if (pomni) {
-    // No walking while the next room loads, mid-conversation, or while a
-    // room is staging her (see `stage`): a scripted walk drives her instead.
-    if (stageWalk && !paused) updateStageWalk(delta);
-    else if (isLocked && readyToPlay && !dialogueUI.isActive && !stageBusy()) updateMovement(delta);
-    else updatePomniWalk(delta, 0); // settle the waddle while paused/talking
-    updateCamera(delta);
+    if (activeEntrance?.active) {
+      if (!paused) {
+        updatePomniWalk(delta, 0);
+        let follow;
+        if (activeEntrance.phase === 'returning') {
+          updateCamera(delta);
+          follow = { position: camera.position.clone(), target: cameraTarget.clone() };
+        }
+        activeEntrance.update(rawDelta, follow);
+      }
+    } else if (activeOpening?.active) {
+      if (!paused) {
+        openingFrameProfile.frames++;
+        openingFrameProfile.seconds += rawDelta;
+        openingFrameProfile.maxSeconds = Math.max(openingFrameProfile.maxSeconds, rawDelta);
+        let follow;
+        if (activeOpening.phase === 'blending') {
+          updateCamera(delta);
+          follow = { position: camera.position.clone(), target: cameraTarget.clone() };
+        }
+        activeOpening.update(rawDelta, follow); // animation clock is not the movement/collision step clamp
+      }
+    } else {
+      if (stageWalk && !paused) updateStageWalk(delta);
+      else if (isLocked && readyToPlay && !dialogueUI.isActive && !stageBusy() && !activeCutscene) updateMovement(delta);
+      else updatePomniWalk(delta, 0); // settle the waddle while paused/talking
+      updateCamera(delta);
+    }
   }
   minimap.update(player.position.x, player.position.z, cameraYaw);
   updateInteractionFocus();
+  const hudContext = gameplayHUDContext();
+  objectiveHUD.update(hudContext, currentRoomKey === 'dorm' && portals.length > 0);
+  tutorialHUD.update(hudContext, focusedBedroomDoor());
   updatePictureCounter();
   if (activeCutscene) {
     const finished = activeCutscene.update(delta);
@@ -1903,3 +2242,68 @@ function animate() {
 }
 
 animate();
+
+// Share the existing HUD policy so tips never learn from suspended controls.
+function gameplayHUDContext() {
+  return {
+    session: preLevel1Session, room: currentRoom, ready: readyToPlay, locked: isLocked,
+    paused, cinematic: activeCinematic()?.active || Boolean(activeCutscene) || stageBusy(), dialogue: dialogueUI.isActive,
+    menu: titleScreen.active || !overlay.classList.contains('hidden') || !controlsPanel.hidden
+      || !creditsPanel.classList.contains('hidden') || !titleOptions.hidden || !titleQuit.hidden,
+  };
+}
+
+function focusedBedroomDoor() {
+  return currentRoomKey === 'pomni' && focusedInteractable?.prompt() === 'Exit to Hallway';
+}
+
+/** Read-only development diagnostics for the opening's browser regressions. */
+export function getOpeningDiagnostics() {
+  if (!import.meta.env.DEV) return null;
+  const opening = currentRoom?.userData.pomniOpening;
+  let cover, actorMeshes = 0;
+  currentRoom?.traverse((o) => {
+    if (o.userData.name === 'Plane.003') cover = o;
+    if (o.isSkinnedMesh && o.parent && o.name !== 'Caine') actorMeshes++;
+  });
+  return {
+    room: currentRoomKey, phase: opening?.phase ?? null, time: opening?.time ?? null,
+    objective: objectives.active, objectiveVisible: !document.getElementById('objective-hud').hidden,
+    tutorial: controlsTutorial.state, tutorialVisible: !document.getElementById('tutorial-hud').hidden,
+    morningDialoguePending, preLevel1Session,
+    caineConversationBusy: caineConversation.busy,
+    caineWarningComplete: objectives.isComplete('find-caine'),
+    focusedPrompt: focusedInteractable?.prompt() ?? null,
+    openingElapsed: opening?.elapsed ?? null, dialogueActive: dialogueUI.isActive,
+    entrancePhase: currentRoom?.userData.ragathaEntrance?.phase ?? null,
+    ragatha: currentRoom?.userData.ragathaEntrance?.diagnostics ?? null,
+    ragathaCount: currentRoom?.children.filter(child => child.name === 'Ragatha').length ?? 0,
+    entranceElapsed: currentRoom?.userData.ragathaEntrance?.elapsed ?? null,
+    entranceStarted: currentRoom?.userData.ragathaEntranceStarted ?? false,
+    doorAngle: currentRoom?.getObjectByName('Door_Frame024Hinge')?.rotation.y ?? 0,
+    entranceSounds: currentRoom?.getObjectByName('TemporaryEntranceAudio')?.children.map(s => ({
+      name: s.name, playing: s.isPlaying, scheduledAt: s._startedAt,
+    })) ?? [],
+    audioContextState: openingAudio.state,
+    audioContextTime: openingAudio.currentTime,
+    openingSounds: currentRoom?.getObjectByName('TemporaryOpeningAudio')?.children.map((sound) => ({
+      name: sound.name, playing: sound.isPlaying, scheduledAt: sound._startedAt,
+      position: sound.getWorldPosition(new THREE.Vector3()).toArray(),
+    })) ?? [],
+    titleActive: titleScreen.active,
+    ready: readyToPlay, paused, locked: isLocked, completed: openingCompleted,
+    player: player.position.toArray(), actorYaw: pomni?.rotation.y,
+    gameplayActorVisible: player.visible && pomni?.visible,
+    camera: camera.position.toArray(), cameraYaw, cameraPitch,
+    cameraDirection: camera.getWorldDirection(new THREE.Vector3()).toArray(), cameraFov: camera.fov, cameraAspect: camera.aspect,
+    lighting: currentRoom?.userData.bedroomLighting?.state,
+    staticCoverVisible: cover?.visible, cinematicSkinMeshes: actorMeshes,
+    blanketWeights: opening ? Array.from(opening.blanket.morphTargetInfluences) : null,
+    idleTime: pomniActions.idle?.time, loadMilliseconds: opening?.loadMilliseconds,
+    frameProfile: { ...openingFrameProfile }, memory: { ...renderer.info.memory },
+    interactables: interactables.map((i) => ({ prompt: i.prompt(),
+      enabled: i.enabled?.() !== false, radius: i.radius ?? null,
+      anchor: i.anchor?.getWorldPosition(new THREE.Vector3()).toArray() ?? null,
+      center: new THREE.Box3().setFromObject(i.objects[0]).getCenter(new THREE.Vector3()).toArray() })),
+  };
+}
