@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { loadRoomModel } from './loadRoomModel.js';
 import { setupLobbyDoors } from './lobbyDoors.js';
 import { createCurtainPortal } from './portals.js';
-import { findWallSpot, placeOfficePicture } from '../props/officePicture.js';
+import { findWallSpot, findSpotNear, placeOfficePicture } from '../props/officePicture.js';
 
 // The castle's brick walls (arched windows, battlements), taken from the
 // Sketchfab "The Digital Circus" model. The lobby's own export only has a
@@ -24,6 +24,10 @@ const PICTURE_DIRECTIONS = Array.from({ length: 8 }, (_, i) => {
   const angle = (i / 8) * Math.PI * 2;
   return new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle));
 });
+// Wedged beside a couch in the hangout area, a stroll from spawn — the
+// lobby's too big for findWallSpot's nearby-wall sweep to be "hidden".
+const PICTURE_ANCHOR = 'Hangout_Area_Couch_Purple';
+const PICTURE_OFFSET = new THREE.Vector3(1.1, 0, 0);
 
 export function loadTadcRoom(onProgress, { from, items } = {}) {
   return Promise.all([
@@ -39,11 +43,13 @@ export function loadTadcRoom(onProgress, { from, items } = {}) {
     room.environment = true;
 
     if (items) {
-      const origin = new THREE.Vector3(room.spawn.x, room.spawn.y + PICTURE_HEIGHT, room.spawn.z);
-      let spot = null;
-      for (const direction of PICTURE_DIRECTIONS) {
-        spot = findWallSpot(room.group, origin, direction, 20);
-        if (spot) break;
+      let spot = findSpotNear(room.group, PICTURE_ANCHOR, PICTURE_OFFSET);
+      if (!spot) {
+        const origin = new THREE.Vector3(room.spawn.x, room.spawn.y + PICTURE_HEIGHT, room.spawn.z);
+        for (const direction of PICTURE_DIRECTIONS) {
+          spot = findWallSpot(room.group, origin, direction, 20);
+          if (spot) break;
+        }
       }
       if (spot) placeOfficePicture(room, items, PICTURE_ID, PICTURE_URL, spot.position, spot.rotationY);
     }

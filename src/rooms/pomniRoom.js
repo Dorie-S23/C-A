@@ -4,7 +4,7 @@ import { loadCaine, createCaineIdle } from '../characters/caine.js';
 import { addMirrorReflections } from './mirrors.js';
 import { openHingedDoor } from './doors.js';
 import { createDoorPortal } from './portals.js';
-import { findWallSpot, placeOfficePicture } from '../props/officePicture.js';
+import { findWallSpot, findSpotNear, placeOfficePicture } from '../props/officePicture.js';
 
 const CAINE_DISTANCE = 3; // how far in front of the spawn point Caine stands
 const CAINE_WALL_GAP = 0.8; // keep him at least this far off any wall in the way
@@ -12,6 +12,10 @@ const CAINE_WALL_GAP = 0.8; // keep him at least this far off any wall in the wa
 const PICTURE_ID = 'ca1';
 const PICTURE_URL = './models/objects/ca1.png';
 const PICTURE_HEIGHT = 1.4;
+// Tucked beside the toy blocks rather than hung on the nearest wall — the
+// story has this photo kicked around the circus, not framed and displayed.
+const PICTURE_ANCHOR = 'Number_Cube';
+const PICTURE_OFFSET = new THREE.Vector3(-0.5, 0, 0.35);
 
 // The glTF export carries these as "Door Frame.024" / "Door Slab.024";
 // three.js's GLTFLoader sanitizes node names (spaces and the disambiguating
@@ -37,7 +41,8 @@ export function loadPomniRoom(onProgress, { from, items } = {}) {
 
     if (items) {
       const origin = new THREE.Vector3(defaultSpawn.x, defaultSpawn.y + PICTURE_HEIGHT, defaultSpawn.z);
-      const spot = findWallSpot(room.group, origin, new THREE.Vector3(1, 0, 0))
+      const spot = findSpotNear(room.group, PICTURE_ANCHOR, PICTURE_OFFSET)
+        ?? findWallSpot(room.group, origin, new THREE.Vector3(1, 0, 0))
         ?? findWallSpot(room.group, origin, new THREE.Vector3(-1, 0, 0));
       if (spot) placeOfficePicture(room, items, PICTURE_ID, PICTURE_URL, spot.position, spot.rotationY);
     }

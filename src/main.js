@@ -14,7 +14,7 @@ import { createMinimap } from './ui/minimap.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, ribbitTalkDialogue,
   level2HandIn1Dialogue, level2HandIn2Dialogue, level2HandIn3Dialogue,
-  level2IdleDialogue, level2CompleteDialogue,
+  level2IdleDialogue, level2CompleteDialogue, level2PayoffDialogue,
 } from './data/dialogues.js';
 
 // Collision fires dozens of short rays a frame (wall probe, floor probes,
@@ -37,6 +37,7 @@ const DIALOGUE_SCRIPTS = {
   level2HandIn3: { script: level2HandIn3Dialogue, room: 'kaufmo' },
   level2Idle: { script: level2IdleDialogue, room: 'kaufmo' },
   level2Complete: { script: level2CompleteDialogue, room: 'kaufmo' },
+  level2Payoff: { script: level2PayoffDialogue, room: 'kaufmo' },
   ribbitTalk: { script: ribbitTalkDialogue, room: 'ribbit' },
 };
 
@@ -409,6 +410,11 @@ function playRoomDialogue(key, { lookAt, onChoice, onComplete, onCancel } = {}) 
 // reaches Kaufmo in a different one.
 const collectedItems = new Set(); // picked up, not yet handed in
 const presentedItems = new Set(); // already handed to Kaufmo
+// Whether Kaufmo's "I'm working on it, I'll find you" stall line has
+// already played once. Lets the first idle revisit after the 3rd hand-in
+// show that line, and only every visit after that deliver the actual
+// payoff (level2Payoff) — instead of looping the stall line forever.
+let level2StallSeen = false;
 
 const itemState = {
   hasCollected: (id) => collectedItems.has(id) || presentedItems.has(id),
@@ -424,6 +430,14 @@ const itemState = {
     for (const id of collectedItems) presentedItems.add(id);
     collectedItems.clear();
     return presentedItems.size;
+  },
+  /** Which script to play on an idle revisit once all 3 are presented. */
+  pickPostHandInScript() {
+    if (!level2StallSeen) {
+      level2StallSeen = true;
+      return 'level2Complete';
+    }
+    return 'level2Payoff';
   },
 };
 

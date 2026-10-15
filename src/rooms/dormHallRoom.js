@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { loadRoomModel } from './loadRoomModel.js';
 import { createCurtainPortal, createDoorPortal } from './portals.js';
 import { openHingedDoor } from './doors.js';
-import { findWallSpot, placeOfficePicture } from '../props/officePicture.js';
+import { findWallSpot, findSpotNear, placeOfficePicture } from '../props/officePicture.js';
 
 // Exported from "Dorm Hall V7.blend" by tools/blender/export_dorm_hall_v7.py,
 // which converts the materials the glTF exporter can't read — re-run it
@@ -34,6 +34,11 @@ const ROOM_DOORS = [
 const PICTURE_ID = 'ca3';
 const PICTURE_URL = './models/objects/ca3.png';
 const PICTURE_HEIGHT = 1.5;
+// On the floor below one of the hallway's own hung photos, partway down
+// toward the bedroom doors — as if it fell from the wall of frames rather
+// than being yet another one neatly hanging in it.
+const PICTURE_ANCHOR = 'Short_Photo002';
+const PICTURE_OFFSET = new THREE.Vector3(-0.9, 0, 0);
 
 export function loadDormHallRoom(onProgress, { from, items } = {}) {
   return loadRoomModel(DORM_HALL_URL, onProgress, { spawnAt: SPAWN }).then((room) => {
@@ -46,7 +51,8 @@ export function loadDormHallRoom(onProgress, { from, items } = {}) {
 
     if (items) {
       const origin = new THREE.Vector3(defaultSpawn.x, defaultSpawn.y + PICTURE_HEIGHT, defaultSpawn.z);
-      const spot = findWallSpot(room.group, origin, new THREE.Vector3(1, 0, 0), 8)
+      const spot = findSpotNear(room.group, PICTURE_ANCHOR, PICTURE_OFFSET)
+        ?? findWallSpot(room.group, origin, new THREE.Vector3(1, 0, 0), 8)
         ?? findWallSpot(room.group, origin, new THREE.Vector3(-1, 0, 0), 8);
       if (spot) placeOfficePicture(room, items, PICTURE_ID, PICTURE_URL, spot.position, spot.rotationY);
     }

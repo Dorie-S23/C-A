@@ -75,6 +75,39 @@ export function findWallSpot(group, origin, direction, maxDistance = 6) {
 }
 
 /**
+ * Finds a spot standing on the floor near some existing prop in the room
+ * (by name, as a glTF-sanitized node name), offset from its centre by
+ * `offset.x`/`offset.z`. Used to tuck a collectible beside a landmark the
+ * player will naturally walk past — a toy, a couch, a hallway photo —
+ * instead of mounting it in plain sight on the nearest wall, since the
+ * story has these photos scattered/kicked around the circus, not hung up.
+ * Returns null if the named prop isn't in this build of the room (keeps
+ * callers safe against a future re-export renaming or removing it).
+ */
+export function findSpotNear(group, anchorName, offset) {
+  const anchor = group.getObjectByName(anchorName);
+  if (!anchor) return null;
+  group.updateMatrixWorld(true);
+  const center = new THREE.Box3().setFromObject(anchor).getCenter(new THREE.Vector3());
+  const x = center.x + offset.x;
+  const z = center.z + offset.z;
+
+  // The downward ray can cross a ceiling or a shelf above the actual floor,
+  // so take the last (lowest) hit, not the first.
+  wallRaycaster.set(new THREE.Vector3(x, center.y + 20, z), new THREE.Vector3(0, -1, 0));
+  wallRaycaster.far = 40;
+  const hits = wallRaycaster.intersectObject(group, true);
+  const hit = hits[hits.length - 1];
+  if (!hit) return null;
+
+  // Face back toward the anchor it's tucked beside, so it reads from the
+  // angle a player approaching the landmark would actually see it from.
+  const rotationY = Math.atan2(-offset.x, -offset.z);
+  const position = new THREE.Vector3(x, hit.point.y + FRAME_HEIGHT / 2 + 0.02, z);
+  return { position, rotationY };
+}
+
+/**
  * Places a pickupable office picture in a loaded room and wires it into
  * the E-interact system: picking it up removes it from the scene and
  * records it in the shared item state (see itemState in main.js). Does
