@@ -1,7 +1,11 @@
 // Node verification harness for the dialogue engine's branching logic.
 // Run with `node _verify_dialogue.mjs`.
 import { createDialogueEngine } from './src/dialogue/dialogueEngine.js';
-import { SPEAKERS, preLevel1Dialogue, level1OpenDialogue } from './src/data/dialogues.js';
+import {
+  SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, ribbitTalkDialogue,
+  level2HandIn1Dialogue, level2HandIn2Dialogue, level2HandIn3Dialogue,
+  level2IdleDialogue, level2CompleteDialogue, level2PayoffDialogue,
+} from './src/data/dialogues.js';
 import { SPRITES, MOODS } from './src/ui/portraitSprites.js';
 
 let failures = 0;
@@ -23,7 +27,12 @@ function runLinear(script) {
 // 1) both real scripts play start-to-end without throwing, visit every
 // node exactly once (pure linear, no branching), and reference only
 // speakers that exist in the registry.
-for (const [name, script] of [['preLevel1', preLevel1Dialogue], ['level1Open', level1OpenDialogue]]) {
+for (const [name, script] of [
+  ['preLevel1', preLevel1Dialogue], ['level1Open', level1OpenDialogue],
+  ['level2HandIn1', level2HandIn1Dialogue], ['level2HandIn2', level2HandIn2Dialogue],
+  ['level2HandIn3', level2HandIn3Dialogue], ['level2Idle', level2IdleDialogue],
+  ['level2Complete', level2CompleteDialogue], ['level2Payoff', level2PayoffDialogue],
+]) {
   const seen = runLinear(script);
   check(`${name}: visits every node once, in order`, seen.length === script.length
     && seen.every((n, i) => n === script[i]), `visited=${seen.length}/${script.length}`);
@@ -45,6 +54,71 @@ for (const [name, script] of [['preLevel1', preLevel1Dialogue], ['level1Open', l
     && (!n.mood || !MOODS.includes(n.mood)));
   check(`${name}: every sprite-speaker line has a recognized mood`, !badMood,
     badMood ? `node text "${badMood.text.slice(0, 30)}..." has mood "${badMood.mood}"` : '');
+}
+
+// 1b) a branching real script (level2Opening): walk every path through its
+// choice nodes (branching breadth-first at the first unresolved choice per
+// path) and run the same content checks across every node reachable by any
+// combination of choices, not just whichever one a single playthrough hits.
+function collectAllReachableNodes(script, maxPaths = 64) {
+  const visited = new Set();
+  const queue = [[]];
+  let pathsExplored = 0;
+  while (queue.length > 0 && pathsExplored < maxPaths) {
+    const choices = queue.shift();
+    pathsExplored++;
+    const engine = createDialogueEngine(script);
+    let cursor = 0;
+    while (!engine.done) {
+      const node = engine.current;
+      visited.add(node);
+      if (node.type === 'choice') {
+        if (cursor < choices.length) {
+          engine.choose(choices[cursor]);
+          cursor++;
+        } else {
+          for (let i = 0; i < node.options.length; i++) queue.push([...choices, i]);
+          break;
+        }
+      } else {
+        engine.advance();
+      }
+    }
+  }
+  return [...visited];
+}
+
+{
+  const name = 'level2Opening';
+  let seen = [];
+  let threw = null;
+  try {
+    seen = collectAllReachableNodes(level2OpeningDialogue);
+  } catch (e) {
+    threw = e;
+  }
+  check(`${name}: every branch resolves without an unknown-id error`, !threw, threw?.message);
+
+  const choiceCount = seen.filter((n) => n.type === 'choice').length;
+  check(`${name}: both choice points are reachable`, choiceCount === 2, `found=${choiceCount}`);
+
+  const missingSpeaker = seen.find((n) => n.type === 'line' && !SPEAKERS[n.speaker]);
+  check(`${name}: every line's speaker exists in SPEAKERS`, !missingSpeaker,
+    missingSpeaker ? `unknown speaker "${missingSpeaker.speaker}"` : '');
+
+  const missingSide = seen.find((n) => n.type === 'line' && n.side !== 'left' && n.side !== 'right');
+  check(`${name}: every line has a left/right side`, !missingSide);
+
+  const emptyText = seen.find((n) => (n.type === 'line' || n.type === 'beat') && !n.text?.trim());
+  check(`${name}: no node has empty text`, !emptyText);
+
+  const badMood = seen.find((n) => n.type === 'line' && SPRITES[n.speaker]
+    && (!n.mood || !MOODS.includes(n.mood)));
+  check(`${name}: every sprite-speaker line has a recognized mood`, !badMood,
+    badMood ? `node text "${badMood.text.slice(0, 30)}..." has mood "${badMood.mood}"` : '');
+
+  const emptyOption = seen.find((n) => n.type === 'choice' && n.options.some((o) => !o.text?.trim()));
+  check(`${name}: every choice option has text`, !emptyOption);
 }
 
 // 2) a synthetic branching script: choice nodes only advance via choose(),
@@ -106,6 +180,36 @@ for (const [name, script] of [['preLevel1', preLevel1Dialogue], ['level1Open', l
 {
   const engine = createDialogueEngine([]);
   check('empty script starts done', engine.done && engine.current === null);
+}
+
+// the real branching script (talking to Ribbit): every option path
+// plays to the end without throwing (so every `next` id resolves), stays
+// in the registry's speakers, and passes along its option's `points`.
+{
+  const choiceIndex = ribbitTalkDialogue.findIndex((n) => n.type === 'choice');
+  const choice = ribbitTalkDialogue[choiceIndex];
+  check('ribbitTalk: has a choice node with options', choiceIndex >= 0 && choice.options.length >= 2);
+
+  choice.options.forEach((option, i) => {
+    const engine = createDialogueEngine(ribbitTalkDialogue);
+    const seen = [];
+    let picked = null;
+    let threw = null;
+    try {
+      for (let steps = 0; !engine.done && steps < 100; steps++) {
+        seen.push(engine.current);
+        if (engine.current.type === 'choice') picked = engine.choose(i);
+        else engine.advance();
+      }
+    } catch (e) {
+      threw = e.message;
+    }
+    check(`ribbitTalk option ${i + 1}: plays to the end`, !threw && engine.done, threw ?? '');
+    check(`ribbitTalk option ${i + 1}: choose() hands back its points`,
+      picked === option && typeof picked.points === 'number');
+    const missing = seen.find((n) => n.type === 'line' && !SPEAKERS[n.speaker]);
+    check(`ribbitTalk option ${i + 1}: every speaker exists`, !missing, missing?.speaker ?? '');
+  });
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);

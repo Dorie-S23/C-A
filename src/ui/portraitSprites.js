@@ -111,9 +111,36 @@ export function caineSprite(mood) {
   </svg>`;
 }
 
+/** Kaufmo: round tan clown face, red button nose, a jester cap with a bell. */
+export function kaufmoSprite(mood) {
+  const f = shapesFor(mood);
+  const eyeR = 9 * f.eyeScale;
+  const pupilR = mood === 'shocked' ? 2.5 : 4;
+  const mouth = mood === 'shocked'
+    ? '<ellipse cx="50" cy="74" rx="8" ry="10" fill="#5c3220"/>'
+    : `<path d="${f.mouth}" stroke="#5c3220" stroke-width="3.5" fill="none" stroke-linecap="round"/>`;
+
+  return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <path d="M30,20 L50,0 L70,20 Z" fill="#b0163f"/>
+    <path d="M30,20 L38,4 L50,20 Z" fill="#2b3a8f"/>
+    <path d="M70,20 L62,4 L50,20 Z" fill="#2b3a8f"/>
+    <circle cx="50" cy="2" r="5" fill="#e8b23d"/>
+    <circle cx="50" cy="56" r="36" fill="#e0a868" stroke="#5c3220" stroke-width="2.5"/>
+    <circle cx="35" cy="50" r="${eyeR}" fill="#fff" stroke="#5c3220" stroke-width="2"/>
+    <circle cx="65" cy="50" r="${eyeR}" fill="#fff" stroke="#5c3220" stroke-width="2"/>
+    <circle cx="35" cy="50" r="${pupilR}" fill="#3a2414"/>
+    <circle cx="65" cy="50" r="${pupilR}" fill="#3a2414"/>
+    <path d="${f.browLeft}" stroke="#5c3220" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <path d="${f.browRight}" stroke="#5c3220" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <circle cx="50" cy="59" r="6" fill="#c1272d" stroke="#5c3220" stroke-width="1.5"/>
+    ${mouth}
+  </svg>`;
+}
+
 export const SPRITES = {
   pomni: pomniSprite,
   caine: caineSprite,
+  kaufmo: kaufmoSprite,
 };
 
 export const MOODS = Object.keys(MOOD_SHAPES);

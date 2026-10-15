@@ -5,6 +5,23 @@ const TRIGGER_SIDE_INSET = 0.3; // keep the edges of the arch from triggering it
 const TRIGGER_HEIGHT = 4;
 const ARRIVAL_DISTANCE = 3.5;  // where a player coming the other way appears
 
+const DOOR_TRIGGER_DEPTH = 1.0;
+const DOOR_TRIGGER_SIDE_INSET = 0.1;
+const DOOR_ARRIVAL_DISTANCE = 1.8;
+// A plain open doorway shows the scene's background colour through it —
+// reads as a black void, not "there's a hallway through here". A warm,
+// unlit panel just past the frame (plus a soft light bleeding back onto
+// the frame itself) suggests a lit passage instead, without needing an
+// actual rendered view of the other room.
+const GLIMPSE_INSET = 0.92; // shrink from the frame's full opening so it doesn't poke past the trim
+// Unlit (MeshBasicMaterial), so this renders at exactly this brightness no
+// matter how dim the room around it is — needs to actually look bright
+// next to the door's own wood tones, not just "a different dark colour".
+const GLIMPSE_COLOR = 0xf2c488;
+const GLIMPSE_LIGHT_COLOR = 0xffce8a;
+const GLIMPSE_LIGHT_INTENSITY = 4;
+const GLIMPSE_LIGHT_RANGE = 4.5;
+
 /**
  * A curtained archway that leads to another room: walking up into the
  * curtain's open side travels there. The same archway is also where a
@@ -39,6 +56,71 @@ export function createCurtainPortal(group, curtainName, facing, to) {
   const arrivalFacing = facing > 0 ? Math.PI : 0;
 
   return { box, to, arrival: { spawn, facing: arrivalFacing } };
+}
+
+/**
+ * A portal through an already-open hinged door (see doors.js), rather than
+ * a walk-through curtain. Unlike createCurtainPortal, which direction leads
+ * into the room isn't a hand-specified sign — it's worked out from `spawn`,
+ * the same point doors.js already uses to decide which way the leaf swings.
+ *
+ * @param {THREE.Group} group the loaded room
+ * @param {THREE.Box3} frameBox the opened door's frame bounding box
+ * @param {THREE.Vector3} spawn a point inside the room (the doorway's trigger
+ *   and arrival direction are both worked out relative to this)
+ * @param {string} to the ROOM_LOADERS key it leads to
+ * @returns {{ box: THREE.Box3, to: string, arrival: { spawn: THREE.Vector3, facing: number } }}
+ */
+export function createDoorPortal(group, frameBox, spawn, to) {
+  const size = frameBox.getSize(new THREE.Vector3());
+  const wideAxis = size.x >= size.z ? 'x' : 'z';
+  const thinAxis = wideAxis === 'x' ? 'z' : 'x';
+  const center = frameBox.getCenter(new THREE.Vector3());
+
+  const intoRoom = new THREE.Vector3().subVectors(spawn, center).setY(0);
+  if (intoRoom.lengthSq() < 1e-6) intoRoom.set(0, 0, 1); // spawn directly on the doorway: arbitrary but valid
+  intoRoom.normalize();
+
+  const box = frameBox.clone();
+  box.min[wideAxis] += DOOR_TRIGGER_SIDE_INSET;
+  box.max[wideAxis] -= DOOR_TRIGGER_SIDE_INSET;
+  box.min[thinAxis] -= DOOR_TRIGGER_DEPTH;
+  box.max[thinAxis] += DOOR_TRIGGER_DEPTH;
+  box.min.y -= 0.2;
+
+  // This function is called once per room, by that room's own loader, using
+  // a point inside THAT room as `spawn` — so "arrival" always means landing
+  // back inside the room that called it (the far side of the door from
+  // wherever the player is coming from), not out past the doorway into
+  // whatever this room doesn't model beyond it.
+  const arrivalSpawn = center.clone().addScaledVector(intoRoom, DOOR_ARRIVAL_DISTANCE);
+  arrivalSpawn.y = floorBelow(group, arrivalSpawn.x, frameBox.max.y + 5, arrivalSpawn.z) ?? frameBox.min.y;
+  const arrivalFacing = Math.atan2(intoRoom.x, intoRoom.z);
+
+  addDoorwayGlimpse(group, frameBox, center, intoRoom, wideAxis);
+
+  return { box, to, arrival: { spawn: arrivalSpawn, facing: arrivalFacing } };
+}
+
+/**
+ * A warm unlit panel + soft light just past the open door, facing back
+ * into the room — so looking at an open doorway shows a dim lit passage
+ * instead of the flat black of empty, unmodelled space beyond it.
+ */
+function addDoorwayGlimpse(group, frameBox, center, intoRoom, wideAxis) {
+  const size = frameBox.getSize(new THREE.Vector3());
+  const panel = new THREE.Mesh(
+    new THREE.PlaneGeometry(size[wideAxis] * GLIMPSE_INSET, size.y * GLIMPSE_INSET),
+    new THREE.MeshBasicMaterial({ color: GLIMPSE_COLOR, side: THREE.DoubleSide }),
+  );
+  panel.name = 'DoorwayGlimpse';
+  panel.position.copy(center).addScaledVector(intoRoom, -0.25);
+  panel.rotation.y = Math.atan2(intoRoom.x, intoRoom.z);
+  group.add(panel);
+
+  const glow = new THREE.PointLight(GLIMPSE_LIGHT_COLOR, GLIMPSE_LIGHT_INTENSITY, GLIMPSE_LIGHT_RANGE, 2);
+  glow.position.copy(center).addScaledVector(intoRoom, -0.4);
+  group.add(glow);
 }
 
 function floorBelow(group, x, fromY, z) {
