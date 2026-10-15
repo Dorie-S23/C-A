@@ -161,6 +161,29 @@ export function loadDormHallRoom(onProgress, { from, items } = {}) {
 }
 
 /**
+ * Kaufmo's and Ribbit's doors carry their old "abstracted" icons (red
+ * crosses over their faces); both are in the game and fine, so their decals
+ * get the same 2D portrait the dialogue box shows instead.
+ */
+function useDialogueIcons(group) {
+  const loader = new THREE.TextureLoader();
+  for (const name of DIALOGUE_ICON_DOORS) {
+    const decal = group.getObjectByName(name);
+    const url = ICONS[name.toLowerCase()];
+    if (!decal?.isMesh || !url) continue;
+    const material = decal.material.clone();
+    decal.material = material;
+    loader.load(url, (texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.flipY = false; // glTF UVs, like the baked icon it replaces
+      texture.anisotropy = material.map?.anisotropy ?? 1;
+      material.map = texture;
+      material.needsUpdate = true;
+    });
+  }
+}
+
+/**
  * Mirrors and shadow-casting lights are the expensive parts of a room:
  * each re-renders the whole scene (hall and all) every frame. A connected
  * room only runs them while someone could see it — Pomni is inside, or
