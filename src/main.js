@@ -52,9 +52,9 @@ const ROOM_LOADERS = {
 
 const PLAYER_HEIGHT = 1.7;
 const PLAYER_RADIUS = 0.35;
-// Kept close to the speeds Pomni's Walk/Run clips are authored at (see
-// WALK_CLIP_SPEED/RUN_CLIP_SPEED) so her feet don't skate or blur.
-const WALK_SPEED = 2.0; // metres per second
+// Faster than her Walk/Run clips are authored at (WALK_CLIP_SPEED/RUN_CLIP_SPEED);
+// updatePomniWalk speeds the clips up to match, so her feet stay planted.
+const WALK_SPEED = 3.2; // metres per second
 const SPRINT_MULTIPLIER = 2.0; // running speed = WALK_SPEED × this
 const WALL_MARGIN = 0.4; // keep the camera this far from any wall
 const STEP_HEIGHT = 0.4; // ledges up to this tall are stepped onto; taller ones block
