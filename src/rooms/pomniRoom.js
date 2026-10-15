@@ -8,6 +8,7 @@ import { loadRagatha } from '../characters/ragatha.js';
 import { loadDormHallPreview } from './dormHallPreview.js';
 import { createBedroomDoorHinge } from '../cinematics/bedroomDoor.js';
 import { createDoorwayAperture } from '../cinematics/doorwayAperture.js';
+import { loadJax } from '../characters/jax.js';
 
 // Exported from "Pomnis Room V3.blend" by tools/blender/export_pomnis_room_v3.py,
 // which converts the materials the glTF exporter can't read — re-run it
@@ -77,6 +78,15 @@ export function loadPomniRoom(onProgress, { from, travel, openingMode,
       } catch (error) {
         room.group.userData.dormHallPreviewError = String(error.message ?? error);
         console.warn('Hall preview unavailable; retaining the temporary vestibule.', error);
+      }
+    }
+    if (openingMode === 'play' && room.group.userData.dormHallPreview) {
+      try {
+        const cast = await loadJax();
+        room.group.add(cast.jax);
+        room.group.userData.jaxCast = cast;
+      } catch (error) {
+        console.warn('Jax model unavailable; retaining the morning background text beat.', error);
       }
     }
     return room;

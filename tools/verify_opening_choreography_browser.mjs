@@ -53,7 +53,7 @@ try{
  check('Same R5 timeline resumes while Ragatha walks in, with a single Pomni and changing blanket',()=>{assert.equal(entering.openingCoordinated,true);assert.ok(entering.time>118/30);assert.equal(entering.gameplayActorVisible,false);assert.notDeepEqual(entering.blanketWeights,held.blanketWeights);assert.equal(entering.dialogueActive,false)});
  const conversation=await until(async()=>{const s=await state();return s.entrancePhase==='dialogue'&&s.dialogueActive&&s});await key('Space');const greetingText=(await state()).dialogueText;await screenshot('ready-to-converse');
  check('Conversation begins at Ragatha greeting only after both characters finish positioning',()=>{assert.equal(conversation.phase,'done');assert.equal(conversation.time,7.5);assert.equal(conversation.cinematicSkinMeshes,0);assert.equal(conversation.gameplayActorVisible,true);assert.ok(greetingText.startsWith('Morning'));assert.equal(conversation.objective,null)});
- const lines=[];for(let i=0;i<28&&(await state()).dialogueActive;i++){lines.push((await state()).dialogueText);await key('Space');await sleep(80)}
+ const lines=[];for(let i=0;i<28;i++){const s=await state();if(s.jaxPass){await sleep(100);i--;continue}if(!s.dialogueActive)break;lines.push(s.dialogueText);await key('Space');await sleep(80)}
  assert.ok(lines.every(t=>!t.startsWith('Another day')));report.conversationLines=lines;
  const released=await until(async()=>{const s=await state();return s.entrancePhase==='done'&&s.ready&&s});
  check('Ragatha leaves, door remains open, Find Caine is active and player controls restore',()=>{assert.equal(released.ragatha.visible,false);assert.ok(Math.abs(released.doorAngle+Math.PI/2)<1e-8);assert.equal(released.objective.id,'find-caine')});

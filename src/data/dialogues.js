@@ -17,10 +17,12 @@ export const SPEAKERS = {
 // Jax's wordless pass-by (the design doc's "tell that something is wrong
 // before anyone says so directly") is a pure 3D/animation beat with no
 // dialogue box in the source script at all — played as an actual cutscene
-// (see jaxHallwayCutscene.js), not anything inline here. main.js plays
+// (see jaxHallwayCutscene.js for previews), not anything inline here. main.js plays
 // this script in two parts with stopAt 'jaxPassByText' and startAt 'afterJaxPassBy'
 // below: part one ends right before that line, the cutscene plays between
 // the two Ragatha lines, then part two resumes from 'afterJaxPassBy'.
+// The playable bedroom uses the same markers for jaxBedroomPass.js, keeping
+// Jax in the existing aligned Dorm Hall preview instead of a separate scene.
 //
 // `anim` cues the cast in Pomni's Room as each node comes up (see
 // pomniRoom.js): Ragatha walks up to Pomni, waves hello and chats, is
@@ -70,7 +72,8 @@ export const preLevel1Dialogue = [
     text: 'Thrilling. Another one of his "brilliant" ideas.',
   },
   {
-    // Keep the live morning's text beat until its own cutscene is integrated.
+    // Live morning replaces this marker with a room-owned doorway pass.
+    // Text remains as a fallback when Jax/the optional hallway cannot load.
     id: 'jaxPassByText',
     type: 'beat',
     text: 'Jax storms past in the background — no dialogue, just animation/SFX.',

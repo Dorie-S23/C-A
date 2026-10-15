@@ -150,3 +150,35 @@ re-entry and repeated-load checks; add `--fallback-only` for a failed-download
 check or `--in-game-perf-only` for paired live-conversation timing. The browser
 tool defaults to installed Edge Chromium. Reports and screenshots are in
 `artifacts/dorm-hall-preview/`; see its README for measured results and limits.
+
+## Jax's live morning pass
+
+The playable morning now splits at the existing `jaxPassByText` marker and
+resumes at `afterJaxPassBy`. `src/cinematics/jaxBedroomPass.js` runs Jax across
+the actual hallway preview for a 2.9-second beat, keeping the existing two-character
+conversation camera fixed throughout. Dialogue progression is suspended by the existing script
+segment mechanism; there is no extra acknowledgement for the wordless pass.
+Ragatha's entrance and the bedroom door behaviour are unchanged.
+
+The existing `public/models/characters/jax/jax_from_tadc.glb` is a 547,352-byte
+rigged model with 60 skin joints and no baked animation clips. The pass reuses
+`src/characters/jax.js`'s procedural run, adds scene-local bent-arm motion and
+evaluated-skin floor alignment, and scales Jax to 2.1 m including his ears.
+He runs eight metres along the real hall's length, across the doorway rather
+than entering the bedroom. No Jax collider or additional light is installed.
+Fast spatial footsteps reuse the documented temporary synthesized entrance
+buffer; approved recorded footsteps can replace that buffer later.
+
+Jax preloads only for a new playable bedroom session with the actual hallway
+preview. Missing Jax or a disabled/failed preview retains the original text beat.
+Normal completion or Skip resumes Ragatha's next line; P/Escape pauses the
+cinematic. Retry after an interrupted later conversation does not replay Jax.
+Home, room disposal and New Game stop the pass and its audio without invoking a
+stale continuation. One-shot GPU bone textures are released at completion or
+disposal; generic room cleanup retains ownership of model meshes/materials.
+
+Run `node _verify_jax_bedroom_pass.mjs` for real-model geometry, timing, floor,
+pause/skip/disposal and resource tests. With Vite running, use
+`node tools/verify_jax_bedroom_browser.mjs`; screenshots and its report are in
+`artifacts/jax-bedroom-pass/`. The existing bedroom doorway browser regression
+also waits through this wordless interval before verifying E travel.

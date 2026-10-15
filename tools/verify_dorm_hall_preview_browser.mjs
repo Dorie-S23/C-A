@@ -31,7 +31,7 @@ const settleInvitation=async()=>{
  if(s.phase==='seated'){await key('Space');await key('Space');await key('Space')}
  await until(async()=> (await state()).dialogueActive&&await evaluate("document.querySelector('#dialogue-text').textContent==='Come in.'"));
 };
-const finishConversation=async()=>{for(let i=0;i<28&&(await state()).dialogueActive;i++){await key('Space');await sleep(70)}};
+const finishConversation=async()=>{for(let i=0;i<28;i++){const s=await state();if(s.jaxPass){await sleep(100);i--;continue}if(!s.dialogueActive)break;await key('Space');await sleep(70)}};
 const bench=async()=>evaluate(`new Promise(resolve=>{const stamps=[];let start;function frame(t){if(start===undefined)start=t;stamps.push(t);if(t-start<5000){requestAnimationFrame(frame);return}const d=stamps.slice(1).map((v,i)=>v-stamps[i]).sort((a,b)=>a-b);resolve({frames:d.length,seconds:(t-start)/1000,fps:d.length*1000/(t-start),medianMs:d[Math.floor(d.length*.5)],p95Ms:d[Math.floor(d.length*.95)]})}requestAnimationFrame(frame)})`);
 const navigate=async suffix=>{await command('Page.navigate',{url:'http://127.0.0.1:5173/'+suffix});await until(async()=>Boolean(await state()))};
 try{
