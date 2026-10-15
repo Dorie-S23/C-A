@@ -23,8 +23,26 @@ const BUTTONS = [
   { action: 'quit', block: 'Cube012', label: 'Text001' },
 ];
 const GLOVE = 'Cursor_Rig';
+
+// The tent's dark doorway. The authored fly-in ends a little to one side of
+// it, in the striped wall, so the last stretch is steered onto the
+// doorway's centre line and faded to black as the camera reaches it.
+const DOORWAY = 'Plane014';
+const STEER_FROM = 12; // start steering this many doorway-widths away…
+const STEER_TO = 4;    // …and be fully on the centre line by this many
+const FADE_FROM = 1.5; // fade to black over the last this-many widths
 const HOVER_SCALE = 1.08;
-const HOVER_EASE = 12; // per second; how quickly a block grows/shrinks and the glove moves
+const HOVER_EASE = 12; // per second; how quickly a block grows/shrinks
+
+// The glove's hop between buttons. Lengths are in "button spacings" (the
+// distance from PLAY to OPTIONS), so they hold whatever the scene's scale.
+const GLOVE_HOP_TIME = 0.3;       // seconds for a one-button hop; longer hops take a little longer
+const GLOVE_ARC = 0.3;            // how far the path bows out sideways, per spacing travelled
+const GLOVE_LEAN = 0.07;          // radians of tilt per spacing/second of vertical speed
+const GLOVE_MAX_LEAN = 0.35;
+const GLOVE_LEAN_SHARPNESS = 10;  // per second; how quickly the tilt follows (and settles back)
+const GLOVE_BOB = 0.04;           // resting bob height, in spacings
+const GLOVE_BOB_PERIOD = 1.6;     // seconds
 
 // Lighting, matched to the .blend: one sun (strength 6.22, aimed as below
 // after converting Blender's Z-up to three's Y-up) plus the world's dim
@@ -61,6 +79,8 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
 
   const sky = createSkyBackdrop();
   scene.add(sky);
+  const fade = createFade();
+  scene.add(fade);
 
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
@@ -73,8 +93,29 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
   let buttons = [];
   let selected = 0;
   let glove = null;
+  let doorway = null;
+  const doorwayCenter = new THREE.Vector3();
+  const doorwayNormal = new THREE.Vector3(); // out of the tent, toward the camera's approach
+  let doorwayWidth = 1;
+  const steeredPosition = new THREE.Vector3();
+  const authoredQuaternion = new THREE.Quaternion();
   const gloveRest = new THREE.Vector3(); // its position at HOLD_TIME, pointing at PLAY
   const gloveTarget = new THREE.Vector3();
+  const gloveRestQuaternion = new THREE.Quaternion();
+  const gloveFrom = new THREE.Vector3();
+  const glovePath = new THREE.Vector3(); // where the hop has it this frame, before the bob
+  const glovePrevPath = new THREE.Vector3();
+  const gloveStep = new THREE.Vector3();
+  const cameraRight = new THREE.Vector3();
+  const cameraUp = new THREE.Vector3();
+  const cameraForward = new THREE.Vector3();
+  const leanRotation = new THREE.Quaternion();
+  let gloveHop = 1; // 0 → 1 through the current hop; 1 = resting on a button
+  let gloveHopTime = GLOVE_HOP_TIME;
+  let gloveLean = 0;
+  let gloveSettled = 1; // eases the resting bob in after a hop
+  let gloveBobTime = 0;
+  let buttonSpacing = 1;
   let active = false;
 
   const ready = new GLTFLoader().loadAsync(TITLE_URL).then((gltf) => {
@@ -101,10 +142,13 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
       block: gltf.scene.getObjectByName(block),
       objects: [block, label].map((name) => gltf.scene.getObjectByName(name)).filter(Boolean),
       baseScales: [],
+      basePositions: [],
+      pivots: [], // the block's centre, in each object's parent space
       offset: new THREE.Vector3(), // from PLAY's centre to this button's, for the glove
       hover: 0,
     })).filter((button) => button.block);
     glove = gltf.scene.getObjectByName(GLOVE);
+    doorway = gltf.scene.getObjectByName(DOORWAY);
 
     seek(0);
     renderer.compile(scene, camera);
@@ -133,10 +177,25 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
     const playCenter = blockCenter(buttons[0]);
     for (const button of buttons) {
       button.baseScales = button.objects.map((object) => object.scale.clone());
+      button.basePositions = button.objects.map((object) => object.position.clone());
+      const center = blockCenter(button);
+      button.pivots = button.objects.map((object) => object.parent.worldToLocal(center.clone()));
       button.offset.subVectors(blockCenter(button), playCenter);
       button.hover = 0;
     }
-    if (glove) gloveRest.copy(glove.position);
+    if (glove) {
+      gloveRest.copy(glove.position);
+      gloveRestQuaternion.copy(glove.quaternion);
+      glovePath.copy(gloveRest);
+      glovePrevPath.copy(gloveRest);
+      gloveLean = 0;
+      gloveSettled = 1;
+    }
+    if (buttons.length > 1) buttonSpacing = buttons[1].offset.length() || 1;
+    camera.updateMatrixWorld();
+    cameraRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+    cameraUp.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+    cameraForward.setFromMatrixColumn(camera.matrixWorld, 2).normalize().negate();
     select(0);
   }
 
@@ -147,7 +206,12 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
   function select(index) {
     selected = index;
     // The glove is a root node, so its position is in world space.
-    if (glove) gloveTarget.copy(gloveRest).add(buttons[index].offset);
+    if (!glove) return;
+    gloveTarget.copy(gloveRest).add(buttons[index].offset);
+    gloveFrom.copy(glovePath);
+    const hops = gloveFrom.distanceTo(gloveTarget) / buttonSpacing;
+    gloveHop = hops < 0.01 ? 1 : 0;
+    gloveHopTime = GLOVE_HOP_TIME * (0.7 + 0.3 * hops);
   }
 
   function activate(index) {
@@ -157,7 +221,10 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
       // The rest of the timeline is the glove clicking PLAY and the camera
       // flying into the tent; report PLAY once it's over.
       select(0);
+      // Hand the glove back to the timeline upright and on PLAY.
+      if (glove) glove.quaternion.copy(gloveRestQuaternion);
       state = 'outro';
+      measureDoorway();
       canvas.style.cursor = '';
       return;
     }
@@ -248,8 +315,10 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
     if (state === 'outro') {
       time += delta;
       seek(Math.min(time, END_TIME));
+      steerIntoDoorway();
       if (time >= END_TIME) {
         state = 'done';
+        setFade(1); // finish in the dark whatever the timing
         onAction('play');
       }
       return;
@@ -260,9 +329,89 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
     buttons.forEach((button, index) => {
       button.hover += ((index === selected ? 1 : 0) - button.hover) * ease;
       const scale = 1 + (HOVER_SCALE - 1) * button.hover;
-      button.objects.forEach((object, i) => object.scale.copy(button.baseScales[i]).multiplyScalar(scale));
+      // Grow the block and its label about the block's centre together. Each
+      // around its own origin, the block's front face would push out past
+      // the label sitting on it and swallow the lettering.
+      button.objects.forEach((object, i) => {
+        object.scale.copy(button.baseScales[i]).multiplyScalar(scale);
+        object.position.copy(button.basePositions[i]).sub(button.pivots[i]).multiplyScalar(scale).add(button.pivots[i]);
+      });
     });
-    if (glove) glove.position.lerp(gloveTarget, ease);
+    if (glove) updateGlove(delta, ease);
+  }
+
+  /** Finds the doorway's centre, size and outward facing, in world space. */
+  function measureDoorway() {
+    if (!doorway) return;
+    doorway.updateWorldMatrix(true, false);
+    const box = new THREE.Box3().setFromObject(doorway);
+    box.getCenter(doorwayCenter);
+    const size = box.getSize(new THREE.Vector3());
+    doorwayWidth = Math.max(size.x, size.y, size.z) || 1;
+    // A flat panel: its normals all agree, so the first one will do.
+    doorwayNormal.fromBufferAttribute(doorway.geometry.attributes.normal, 0)
+      .transformDirection(doorway.matrixWorld);
+    camera.updateWorldMatrix(true, false);
+    const toCamera = camera.getWorldPosition(new THREE.Vector3()).sub(doorwayCenter);
+    if (toCamera.dot(doorwayNormal) < 0) doorwayNormal.negate();
+    console.log("DBG door", JSON.stringify({ c: doorwayCenter.toArray(), n: doorwayNormal.toArray(), w: doorwayWidth, size: size.toArray(), cam: camera.position.toArray() })); // DBG
+  }
+
+  /**
+   * After the timeline has posed the camera, pulls it onto the doorway's
+   * centre line and turns it to look straight in, more so the closer it
+   * gets; then fades to black as it reaches the doorway.
+   */
+  function steerIntoDoorway() {
+    if (!doorway) return;
+    const position = camera.position; // the camera is a root node: world space
+    const distance = position.distanceTo(doorwayCenter) / doorwayWidth;
+    const steer = THREE.MathUtils.smoothstep(STEER_FROM - distance, 0, STEER_FROM - STEER_TO);
+
+    const along = steeredPosition.copy(position).sub(doorwayCenter).dot(doorwayNormal);
+    steeredPosition.copy(doorwayCenter).addScaledVector(doorwayNormal, along);
+    position.lerp(steeredPosition, steer);
+
+    authoredQuaternion.copy(camera.quaternion);
+    camera.lookAt(doorwayCenter);
+    camera.quaternion.copy(authoredQuaternion).slerp(camera.quaternion, steer);
+    camera.updateMatrixWorld();
+
+    const outside = along / doorwayWidth;
+    if (Math.random() < 0.15) console.log("DBG step", JSON.stringify({ t: +time.toFixed(2), d: +distance.toFixed(1), along: +outside.toFixed(2), steer: +steer.toFixed(2), cam: camera.position.toArray().map((v) => +v.toFixed(1)) })); // DBG
+    setFade(state === 'done' ? 1 : 1 - THREE.MathUtils.clamp(outside / FADE_FROM, 0, 1));
+  }
+
+  function setFade(opacity) {
+    fade.material.uniforms.opacity.value = opacity;
+    fade.visible = opacity > 0;
+  }
+
+  /**
+   * Moves the glove along its hop like a hand rather than a slider: eased
+   * in and out, bowing out sideways on the way, tilting into the direction
+   * it's going, then bobbing gently while it rests on the button.
+   */
+  function updateGlove(delta, ease) {
+    if (delta <= 0) return;
+    gloveHop = Math.min(1, gloveHop + delta / gloveHopTime);
+    const p = gloveHop < 0.5 ? 4 * gloveHop ** 3 : 1 - (-2 * gloveHop + 2) ** 3 / 2; // ease in-out
+    const hopLength = gloveFrom.distanceTo(gloveTarget);
+
+    glovePrevPath.copy(glovePath);
+    glovePath.lerpVectors(gloveFrom, gloveTarget, p)
+      .addScaledVector(cameraRight, Math.sin(Math.PI * p) * GLOVE_ARC * hopLength);
+
+    // Moving down the menu tips the fingers forward; moving up, back.
+    const upSpeed = gloveStep.subVectors(glovePath, glovePrevPath).dot(cameraUp) / delta / buttonSpacing;
+    const leanTarget = THREE.MathUtils.clamp(upSpeed * GLOVE_LEAN, -GLOVE_MAX_LEAN, GLOVE_MAX_LEAN);
+    gloveLean += (leanTarget - gloveLean) * (1 - Math.exp(-GLOVE_LEAN_SHARPNESS * delta));
+    glove.quaternion.copy(gloveRestQuaternion).premultiply(leanRotation.setFromAxisAngle(cameraForward, gloveLean));
+
+    gloveSettled += ((gloveHop >= 1 ? 1 : 0) - gloveSettled) * ease;
+    gloveBobTime += delta;
+    const bob = Math.sin((gloveBobTime / GLOVE_BOB_PERIOD) * Math.PI * 2) * GLOVE_BOB * buttonSpacing * gloveSettled;
+    glove.position.copy(glovePath).addScaledVector(cameraUp, bob);
   }
 
   return {
@@ -292,6 +441,7 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
     /** Shows the title screen; `playIntro: false` goes straight to the menu. */
     show({ playIntro = true } = {}) {
       active = true;
+      setFade(0);
       if (!mixer) return;
       if (playIntro) {
         state = 'intro';
@@ -317,6 +467,30 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
  * with the world's saturation ×2 and strength 1.6, on a full-screen quad
  * drawn behind everything.
  */
+/** A full-screen black layer drawn over the scene, for the fade into the tent. */
+function createFade() {
+  const material = new THREE.ShaderMaterial({
+    uniforms: { opacity: { value: 0 } },
+    vertexShader: `
+      void main() {
+        gl_Position = vec4(position.xy, 0.0, 1.0);
+      }`,
+    fragmentShader: `
+      uniform float opacity;
+      void main() {
+        gl_FragColor = vec4(0.0, 0.0, 0.0, opacity);
+      }`,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+  quad.frustumCulled = false;
+  quad.renderOrder = Infinity; // after everything else
+  quad.visible = false;
+  return quad;
+}
+
 function createSkyBackdrop() {
   const texture = new THREE.TextureLoader().load(SKY_URL);
   texture.colorSpace = THREE.SRGBColorSpace;

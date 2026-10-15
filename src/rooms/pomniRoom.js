@@ -2,14 +2,27 @@ import * as THREE from 'three';
 import { loadRoomModel } from './loadRoomModel.js';
 import { loadCaine, createCaineIdle } from '../characters/caine.js';
 import { addMirrorReflections } from './mirrors.js';
+import { openHingedDoor } from './doors.js';
+import { createDoorPortal } from './portals.js';
+import { findWallSpot, placeOfficePicture } from '../props/officePicture.js';
 
 const CAINE_DISTANCE = 3; // how far in front of the spawn point Caine stands
 const CAINE_WALL_GAP = 0.8; // keep him at least this far off any wall in the way
 
+const PICTURE_ID = 'ca1';
+const PICTURE_URL = './models/objects/ca1.png';
+const PICTURE_HEIGHT = 1.4;
+
+// The glTF export carries these as "Door Frame.024" / "Door Slab.024";
+// three.js's GLTFLoader sanitizes node names (spaces and the disambiguating
+// dot both go), so they come out as this at runtime.
+const DOOR_FRAME_NAME = 'Door_Frame024';
+const DOOR_SLAB_NAME = 'Door_Slab024';
+
 // Exported from "Pomnis Room V3.blend" by tools/blender/export_pomnis_room_v3.py,
 // which converts the materials the glTF exporter can't read — re-run it
 // after editing the .blend.
-export function loadPomniRoom(onProgress) {
+export function loadPomniRoom(onProgress, { from, items } = {}) {
   return Promise.all([
     loadRoomModel('./models/character%20rooms/pomnis-room-v3.glb', onProgress),
     loadCaine(),
@@ -18,7 +31,31 @@ export function loadPomniRoom(onProgress) {
     room.environment = true;
     // The vanity and the standing mirror reflect the room for real.
     addMirrorReflections(room.group, room.spawn);
-    placeInFrontOfSpawn(caine, room);
+    // Caine always stands relative to the room's own default spawn, even
+    // when `from` below moves the player's actual spawn to the doorway.
+    const defaultSpawn = room.spawn;
+
+    if (items) {
+      const origin = new THREE.Vector3(defaultSpawn.x, defaultSpawn.y + PICTURE_HEIGHT, defaultSpawn.z);
+      const spot = findWallSpot(room.group, origin, new THREE.Vector3(1, 0, 0))
+        ?? findWallSpot(room.group, origin, new THREE.Vector3(-1, 0, 0));
+      if (spot) placeOfficePicture(room, items, PICTURE_ID, PICTURE_URL, spot.position, spot.rotationY);
+    }
+
+    const door = openHingedDoor(room.group, DOOR_FRAME_NAME, DOOR_SLAB_NAME, room.spawn, room.collisionMeshes);
+    if (door) {
+      const doorCenter = door.frameBox.getCenter(new THREE.Vector3());
+      room.spawnFacing = Math.atan2(room.spawn.x - doorCenter.x, room.spawn.z - doorCenter.z);
+
+      const portal = createDoorPortal(room.group, door.frameBox, room.spawn, 'dorm');
+      room.portals = [portal];
+      if (from === 'dorm') {
+        room.spawn = portal.arrival.spawn;
+        room.spawnFacing = portal.arrival.facing;
+      }
+    }
+
+    placeInFrontOfSpawn(caine, { group: room.group, spawn: defaultSpawn });
     room.group.add(caine);
     caine.updateMatrixWorld(true);
 
