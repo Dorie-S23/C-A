@@ -273,8 +273,8 @@ sensitivityInput.addEventListener('input', () => {
     // Storage blocked (private window etc.) — the setting just won't persist.
   }
 });
-// Dev mode: open straight onto the title menu instead of playing the intro
-// every reload. Ticked in Options, or ?dev=1 / ?dev=0 in the URL; either
+// Dev mode: open straight onto the room picker instead of playing the
+// title intro every reload. Ticked in Options, or ?dev=1 / ?dev=0 in the URL; either
 // way it's remembered in this browser.
 const DEV_SKIP_INTRO_KEY = 'tadc.devSkipIntro';
 const devSkipIntroInput = document.getElementById('dev-skip-intro');
@@ -321,11 +321,15 @@ overlaySubtitle.textContent = '';
 roomPicker.hidden = true;
 dialoguePicker.hidden = true;
 btnTitle.hidden = true;
+// Dev mode skips the title screen altogether (it still loads behind, for
+// the picker's "Back to title" button).
+if (devSkipIntroInput.checked) showRoomPicker();
 titleScreen.ready
   .then(() => {
+    if (devSkipIntroInput.checked) return;
     overlay.classList.add('hidden');
     overlay.classList.remove('loading');
-    titleScreen.show({ playIntro: !devSkipIntroInput.checked });
+    titleScreen.show({ playIntro: true });
   })
   .catch((err) => {
     console.error('Failed to load title screen', err);
