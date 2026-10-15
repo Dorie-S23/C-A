@@ -18,7 +18,7 @@ export const SPEAKERS = {
 // before anyone says so directly") is a pure 3D/animation beat with no
 // dialogue box in the source script at all — played as an actual cutscene
 // (see jaxHallwayCutscene.js), not anything inline here. main.js plays
-// this script in two parts with stopAt/startAt both set to 'afterJaxPassBy'
+// this script in two parts with stopAt 'jaxPassByText' and startAt 'afterJaxPassBy'
 // below: part one ends right before that line, the cutscene plays between
 // the two Ragatha lines, then part two resumes from 'afterJaxPassBy'.
 //
@@ -66,6 +66,12 @@ export const preLevel1Dialogue = [
     direction: 'deadpan',
     mood: 'annoyed',
     text: 'Thrilling. Another one of his "brilliant" ideas.',
+  },
+  {
+    // Keep the live morning's text beat until its own cutscene is integrated.
+    id: 'jaxPassByText',
+    type: 'beat',
+    text: 'Jax storms past in the background — no dialogue, just animation/SFX.',
   },
   {
     id: 'afterJaxPassBy',
