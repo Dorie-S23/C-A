@@ -8,10 +8,13 @@ import { loadTadcRoom } from './rooms/tadcRoom.js';
 import { loadMazeRoom } from './rooms/mazeRoom.js';
 import { loadKaufmoRoom } from './rooms/kaufmoRoom.js';
 import { loadPomni } from './characters/pomni.js';
+import { bendBone, SIDEWAYS } from './characters/bendBone.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
 import { createTitleScreen } from './ui/titleScreen.js';
+import { resetEscapeThreshold } from './state/escapeThreshold.js';
+import { runLevel1 } from './levels/level1.js';
 import {
-  SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, ribbitTalkDialogue,
+  SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
 } from './data/dialogues.js';
 
 // Collision fires dozens of short rays a frame (wall probe, floor probes,
@@ -29,7 +32,7 @@ const DIALOGUE_SCRIPTS = {
   preLevel1: { script: preLevel1Dialogue, room: 'pomni' },
   level1Open: { script: level1OpenDialogue, room: 'pomni' },
   level2Opening: { script: level2OpeningDialogue, room: 'kaufmo' },
-  ribbitTalk: { script: ribbitTalkDialogue, room: 'ribbit' },
+  level1Ribbit: { script: level1RibbitDialogue, room: 'ribbit' },
 };
 
 const ROOM_LOADERS = {
@@ -122,7 +125,20 @@ const pomniReady = loadPomni().then(({ pomni: model, animations }) => {
     for (const clip of animations) pomniActions[clip.name.toLowerCase()] = pomniMixer.clipAction(clip);
     playAction('idle');
   }
+
+  // Bones the staged gestures/poses bend (see applyStagePose); Mixamo's
+  // "mixamorig:Name" loads as "mixamorigName".
+  for (const name of Object.keys(pomniBones)) pomniBones[name] = pomni.getObjectByName(`mixamorig${name}`) ?? null;
+  if (pomniBones.Hips) {
+    pomni.updateMatrixWorld(true);
+    pomniHipsHeight = pomniBones.Hips.getWorldPosition(new THREE.Vector3()).y - pomni.position.y;
+  }
 });
+const pomniBones = {
+  Hips: null, RightArm: null, RightForeArm: null,
+  LeftUpLeg: null, RightUpLeg: null, LeftLeg: null, RightLeg: null,
+};
+let pomniHipsHeight = 0.8; // hips above her feet when standing; measured on load
 
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
@@ -169,7 +185,9 @@ roomPicker.querySelectorAll('button').forEach((button) => {
 dialoguePicker.querySelectorAll('button').forEach((button) => {
   button.addEventListener('click', (event) => {
     event.stopPropagation();
-    playDialoguePreview(button.dataset.dialogue);
+    // Levels are played for real (src/levels/); the rest are text previews.
+    if (button.dataset.mission) startMission(button.dataset.mission);
+    else playDialoguePreview(button.dataset.dialogue);
   });
 });
 
@@ -201,6 +219,7 @@ const titleScreen = createTitleScreen({
   isBlocked: () => !titleOptions.hidden || !titleQuit.hidden || !creditsPanel.classList.contains('hidden'),
   onAction: (action) => {
     if (action === 'play') {
+      resetEscapeThreshold(); // PLAY starts a fresh run
       titleScreen.hide();
       showRoomPicker();
     } else if (action === 'options') {
@@ -290,6 +309,7 @@ function returnToHome() {
   loadToken++; // discard any load still in flight for the room we're leaving
   paused = false;
   resetMoveState();
+  resetStage();
 
   if (currentRoom) {
     scene.remove(currentRoom);
@@ -371,13 +391,20 @@ function playDialoguePreview(key) {
  * With `lookAt` (the NPC's position), Pomni turns to face whoever she's
  * talking to, with the camera swung round behind her. The callbacks pass
  * straight through to DialogueUI: onComplete for a finished conversation,
- * onCancel for one abandoned with Escape, onChoice for each option picked.
+ * onCancel for one abandoned with Escape, onChoice for each option picked,
+ * distressFor to shake/tint a line by how upset its speaker is (0-3),
+ * onNode for each node as it's shown (to act out its `action`), and
+ * startAt/stopAt to play only part of the script (see createDialogueEngine).
  *
  * @param {string} key a DIALOGUE_SCRIPTS key
  * @param {{ lookAt?: THREE.Vector3, onChoice?: (option, nextNode) => void,
- *   onComplete?: () => void, onCancel?: () => void }} [options]
+ *   onComplete?: () => void, onCancel?: () => void,
+ *   distressFor?: (lineNode) => number, onNode?: (node) => void,
+ *   startAt?: string, stopAt?: string }} [options]
  */
-function playRoomDialogue(key, { lookAt, onChoice, onComplete, onCancel } = {}) {
+function playRoomDialogue(key, {
+  lookAt, onChoice, onComplete, onCancel, distressFor, onNode, startAt, stopAt,
+} = {}) {
   const entry = DIALOGUE_SCRIPTS[key];
   if (!entry || dialogueUI.isActive) return;
   resetMoveState();
@@ -388,7 +415,55 @@ function playRoomDialogue(key, { lookAt, onChoice, onComplete, onCancel } = {}) 
     cameraYaw = Math.atan2(-dx, -dz);       // camera behind her, looking the same way
     cameraPitch = DEFAULT_PITCH;
   }
-  dialogueUI.play(entry.script, { onChoice, onComplete, onCancel });
+  dialogueUI.play(entry.script, {
+    onChoice, onComplete, onCancel, distressFor, onNode, startAt, stopAt,
+  });
+}
+
+// --- Missions: levels that run across rooms (src/levels/) ---
+// A room picked from the list is just a place to explore; a mission is the
+// level played for real, moving through whichever rooms its story needs
+// and driving them with the API below.
+
+const MISSIONS = {
+  level1: runLevel1,
+};
+
+const missionApi = {
+  /** Loads a room from the menus (Click to Play); resolves with the loaded room. */
+  enterRoom(roomKey) {
+    return new Promise((resolve) => {
+      selectRoom(roomKey, {
+        onReady: (room) => {
+          if (isLocked) {
+            overlay.classList.add('hidden');
+          } else {
+            overlayTitle.textContent = 'Click to Play';
+            overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
+          }
+          resolve(room);
+        },
+      });
+    });
+  },
+  /** Moves to another room mid-mission, keeping the mouse captured (like a portal). */
+  travel(roomKey) {
+    overlay.classList.remove('hidden');
+    return missionApi.enterRoom(roomKey);
+  },
+  /** Adds an E-interaction to the current room (cleared on the next room change). */
+  addInteractable(interactable) {
+    interactables.push(interactable);
+  },
+  playDialogue: playRoomDialogue,
+  endLevel: (title, subtitle) => endLevel(title, subtitle),
+  get stage() {
+    return stage;
+  },
+};
+
+function startMission(key) {
+  MISSIONS[key]?.(missionApi);
 }
 
 function selectRoom(roomKey, { onReady, from } = {}) {
@@ -399,6 +474,7 @@ function selectRoom(roomKey, { onReady, from } = {}) {
   const myToken = ++loadToken; // any older in-flight load becomes stale the instant this fires
   paused = false;
   resetMoveState();
+  resetStage();
 
   if (currentRoom) {
     scene.remove(currentRoom);
@@ -435,7 +511,7 @@ function selectRoom(roomKey, { onReady, from } = {}) {
     loadRoom((ratio) => {
       if (myToken !== loadToken) return; // a newer selectRoom()/returnToHome() superseded this one
       overlaySubtitle.textContent = `Fetching room model (${Math.round(ratio * 100)}%)`;
-    }, { from, playDialogue: playRoomDialogue }),
+    }, { from, playDialogue: playRoomDialogue, endLevel, stage }),
     pomniReady,
   ])
     .then(([result]) => {
@@ -446,7 +522,7 @@ function selectRoom(roomKey, { onReady, from } = {}) {
         disposeObject3D(result.group);
         return;
       }
-      applyLoadedRoom(result, onReady, roomKey);
+      applyLoadedRoom(result, onReady && (() => onReady(result)), roomKey);
     })
     .catch((err) => {
       if (myToken !== loadToken) return; // superseded — the active room already shows its own state
@@ -710,7 +786,7 @@ document.addEventListener('mousemove', (e) => {
   // Frozen during an in-room conversation (e.g. talking to Kaufmo), same as
   // movement below — looking around while portraits/text are up is just
   // disorienting, and nothing stops the mouse once the pointer is locked.
-  if (!isLocked || dialogueUI.isActive) return;
+  if (!isLocked || dialogueUI.isActive || stageBusy()) return;
   const sensitivity = MOUSE_SENSITIVITY * mouseSensitivityScale;
   cameraYaw -= e.movementX * sensitivity;
   cameraPitch = THREE.MathUtils.clamp(
@@ -1203,6 +1279,7 @@ function updatePomniWalk(dt, speed) {
       pomniActions.walk.timeScale = animSpeed / WALK_CLIP_SPEED;
     }
     pomniMixer.update(dt);
+    applyStagePose(dt);
     return;
   }
 
@@ -1220,6 +1297,169 @@ function playAction(name) {
   next.reset().fadeIn(ACTION_FADE).play();
   currentAction?.fadeOut(ACTION_FADE);
   currentAction = next;
+}
+
+// --- Staging: scripted moves for a room's story beats ---
+// Rooms get `stage` (via selectRoom's loader options) to act out what a
+// dialogue script describes — Pomni knocking, walking through a door,
+// sitting down — instead of the player doing it. While any of it runs the
+// player's own movement, mouse-look and E prompts are frozen (stageBusy).
+
+const STAGE_WALK_SPEED = 1.6;   // m/s: an unhurried walk
+const KNOCK_DURATION = 1.4;     // seconds: raise, three taps, lower
+const KNOCK_TAPS = 3;
+const SEAT_CLEARANCE = 0.06;    // her hips this far above the seat
+const SIT_SHARPNESS = 6;
+
+let stageWalk = null;    // { points: Vector3[], index, speed, resolve }
+let stageGesture = null; // { name, time, taps, onTap, resolve }
+let stageSeatY = null;   // world height of the seat she's sitting on, or null
+let stageHold = false;   // a room asked to keep control frozen (between beats)
+let sitAmount = 0;       // 0 standing .. 1 seated, eased
+const stageHeading = new THREE.Vector3();
+
+function stageBusy() {
+  return stageHold || stageWalk !== null || stageGesture !== null || stageSeatY !== null;
+}
+
+/** Turns Pomni to face (x, z) and swings the camera round behind her. */
+function facePomni(x, z) {
+  const facing = Math.atan2(x - player.position.x, z - player.position.z);
+  pomni.rotation.y = facing;    // her model faces +Z
+  cameraYaw = facing + Math.PI; // behind her, looking the same way
+  cameraPitch = DEFAULT_PITCH;
+}
+
+const stage = {
+  /** Puts Pomni at (x, z) — feet on `y`, or on whatever floor is there — facing `lookAt`. */
+  place({ x, z, y, lookAt }) {
+    player.position.set(x, (y ?? floorY) + PLAYER_HEIGHT, z);
+    if (y === undefined) settleOnGround(player);
+    if (lookAt) facePomni(lookAt.x, lookAt.z);
+  },
+
+  /** Walks her through each point in turn (no collision); resolves on arrival. */
+  walkTo(points, { speed = STAGE_WALK_SPEED } = {}) {
+    stageWalk?.resolve();
+    return new Promise((resolve) => {
+      stageWalk = { points: points.map((p) => new THREE.Vector3(p.x, 0, p.z)), index: 0, speed, resolve };
+    });
+  },
+
+  /** Plays a gesture on top of her idle. 'knock' calls onTap at each rap. */
+  gesture(name, { onTap } = {}) {
+    stageGesture?.resolve();
+    return new Promise((resolve) => {
+      stageGesture = { name, time: 0, taps: 0, onTap, resolve };
+    });
+  },
+
+  /** Sits her down where she stands on a seat at world height seatY, facing lookAt. */
+  sit(seatY, { lookAt } = {}) {
+    if (lookAt) facePomni(lookAt.x, lookAt.z);
+    stageSeatY = seatY;
+  },
+
+  stand() {
+    stageSeatY = null;
+  },
+
+  /** Frames the shot: the follow camera's yaw (0 looks toward -Z) and pitch. */
+  setCamera({ yaw, pitch = DEFAULT_PITCH }) {
+    cameraYaw = yaw;
+    cameraPitch = pitch;
+  },
+
+  /** Keeps the player's controls frozen (true) between staged beats. */
+  hold(frozen) {
+    stageHold = frozen;
+  },
+
+  lookAt(point) {
+    facePomni(point.x, point.z);
+  },
+};
+
+/** Cancels anything staged; on room change and when a room resets its scene. */
+function resetStage() {
+  stageWalk?.resolve();
+  stageGesture?.resolve();
+  stageWalk = null;
+  stageGesture = null;
+  stageSeatY = null;
+  stageHold = false;
+  sitAmount = 0;
+}
+stage.reset = resetStage;
+
+/** One frame of a scripted walk: straight lines between the points, following the floor. */
+function updateStageWalk(dt) {
+  const walk = stageWalk;
+  const target = walk.points[walk.index];
+  stageHeading.set(target.x - player.position.x, 0, target.z - player.position.z);
+  const distance = stageHeading.length();
+  const step = walk.speed * dt;
+
+  if (distance <= step) {
+    player.position.x = target.x;
+    player.position.z = target.z;
+    walk.index++;
+  } else {
+    stageHeading.divideScalar(distance);
+    player.position.x += stageHeading.x * step;
+    player.position.z += stageHeading.z * step;
+    const facing = Math.atan2(stageHeading.x, stageHeading.z);
+    pomni.rotation.y = dampAngle(pomni.rotation.y, facing, TURN_SHARPNESS, dt);
+    cameraYaw = dampAngle(cameraYaw, facing + Math.PI, 3, dt);
+  }
+  settleOnGround(player);
+  updatePomniWalk(dt, walk.speed);
+
+  if (walk.index >= walk.points.length) {
+    stageWalk = null;
+    walk.resolve();
+  }
+}
+
+/**
+ * Layers the staged gesture/seat on the clip pose updatePomniWalk just
+ * played (see bendBone for the axes). Knock: right arm raised forward,
+ * forearm rapping KNOCK_TAPS times. Sit: hips lowered onto the seat,
+ * thighs forward, shins hanging.
+ */
+function applyStagePose(dt) {
+  sitAmount = THREE.MathUtils.damp(sitAmount, stageSeatY === null ? 0 : 1, SIT_SHARPNESS, dt);
+  const feetY = player.position.y - PLAYER_HEIGHT;
+  const drop = stageSeatY === null ? 0 : Math.max(0, pomniHipsHeight - (stageSeatY - feetY) - SEAT_CLEARANCE);
+  pomni.position.y = -PLAYER_HEIGHT - drop * sitAmount;
+  if (sitAmount > 0.001) {
+    const thigh = -1.45 * sitAmount; // forward
+    bendBone(pomniBones.LeftUpLeg, pomni, SIDEWAYS, thigh);
+    bendBone(pomniBones.RightUpLeg, pomni, SIDEWAYS, thigh);
+    bendBone(pomniBones.LeftLeg, pomni, SIDEWAYS, -thigh);
+    bendBone(pomniBones.RightLeg, pomni, SIDEWAYS, -thigh);
+  }
+
+  const gesture = stageGesture;
+  if (!gesture) return;
+  gesture.time += dt;
+  if (gesture.name === 'knock') {
+    const t = gesture.time;
+    const raise = THREE.MathUtils.smoothstep(t, 0, 0.3) * (1 - THREE.MathUtils.smoothstep(t, KNOCK_DURATION - 0.3, KNOCK_DURATION));
+    // Three raps in the middle of the gesture; each peak is a knock.
+    const rapPhase = THREE.MathUtils.clamp((t - 0.3) / (KNOCK_DURATION - 0.6), 0, 1) * KNOCK_TAPS;
+    const rap = Math.max(0, Math.sin(rapPhase * Math.PI * 2));
+    if (rapPhase > gesture.taps + 0.25 && gesture.taps < KNOCK_TAPS) {
+      gesture.taps++;
+      gesture.onTap?.(gesture.taps);
+    }
+    bendBone(pomniBones.RightArm, pomni, SIDEWAYS, -1.25 * raise);
+    bendBone(pomniBones.RightForeArm, pomni, SIDEWAYS, (-0.9 + 0.35 * rap) * raise);
+  }
+  if (gesture.time >= KNOCK_DURATION) {
+    stageGesture = null;
+    gesture.resolve();
+  }
 }
 
 // --- Third-person follow camera ---
@@ -1287,7 +1527,7 @@ function refreshDynamicColliders() {
  */
 function updateInteractionFocus() {
   let focused = null;
-  if (isLocked && !dialogueUI.isActive && interactables.length > 0) {
+  if (isLocked && !dialogueUI.isActive && !stageBusy() && interactables.length > 0) {
     // The crosshair ray starts behind Pomni, so reach is measured from her.
     interactRaycaster.setFromCamera(SCREEN_CENTER, camera);
     interactRaycaster.far = INTERACT_DISTANCE + currentCameraDistance;
@@ -1374,8 +1614,10 @@ function animate() {
     refreshDynamicColliders();
   }
   if (pomni) {
-    // No walking while the next room loads, or mid-conversation.
-    if (isLocked && readyToPlay && !dialogueUI.isActive) updateMovement(delta);
+    // No walking while the next room loads, mid-conversation, or while a
+    // room is staging her (see `stage`): a scripted walk drives her instead.
+    if (stageWalk && !paused) updateStageWalk(delta);
+    else if (isLocked && readyToPlay && !dialogueUI.isActive && !stageBusy()) updateMovement(delta);
     else updatePomniWalk(delta, 0); // settle the waddle while paused/talking
     updateCamera(delta);
   }

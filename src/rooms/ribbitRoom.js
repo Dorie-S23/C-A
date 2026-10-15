@@ -13,9 +13,18 @@ const RIBBIT_ROOM_URL = './models/character%20rooms/ribbits-room.glb';
 const SPAWN = { x: 2.0, z: -0.1 };
 const SPAWN_FACING = -Math.PI / 2; // yaw 0 faces -Z; a quarter turn right faces +X
 
-// Ribbit stands in the open in front of her bed, a short walk from the
-// door, facing it — so walking in, the player meets her face to face.
-const RIBBIT_SPOT = { x: 6.0, z: -0.5 };
+// Story spots Level 1 (src/levels/level1.js) stages its scene with. Three's
+// (x, z) is Blender's (x, -y); all on the floor plane.
+const POINTS = {
+  DOORWAY: { x: 0.6, z: -0.1 },       // just through the door, where Pomni arrives
+  BEDSIDE: { x: 4.3, z: -1.0 },       // standing at the foot of the bed
+  SEAT: { x: 4.75, z: -1.55 },        // the mattress edge beside Ribbit
+  SEAT_FACING: { x: 4.3, z: -0.3 },   // sat looking out into the room
+  RIBBIT_ON_BED: { x: 5.6, z: -2.0 }, // her hips on the mattress, head to the pillows (-Z)
+};
+
+const DOOR_OPEN_ANGLE = 1.7; // radians, swinging into the room
+const DOOR_SHARPNESS = 3;
 
 // The .blend's lighting (coloured lamps on the tree shelves, the warm star
 // projector) doesn't survive glTF export, so its key lights are recreated
@@ -31,56 +40,84 @@ const ACCENT_LIGHTS = [
 ];
 
 /**
- * Level 1: Ribbit's bedroom, with Ribbit idling in front of her bed, facing
- * the door the player walks in through. Walking up to her and pressing E
- * plays her conversation via the `playDialogue` hook main.js passes every
- * room loader (see selectRoom()).
+ * Ribbit's bedroom, as a place: Ribbit lies curled up on her bed, as she is
+ * when Level 1 finds her. Picked from the room list it's just for
+ * exploring — no conversation, no scoring. Level 1 (src/levels/level1.js)
+ * travels here mid-mission and drives the scene through `room.ribbitScene`:
+ * the door, Ribbit's poses and distress, and the spots Pomni moves between.
  */
-export function loadRibbitRoom(onProgress, { playDialogue } = {}) {
+export function loadRibbitRoom(onProgress) {
   return Promise.all([
     loadRoomModel(RIBBIT_ROOM_URL, onProgress, { spawnAt: SPAWN }),
     loadRibbit(),
-  ]).then(([room, { ribbit, collider, update, faceTowards }]) => {
+  ]).then(([room, { ribbit, collider, update, setDistress, setPose }]) => {
     // The trinkets on the shelves and the door's handle are real metals.
     room.environment = true;
     room.spawnFacing = SPAWN_FACING;
     room.group.add(createAccentLights());
 
-    const floorY = floorHeightAt(room.group, RIBBIT_SPOT.x, RIBBIT_SPOT.z) ?? room.spawn.y;
-    ribbit.position.set(RIBBIT_SPOT.x, floorY, RIBBIT_SPOT.z);
-    const restYaw = Math.atan2(room.spawn.x - RIBBIT_SPOT.x, room.spawn.z - RIBBIT_SPOT.z);
-    ribbit.rotation.y = restYaw;
+    // Ribbit curled up on her bed, head on the pillows.
+    const mattressY = floorHeightAt(room.group, POINTS.RIBBIT_ON_BED.x, POINTS.RIBBIT_ON_BED.z) ?? 0.55;
+    const seatY = floorHeightAt(room.group, POINTS.SEAT.x, POINTS.SEAT.z) ?? 0.45;
+    ribbit.position.set(POINTS.RIBBIT_ON_BED.x, mattressY, POINTS.RIBBIT_ON_BED.z);
+    setPose('curled', { immediate: true });
     room.group.add(ribbit);
     ribbit.updateMatrixWorld(true);
     room.collisionMeshes.push({ mesh: collider, box: new THREE.Box3().setFromObject(collider) });
 
-    // Where she looks again once a conversation ends: back toward the door.
-    const restLookAt = new THREE.Vector3(
-      RIBBIT_SPOT.x + Math.sin(restYaw),
-      floorY,
-      RIBBIT_SPOT.z + Math.cos(restYaw),
-    );
-    const ribbitPosition = new THREE.Vector3();
+    const door = hangDoor(room);
 
-    if (playDialogue) {
-      const lookBackAtDoor = () => faceTowards(restLookAt);
-      room.interactables = [{
-        objects: [collider],
-        anchor: ribbit,
-        prompt: () => 'Talk to Ribbit',
-        interact: ({ playerPosition }) => {
-          faceTowards(playerPosition);
-          playDialogue('ribbitTalk', {
-            lookAt: ribbit.getWorldPosition(ribbitPosition),
-            onComplete: lookBackAtDoor,
-            onCancel: lookBackAtDoor,
-          });
-        },
-      }];
-    }
-    room.update = update;
+    room.ribbitScene = { door, setPose, setDistress, seatY, points: POINTS };
+    room.update = (deltaSeconds) => {
+      update(deltaSeconds);
+      door.update(deltaSeconds);
+    };
     return room;
   });
+}
+
+/**
+ * Hangs the door slab (and Ribbit's name plate on it) from a hinge on its
+ * edge so it can swing open into the room. Its collision entries become
+ * dynamic so main.js follows the swing.
+ */
+function hangDoor(room) {
+  const slab = room.group.getObjectByName('Door_Slab');
+  const plate = room.group.getObjectByName('Jax_Icon');
+  const parts = [slab, plate].filter(Boolean);
+  const meshes = [];
+  for (const part of parts) part.traverse((child) => { if (child.isMesh) meshes.push(child); });
+
+  const box = new THREE.Box3();
+  for (const mesh of meshes) box.expandByObject(mesh);
+  const pivot = new THREE.Object3D();
+  pivot.name = 'DoorHinge';
+  // Hinge on the -Z edge: a +Y turn then swings the free edge into the room (+X).
+  pivot.position.set((box.min.x + box.max.x) / 2, 0, box.min.z);
+  room.group.add(pivot);
+  pivot.updateMatrixWorld(true);
+  for (const part of parts) pivot.attach(part);
+
+  for (const entry of room.collisionMeshes) {
+    if (meshes.includes(entry.mesh)) entry.dynamic = true;
+  }
+
+  let angle = 0;
+  let target = 0;
+  return {
+    open({ immediate = false } = {}) {
+      target = DOOR_OPEN_ANGLE;
+      if (immediate) angle = target;
+    },
+    close({ immediate = false } = {}) {
+      target = 0;
+      if (immediate) angle = 0;
+    },
+    update(deltaSeconds) {
+      angle = THREE.MathUtils.damp(angle, target, DOOR_SHARPNESS, deltaSeconds);
+      pivot.rotation.y = angle;
+    },
+  };
 }
 
 function createAccentLights() {
@@ -94,7 +131,7 @@ function createAccentLights() {
   return lights;
 }
 
-/** The top surface under (x, z) — her feet go on the rug, not under it. */
+/** The top surface under (x, z): her feet go on the rug, not under it. */
 function floorHeightAt(group, x, z) {
   group.updateMatrixWorld(true);
   const raycaster = new THREE.Raycaster(new THREE.Vector3(x, 2, z), new THREE.Vector3(0, -1, 0), 0, 3);
