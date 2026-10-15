@@ -1124,7 +1124,8 @@ function checkPortals() {
   if (portals.length === 0) return;
   // Her actual feet, not floorY: the dorm arch stands on a few steps.
   triggerProbe.set(player.position.x, player.position.y - PLAYER_HEIGHT + 0.5, player.position.z);
-  const portal = portals.find((p) => p.box.containsPoint(triggerProbe));
+  // A door portal (see rooms/doors.js) only leads anywhere once it's open.
+  const portal = portals.find((p) => p.box.containsPoint(triggerProbe) && (p.enabled?.() ?? true));
   if (portal) travelTo(portal.to);
 }
 
