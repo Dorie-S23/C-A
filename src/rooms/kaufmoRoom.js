@@ -10,13 +10,20 @@ const KAUFMO_WALL_GAP = 0.6;
 const DOOR_FRAME_NAME = 'Door_Frame';
 const DOOR_SLAB_NAME = 'Door_Slab';
 
+// Shown once the payoff (level2Payoff) has actually played through, not
+// just been triggered — same beat Level 1 ends on (game.endLevel), just
+// driven locally here since Level 2 isn't staged as its own mission yet.
+const LEVEL2_COMPLETE_TITLE = 'Level 2 Complete';
+const LEVEL2_COMPLETE_SUBTITLE = "Three photos, one real room — and a door that isn't what it says it is. "
+  + "Kaufmo's not finished. Neither is she.";
+
 /**
  * Loads Kaufmo's Room, exported from "Kaufmos Room V4.blend" via
  * tools/blender/export_kaufmos_room.py, plus Kaufmo himself standing in it.
  * Walking up and pressing E plays the Level 2 opening script, via the
  * `playDialogue` hook main.js passes every room loader (see selectRoom()).
  */
-export function loadKaufmoRoom(onProgress, { playDialogue, from, items } = {}) {
+export function loadKaufmoRoom(onProgress, { playDialogue, from, items, endLevel } = {}) {
   return Promise.all([
     loadRoomModel('./models/character%20rooms/kaufmos-room.glb', onProgress),
     loadKaufmo(),
@@ -52,7 +59,16 @@ export function loadKaufmoRoom(onProgress, { playDialogue, from, items } = {}) {
       room.interactables = [...(room.interactables ?? []), {
         objects,
         prompt: () => (items?.heldCount() > 0 ? 'Give photos to Kaufmo' : 'Talk to Kaufmo'),
-        interact: () => playDialogue(pickKaufmoScript(items)),
+        interact: () => {
+          const key = pickKaufmoScript(items);
+          // The payoff keeps playing on every visit after the first (see
+          // pickKaufmoScript below), so this fires every time it's shown,
+          // not just once — fine, since replaying it should still end the
+          // level rather than leave the player stuck mid-story.
+          playDialogue(key, key === 'level2Payoff' && endLevel ? {
+            onComplete: () => endLevel(LEVEL2_COMPLETE_TITLE, LEVEL2_COMPLETE_SUBTITLE),
+          } : undefined);
+        },
       }];
     }
     if (doorControl) {
