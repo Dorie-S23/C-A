@@ -181,6 +181,10 @@ const crosshair = document.getElementById('crosshair');
 const hint = document.getElementById('hint');
 const interactPrompt = document.getElementById('prompt');
 const cinematicSkip = document.getElementById('cinematic-skip');
+const levelCompletePanel = document.getElementById('level-complete-panel');
+const levelCompleteTitle = document.getElementById('level-complete-title');
+const levelCompleteSubtitle = document.getElementById('level-complete-subtitle');
+const btnLevelCompleteContinue = document.getElementById('btn-level-complete-continue');
 
 const dialogueUI = createDialogueUI({ speakers: SPEAKERS });
 const minimap = createMinimap();
@@ -1002,6 +1006,7 @@ const missionApi = {
   playDialogue: playRoomDialogue,
   endLevel: (title, subtitle) => endLevel(title, subtitle),
   showHint,
+  showLevelComplete,
   get stage() {
     return stage;
   },
@@ -1837,6 +1842,30 @@ function endLevel(title, subtitle) {
   dialoguePicker.hidden = false;
   btnTitle.hidden = false;
   pauseMenu.hidden = true;
+}
+
+/**
+ * A brief "Level N Complete" beat with a Continue button, for missions
+ * that chain straight into the next one rather than stopping the story
+ * (see level1.js) — unlike endLevel(), this doesn't drop to the room
+ * picker, just pauses on a card until the player dismisses it themselves.
+ * @returns {Promise<void>} resolves once Continue is clicked
+ */
+function showLevelComplete(title, subtitle) {
+  document.exitPointerLock();
+  stage.hold(true);
+  levelCompleteTitle.textContent = title;
+  levelCompleteSubtitle.textContent = subtitle;
+  levelCompletePanel.hidden = false;
+  return new Promise((resolve) => {
+    function onContinue() {
+      btnLevelCompleteContinue.removeEventListener('click', onContinue);
+      levelCompletePanel.hidden = true;
+      stage.hold(false);
+      resolve();
+    }
+    btnLevelCompleteContinue.addEventListener('click', onContinue);
+  });
 }
 
 /** Walking into an archway's portal loads the room it leads to. */

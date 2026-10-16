@@ -146,15 +146,17 @@ export function runLevel1(game, { hall: startingHall = null, objectives } = {}) 
       onNode: (node) => actions[node.action]?.(),
       onComplete: async () => {
         logEscapeProgress(tally);
-        // The story continues straight into Level 2 instead of stopping
-        // here on an end screen — the same "chain the next beat onto
+        // The story continues straight into Level 2 rather than stopping
+        // for good on an end screen — same "chain the next beat onto
         // onComplete" pattern Pre-Level 1 already uses to lead into this
-        // mission (see caineConversation.js). The score-reactive line that
-        // used to be the end screen's subtitle still shows, just as a
-        // brief hint instead of a hard stop. Kaufmo's "hurries past,
-        // mumbling" scene is written for this exact spot: the Dorm Hall,
-        // right outside Ribbit's door, the moment Pomni steps back out.
-        game.showHint(LEVEL1_OUTCOME[tally.correct] ?? LEVEL1_OUTCOME[0], 6000);
+        // mission (see caineConversation.js) — but still pauses here on a
+        // "Level 1 Complete" card (the score-reactive line that used to be
+        // its subtitle) until the player clicks Continue, rather than
+        // sliding straight into Level 2 with no beat marking the mission
+        // actually ending. Kaufmo's "hurries past, mumbling" scene is
+        // written for this exact spot: the Dorm Hall, right outside
+        // Ribbit's door, the moment Pomni steps back out.
+        await game.showLevelComplete('Level 1 Complete', LEVEL1_OUTCOME[tally.correct] ?? LEVEL1_OUTCOME[0]);
         objectives?.complete('find-ribbit');
         objectives?.activate('find-kaufmo');
         await game.travel('dorm');
