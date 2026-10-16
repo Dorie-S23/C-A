@@ -175,7 +175,6 @@ const btnResume = document.getElementById('btn-resume');
 const btnHome = document.getElementById('btn-home');
 const btnTitle = document.getElementById('btn-title');
 const crosshair = document.getElementById('crosshair');
-const pictureCounter = document.getElementById('picture-counter');
 const hint = document.getElementById('hint');
 const interactPrompt = document.getElementById('prompt');
 const cinematicSkip = document.getElementById('cinematic-skip');
@@ -1025,20 +1024,6 @@ const itemState = createLevel2Items({
   onCollect: (count) => showHint(`Picked up a photo. (${count}/3)`),
 });
 
-function updatePictureCounter() {
-  // Only free exploration shows the HUD, including between room visits.
-  const visible = isLocked && readyToPlay && !paused && !dialogueUI.isActive
-    && !activeCutscene && !activeCinematic()?.active && !stageBusy() && !titleScreen.active
-    && overlay.classList.contains('hidden') && controlsPanel.hidden
-    && creditsPanel.classList.contains('hidden');
-  if (pictureCounter.hidden === visible) pictureCounter.hidden = !visible;
-
-  // Handed-in pictures still count as found. Only update the live region
-  // when its text changes, rather than announcing it every animation frame.
-  const text = `Pictures found: ${itemState.totalFound()}/3`;
-  if (pictureCounter.textContent !== text) pictureCounter.textContent = text;
-}
-
 /**
  * Tears down the current room and every bit of its live state, ready for
  * the next one. Returns the new load token: any older in-flight load is
@@ -1086,16 +1071,10 @@ function leaveCurrentRoom({ keepMoving = false } = {}) {
   return myToken;
 }
 
-/** What every room loader is handed. `isCurrent`: whether that load is still the live room. */
-function roomLoadOptions(roomKey, { from, preview, openingMode, isCurrent }) {
+/** What every room loader is handed. */
+function roomLoadOptions(roomKey, { from, preview, openingMode }) {
   return {
     from, playDialogue: playRoomDialogue, preview, endLevel, stage, items: itemState, travel: travelTo,
-    caineStory: {
-      // He swoops in instead of waiting by Pomni's door (see triggerCaineArrival).
-      arrivesLater: caineArrivesInHall,
-      enabled: () => caineConversation.enabled,
-      talk: lookAt => caineConversation.talk(lookAt, () => isCurrent() && currentRoomKey === 'dorm'),
-    },
     openingMode: openingMode ?? (roomKey === 'pomni' && from && openingCompleted ? 'settled' : undefined),
   };
 }
@@ -1119,7 +1098,7 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
     loadRoom((ratio, stage) => {
       if (myToken !== loadToken) return; // a newer selectRoom()/returnToHome() superseded this one
       overlaySubtitle.textContent = `Fetching ${stage === 'opening' ? 'opening animation' : 'room model'} (${Math.round(ratio * 100)}%)`;
-    }, roomLoadOptions(roomKey, { from, preview, openingMode, isCurrent: () => myToken === loadToken })),
+    }, roomLoadOptions(roomKey, { from, preview, openingMode })),
     pomniReady,
   ])
     .then(([result]) => {
@@ -1884,9 +1863,9 @@ function updateHallLink() {
  * prepareHall().
  */
 function startHallPreload() {
-  const entry = { result: null, failed: false, token: null, compiled: false, trees: [], textures: [] };
+  const entry = { result: null, failed: false, compiled: false, trees: [], textures: [] };
   hallPreload = entry;
-  ROOM_LOADERS.dorm(null, roomLoadOptions('dorm', { from: 'pomni', isCurrent: () => entry.token === loadToken }))
+  ROOM_LOADERS.dorm(null, roomLoadOptions('dorm', { from: 'pomni' }))
     .then((result) => {
       if (hallPreload !== entry) {
         disposeObject3D(result.group); // she left another way first
@@ -1962,7 +1941,7 @@ function walkIntoHall(link) {
   const pitch = cameraPitch;
   const distance = currentCameraDistance;
 
-  entry.token = leaveCurrentRoom({ keepMoving: true });
+  leaveCurrentRoom({ keepMoving: true });
   const hall = entry.result;
   hall.spawn = feet;
   hall.spawnFacing = yaw;
@@ -2525,7 +2504,6 @@ function animate() {
   const hudContext = gameplayHUDContext();
   objectiveHUD.update(hudContext, currentRoomKey === 'dorm' && portals.length > 0);
   tutorialHUD.update(hudContext, focusedBedroomDoor());
-  updatePictureCounter();
   if (activeCutscene) {
     const finished = activeCutscene.update(delta);
     if (finished) {
