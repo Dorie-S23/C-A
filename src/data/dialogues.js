@@ -76,7 +76,7 @@ export const preLevel1Dialogue = [
     // Text remains as a fallback when Jax/the optional hallway cannot load.
     id: 'jaxPassByText',
     type: 'beat',
-    text: 'Jax storms past in the background — no dialogue, just animation/SFX.',
+    text: 'Jax storms past.',
   },
   {
     id: 'afterJaxPassBy',

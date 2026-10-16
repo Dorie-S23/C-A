@@ -37,3 +37,10 @@ assert.deepEqual(actor.getObjectByName('CaineCollider').geometry.parameters,orig
 assert.deepEqual(room.spawn.toArray(),baseline.spawn.toArray());assert.deepEqual(room.portals.map(p=>p.to),baseline.portals.map(p=>p.to));
 const again=await loadDormHallRoom(undefined,{from:'pomni',caineStory:{enabled:()=>true,talk:()=>{}}});assert.equal(again.interactables.filter(i=>i.prompt()==='Talk to Caine').length,1);
 console.log('PASS Real Dorm Hall has one distinct Caine target at 2.5m, including collider, with unchanged placement/idle/collider/door/portals across reloads');
+const storyRoom=await loadDormHallRoom(undefined,{from:'pomni',caineStory:{arrivesLater:()=>true,enabled:()=>true,talk:()=>{throw Error('Story must use the arrival cutscene')}}});
+assert.equal(storyRoom.group.getObjectByName('Caine'),undefined);
+assert.equal(storyRoom.interactables.some(i=>i.prompt()==='Talk to Caine'),false);
+assert.equal(storyRoom.interactables[0].prompt(),"Enter Pomni's Room");
+assert.deepEqual(storyRoom.spawn.toArray(),baseline.spawn.toArray());
+assert.deepEqual(storyRoom.portals.map(p=>p.to),baseline.portals.map(p=>p.to));
+console.log('PASS Story arrival mode suppresses the waiting Caine/E target while preserving hall travel and geometry');

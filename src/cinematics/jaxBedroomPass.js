@@ -4,7 +4,7 @@ import { bendBone, SIDEWAYS, FORWARD } from '../characters/bendBone.js';
 export const JAX_PASS_BEAT = 'jaxPassByText';
 export const JAX_PASS_RESUME = 'afterJaxPassBy';
 export const JAX_PASS_SECONDS = 2.9;
-const RUN_START = .4, RUN_SECONDS = 2;
+const WALK_START = .25, WALK_SECONDS = 2.4, STEP_SECONDS = 1 / 2.8;
 
 /** Room-owned background action. Never moves the door or the Ragatha cast. */
 export function createJaxBedroomPass({ room, cast, audio, onComplete }) {
@@ -22,8 +22,8 @@ export function createJaxBedroomPass({ room, cast, audio, onComplete }) {
   const floorY = new THREE.Box3().setFromObject(floor).min.y;
   crossing.y = floorY;
   const along = new THREE.Vector3(0, 0, 1).transformDirection(preview.group.matrixWorld);
-  const from = crossing.clone().addScaledVector(along, -4);
-  const to = crossing.clone().addScaledVector(along, 4);
+  const from = crossing.clone().addScaledVector(along, -2.6);
+  const to = crossing.clone().addScaledVector(along, 2.6);
   const actor = cast.jax;
   const model = actor.children.find(child => !child.isLight);
   actor.updateMatrixWorld(true);
@@ -31,23 +31,25 @@ export function createJaxBedroomPass({ room, cast, audio, onComplete }) {
   const scale = 2.1 / sourceBounds.getSize(new THREE.Vector3()).y;
   actor.scale.setScalar(scale); // 2.1 m including ears; Pomni remains 1.6 m.
   model.position.y -= sourceBounds.min.y;
-  // Reuse the rig/run, but not its standalone-cutscene travelling point light.
+  // Reuse the rig with an optional strut; standalone cutscenes keep their run.
   actor.children.filter(child => child.isLight).forEach(light => { light.visible = false; });
-  // The shared runner retains T-pose shoulders. Add bent, close-to-body arms
-  // only for this pass, using the real joint direction rather than rig axes.
+  // Lower his T-pose shoulders and rest both hands at the overalls' pocket
+  // area. These offsets use measured joint directions, not imported axes.
   const arms = [];
   for (const side of ['l', 'r']) {
-    let upper, lower;
+    let upper, lower, hand;
     model.traverse(bone => {
       if (!bone.isBone) return;
       const name = bone.name.toLowerCase().replace(/[^a-z]/g, '');
       if (name.startsWith('upperarm' + side)) upper = bone;
       if (name.startsWith('lowerarm' + side)) lower = bone;
+      if (name.startsWith('hand' + side)) hand = bone;
     });
     if (upper && lower) {
       const a = actor.worldToLocal(upper.getWorldPosition(new THREE.Vector3()));
       const b = actor.worldToLocal(lower.getWorldPosition(new THREE.Vector3()));
-      arms.push({ upper, lower, upperRest: upper.quaternion.clone(), lowerRest: lower.quaternion.clone(), sign: Math.sign(b.x - a.x) });
+      arms.push({ upper, lower, hand, upperRest: upper.quaternion.clone(), lowerRest: lower.quaternion.clone(),
+        handRest: hand?.quaternion.clone(), sign: Math.sign(b.x - a.x) });
     }
   }
   let elapsed = 0, phase = 'playing', paused = false, running = false, nextStep = 0;
@@ -74,7 +76,7 @@ export function createJaxBedroomPass({ room, cast, audio, onComplete }) {
     get skippable() { return phase === 'playing'; },
     get diagnostics() { return { phase, elapsed, paused, visible: actor.visible,
       position: actor.position.toArray(), from: from.toArray(), to: to.toArray(),
-      floorY, scale, stepCount }; },
+      floorY, scale, stepCount, style: 'sly' }; },
     setPaused(value) { if (phase !== 'playing') return; paused = value; sound(value ? 'pause' : 'resume', elapsed); },
     update(delta) {
       if (phase !== 'playing' || paused) return;
@@ -83,14 +85,20 @@ export function createJaxBedroomPass({ room, cast, audio, onComplete }) {
       while (remaining > 1e-8 && phase === 'playing') {
         const dt = Math.min(remaining, 1 / 60), previous = elapsed;
         elapsed = Math.min(JAX_PASS_SECONDS, elapsed + dt); remaining -= dt;
-        if (elapsed >= RUN_START && !running) { cast.playPassBy(from, to, RUN_SECONDS); running = true; }
+        if (elapsed >= WALK_START && !running) { cast.playPassBy(from, to, WALK_SECONDS, { style: 'sly' }); running = true; }
         if (running) {
-          cast.update(Math.max(0, Math.min(elapsed, RUN_START + RUN_SECONDS) - Math.max(previous, RUN_START)));
+          cast.update(Math.max(0, Math.min(elapsed, WALK_START + WALK_SECONDS) - Math.max(previous, WALK_START)));
           for (const arm of arms) {
             arm.upper.quaternion.copy(arm.upperRest); arm.lower.quaternion.copy(arm.lowerRest);
-            bendBone(arm.upper, actor, FORWARD, -arm.sign * 1.15);
-            bendBone(arm.upper, actor, SIDEWAYS, arm.sign * .45 * Math.sin((elapsed - RUN_START) * 3.3 * Math.PI * 2));
-            bendBone(arm.lower, actor, SIDEWAYS, -1.1);
+            bendBone(arm.upper, actor, FORWARD, -arm.sign * 1.43);
+            bendBone(arm.lower, actor, SIDEWAYS, -.38);
+            // Relax the glove down at the pocket instead of projecting the
+            // straight bind-pose fingers forward along the bent forearm.
+            if (arm.hand) {
+              arm.hand.quaternion.copy(arm.handRest);
+              bendBone(arm.hand, actor, SIDEWAYS, .38);
+              bendBone(arm.hand, actor, FORWARD, arm.sign * .14);
+            }
           }
           // The shared procedural knee/lean poses dip below its bind-pose feet.
           // Correct only this room-owned actor, using its evaluated skin bounds.
@@ -98,8 +106,8 @@ export function createJaxBedroomPass({ room, cast, audio, onComplete }) {
           actor.traverse(mesh => { if (mesh.isSkinnedMesh) mesh.computeBoundingBox(); });
           bodyBounds.setFromObject(actor);
           if (bodyBounds.min.y < floorY + .003) actor.position.y += floorY + .003 - bodyBounds.min.y;
-          if (elapsed < RUN_START + RUN_SECONDS && elapsed >= nextStep) {
-            sound('cue', 'step', actor.position); stepCount++; nextStep = elapsed + 1 / 6.6;
+          if (elapsed < WALK_START + WALK_SECONDS && elapsed >= nextStep) {
+            sound('cue', 'step', actor.position); stepCount++; nextStep = elapsed + STEP_SECONDS;
           }
         }
         // Ragatha's conversation retains the camera throughout this background beat.

@@ -13,8 +13,12 @@ remaining morning dialogue. The camera frames both characters
 and the open doorway. After the conversation, Ragatha leaves; the door stays open.
 Click the game to capture the mouse when needed. WASD moves, the mouse looks,
 Shift runs, and E interacts. Use E at the open bedroom doorway to enter Dorm Hall.
-Find Caine activates only after successful morning dialogue; talking to Caine
-with E advances the objective to Find Ribbit. X dismisses the contextual tips.
+Find Caine activates only after successful morning dialogue. In the story,
+Caine arrives automatically after ten seconds of active Dorm Hall gameplay;
+there is no standing Caine target or minimap search. Completing his warning
+starts Find Ribbit and Level 1's E-to-knock interaction in the same hall.
+Cancelling his warning preserves Find Caine and schedules another arrival.
+X dismisses the contextual controls tips.
 Returning to the bedroom does not replay the opening. New Game resets the run.
 
 P pauses/resumes the cinematic, including seated dialogue. Escape pauses the cinematic or cancels dialogue. Cancelling the morning dialogue
@@ -65,8 +69,8 @@ coverage; transient entrance-phase waits can time out on overloaded headless run
 
 Known limits: the source door jamb/header contacts the slab during part of its
 swing; the fully-open door clears the room, and Ragatha waits for that clearance.
-The live morning retains the text-only Jax beat; a physical Jax pass-by is not
-integrated here. Native Chrome pointer capture and audible balance still require
+The live morning includes Jax's physical hallway pass and a short action caption.
+Native Chrome pointer capture and audible balance still require
 interactive review. The production bundle currently triggers Vite's size warning.
 
 ## Seated invitation choreography
@@ -162,11 +166,11 @@ Ragatha's entrance and the bedroom door behaviour are unchanged.
 
 The existing `public/models/characters/jax/jax_from_tadc.glb` is a 547,352-byte
 rigged model with 60 skin joints and no baked animation clips. The pass reuses
-`src/characters/jax.js`'s procedural run, adds scene-local bent-arm motion and
+`src/characters/jax.js`'s optional sly walk, adds scene-local pocket-style arms and
 evaluated-skin floor alignment, and scales Jax to 2.1 m including his ears.
-He runs eight metres along the real hall's length, across the doorway rather
+He walks 5.2 metres along the real hall with a restrained swagger, across the doorway rather
 than entering the bedroom. No Jax collider or additional light is installed.
-Fast spatial footsteps reuse the documented temporary synthesized entrance
+Seven walking footsteps reuse the documented temporary synthesized entrance
 buffer; approved recorded footsteps can replace that buffer later.
 
 Jax preloads only for a new playable bedroom session with the actual hallway
@@ -182,3 +186,27 @@ pause/skip/disposal and resource tests. With Vite running, use
 `node tools/verify_jax_bedroom_browser.mjs`; screenshots and its report are in
 `artifacts/jax-bedroom-pass/`. The existing bedroom doorway browser regression
 also waits through this wordless interval before verifying E travel.
+
+## Compatible story additions
+
+The teammate's Caine arrival/cutscene, room connections, portrait fixes,
+Level 1 handoff and Level 2 scoring remain in place. The superseded hallway
+search, Caine relocation and proximity camera remain only in the local
+`backup/prelevel-search-20261016` branch; they are not part of this integration.
+
+Pomni's standing dialogue lines now add small arm/wrist gestures over Idle,
+with smooth onset/release, pause handling and no changes to R5 or animation
+clip data. Ragatha's existing poses and the conversation camera are preserved.
+
+Action captions are limited to “Snoring…”, “Knock, knock, knock.” and
+“Jax storms past.” They follow the existing clocks and hide during dialogue,
+pause and menus. No arrival/departure narration or additional audio is added.
+Jax's bedroom pass uses a relaxed walk with hands near his overall pockets;
+his original running style remains the default for other cutscenes.
+
+Run `node _verify_pomni_speaking.mjs`, `node _verify_action_captions.mjs` and
+`node _verify_jax_bedroom_pass.mjs` for targeted checks. With Vite running,
+`node tools/verify_prelevel_compatibility_browser.mjs` checks the combined
+bedroom story, short captions, gestures, Jax, E travel, automatic Caine
+arrival/cancellation/retry, Find Ribbit and Level 1's Knock interaction.
+Reports and screenshots go to `artifacts/prelevel-compatibility/`.

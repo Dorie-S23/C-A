@@ -375,5 +375,8 @@ export function createDialogueUI({ speakers }) {
     get isActive() {
       return engine !== null;
     },
+    get currentSpeaker() {
+      return engine?.current?.type === 'line' ? engine.current.speaker ?? null : null;
+    },
   };
 }
