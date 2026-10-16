@@ -26,12 +26,14 @@ const setLock=async locked=>evaluate(locked
 const check=(name,run)=>{run();report.checks.push(name);console.log('PASS',name)};
 
 const settleInvitation=async()=>{
- const s=await until(async()=>{const s=await state();return ['playing','seated','blending','done'].includes(s.phase)&&s});
- if(s.phase==='playing')await click('#cinematic-skip');
- if(s.phase==='seated'){await key('Space');await key('Space');await key('Space')}
+ await until(async()=> (await state()).phase==='seated');
+ for(let i=0;i<8;i++){
+  if(await evaluate("document.querySelector('#dialogue-text').textContent==='Come in.'"))break;
+  await key('Space');await sleep(70);
+ }
  await until(async()=> (await state()).dialogueActive&&await evaluate("document.querySelector('#dialogue-text').textContent==='Come in.'"));
 };
-const finishConversation=async()=>{for(let i=0;i<28&&(await state()).dialogueActive;i++){await key('Space');await sleep(70)}};
+const finishConversation=async()=>{for(let i=0;i<28;i++){const s=await state();if(s.jaxPass){await sleep(100);i--;continue}if(!s.dialogueActive)break;await key('Space');await sleep(70)}};
 const bench=async()=>evaluate(`new Promise(resolve=>{const stamps=[];let start;function frame(t){if(start===undefined)start=t;stamps.push(t);if(t-start<5000){requestAnimationFrame(frame);return}const d=stamps.slice(1).map((v,i)=>v-stamps[i]).sort((a,b)=>a-b);resolve({frames:d.length,seconds:(t-start)/1000,fps:d.length*1000/(t-start),medianMs:d[Math.floor(d.length*.5)],p95Ms:d[Math.floor(d.length*.95)]})}requestAnimationFrame(frame)})`);
 const navigate=async suffix=>{await command('Page.navigate',{url:'http://127.0.0.1:5173/'+suffix});await until(async()=>Boolean(await state()))};
 try{
@@ -43,7 +45,7 @@ try{
  if(!process.argv.includes('--review-only')&&!process.argv.includes('--fallback-only')&&!process.argv.includes('--perf-only')&&!process.argv.includes('--in-game-perf-only')){
  // Same story, camera and mirrors, with only the optional view disabled.
  await navigate('?hallPreview=0');await click('[data-story]');await settleInvitation();await key('Space');
- await until(async()=> (await state()).entrancePhase==='entering');await click('#cinematic-skip');await until(async()=> (await state()).entrancePhase==='dialogue');await sleep(800);
+ await until(async()=> (await state()).entrancePhase==='dialogue');await sleep(800);
  report.baseline={state:await state(),frameTiming:await bench()};check('Fallback baseline retains bedroom mirrors and staged entrance',()=>{assert.equal(report.baseline.state.hallPreview,null);assert.ok(report.baseline.state.bedroomMirrorCount>=2)});
  await navigate('');const loadStart=Date.now();await click('[data-story]');await settleInvitation();
  const closed=await state();report.initialLoad={wallMilliseconds:Date.now()-loadStart,metrics:closed.hallPreview};
@@ -61,18 +63,19 @@ try{
  await setLock(true);
  const aim=async p=>{const s=await state(),dx=p[0]-s.player[0],dz=p[2]-s.player[2],yaw=Math.atan2(-dx,-dz),pitch=Math.atan2(s.player[1]-.3-p[1],Math.hypot(dx,dz));await evaluate(`(()=>{const e=new MouseEvent('mousemove');Object.defineProperty(e,'movementX',{value:${(s.cameraYaw-yaw)/.0025}});Object.defineProperty(e,'movementY',{value:${(pitch-s.cameraPitch)/.0025}});document.dispatchEvent(e)})()`);await sleep(150)};
  const route=released.ragatha.route,door=route.panelMin.map((v,i)=>(v+route.panelMax[i])/2);
- await aim(door);await key('KeyW');await sleep(700);await key('KeyW','keyup');const boundary=await state();
- check('Player remains inside bedroom bounds until E travel',()=>{assert.equal(boundary.room,'pomni');assert.ok(boundary.player[2]<=3.134)});
- await aim(door);await until(async()=> (await state()).focusedPrompt==='Exit to Hallway');await key('KeyE');
+ const walkStarted=Date.now();while((await state()).room==='pomni'){
+  assert.ok(Date.now()-walkStarted<45000,'Open doorway must be walkable');
+  await aim([door[0],door[1],door[2]+1]);await key('KeyW');await sleep(160);await key('KeyW','keyup');
+ }
  const hall=await until(async()=>{const s=await state();return s.room==='dorm'&&s.ready&&s});await screenshot('gameplay-dorm-hall');
- check('One E loads real playable Dorm Hall with Caine and preserved objective',()=>{assert.equal(hall.hallPreview,null);assert.equal(hall.objective.id,'find-caine');assert.ok(hall.interactables.some(i=>i.prompt==='Talk to Caine'))});
+ check('Walking out loads real Dorm Hall with preserved objective and delayed Caine arrival',()=>{assert.equal(hall.hallPreview,null);assert.equal(hall.objective.id,'find-caine');assert.equal(hall.interactables.some(i=>i.prompt==='Talk to Caine'),false);assert.ok(hall.caineArrivalIn>0)});
  const targetDoor=hall.interactables.find(i=>i.prompt==="Enter Pomni's Room");await aim(targetDoor.center);await until(async()=> (await state()).focusedPrompt==="Enter Pomni's Room");await key('KeyE');
  const reentry=await until(async()=>{const s=await state();return s.room==='pomni'&&s.ready&&s});
  check('Re-entry keeps settled R5 and Find Caine without replaying entrance',()=>{assert.equal(reentry.phase,'done');assert.equal(reentry.entranceStarted,false);assert.equal(reentry.ragathaCount,0);assert.equal(reentry.objective.id,'find-caine')});
  // Render/load/unload the same setup three times, after an initial warm-up.
  report.reloads=[];
  for(let i=0;i<3;i++){
-  await click('#btn-home');await click('[data-story]');await settleInvitation();await key('Space');await until(async()=> (await state()).entrancePhase==='entering');await click('#cinematic-skip');await until(async()=> (await state()).entrancePhase==='dialogue');await sleep(500);report.reloads.push(await state());
+  await click('#btn-home');await click('[data-story]');await settleInvitation();await key('Space');await until(async()=> (await state()).entrancePhase==='dialogue');await sleep(500);report.reloads.push(await state());
  }
  check('Repeated rendered previews do not accumulate GPU geometries/textures or duplicate Ragatha',()=>{const a=report.reloads[1],b=report.reloads[2];assert.equal(a.memory.geometries,b.memory.geometries);assert.equal(a.memory.textures,b.memory.textures);assert.equal(b.ragathaCount,1)});
  }
@@ -82,11 +85,11 @@ try{
   await command('Fetch.enable',{patterns:[{urlPattern:'*models/world/dorm-hall-v7.glb',requestStage:'Request'}]});
   await click('[data-story]');await settleInvitation();const failed=await state();await command('Fetch.disable');
   assert.equal(failed.hallPreview,null);assert.ok(failed.hallPreviewError);
-  await key('Space');await until(async()=> (await state()).entrancePhase==='entering');await click('#cinematic-skip');await until(async()=> (await state()).entrancePhase==='dialogue');await screenshot('fallback-vestibule');
+  await key('Space');await until(async()=> (await state()).entrancePhase==='dialogue');await screenshot('fallback-vestibule');
   await finishConversation();await until(async()=> (await state()).entrancePhase==='exiting');await click('#cinematic-skip');const recovered=await until(async()=>{const s=await state();return s.ready&&s});
   check('Optional hall download failure restores the original vestibule and completes story/objective normally',()=>{assert.equal(recovered.objective.id,'find-caine');assert.equal(recovered.ragathaCount,1);assert.equal(recovered.hallPreview,null)});
  }else if(process.argv.includes('--in-game-perf-only')){
-  await navigate('');await click('[data-story]');await settleInvitation();await key('Space');await until(async()=> (await state()).entrancePhase==='entering');await click('#cinematic-skip');await until(async()=> (await state()).entrancePhase==='dialogue');await key('Space');
+  await navigate('');await click('[data-story]');await settleInvitation();await key('Space');await until(async()=> (await state()).entrancePhase==='dialogue');await key('Space');
   report.sameSceneBenchmarks=[];
   for(const enabled of [false,true,false,true]){
    assert.equal(await evaluate(`import('/src/main.js').then(m=>m.setDormHallPreviewForReview(${enabled}))`),true);

@@ -6,6 +6,7 @@ import { createBedroomLighting } from './bedroomLighting.js';
 import { loadPomniOpening } from '../cinematics/pomniOpening.js';
 import { loadRagatha } from '../characters/ragatha.js';
 import { loadDormHallPreview } from './dormHallPreview.js';
+import { loadJax } from '../characters/jax.js';
 import { createBedroomDoorHinge } from '../cinematics/bedroomDoor.js';
 import { createDoorwayAperture } from '../cinematics/doorwayAperture.js';
 
@@ -77,6 +78,15 @@ export function loadPomniRoom(onProgress, { from, travel, openingMode,
       } catch (error) {
         room.group.userData.dormHallPreviewError = String(error.message ?? error);
         console.warn('Hall preview unavailable; retaining the temporary vestibule.', error);
+      }
+    }
+    if (openingMode === 'play' && room.group.userData.dormHallPreview) {
+      try {
+        const cast = await loadJax();
+        room.group.add(cast.jax);
+        room.group.userData.jaxCast = cast;
+      } catch (error) {
+        console.warn('Jax model unavailable; retaining the morning background text beat.', error);
       }
     }
     return room;

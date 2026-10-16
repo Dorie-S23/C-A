@@ -70,7 +70,7 @@ export const preLevel1Dialogue = [
     // The hallway cutaway plays before this brief narrative beat.
     id: 'jaxPassByText',
     type: 'beat',
-    text: 'Jax strides past the open doorway without looking in.',
+    text: 'Jax storms past.',
   },
   {
     id: 'afterJaxPassBy',

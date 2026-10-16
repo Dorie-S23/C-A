@@ -8,9 +8,11 @@ import { loadTadcRoom } from './rooms/tadcRoom.js';
 import { loadMazeRoom } from './rooms/mazeRoom.js';
 import { loadKaufmoRoom } from './rooms/kaufmoRoom.js';
 import { loadPomni } from './characters/pomni.js';
+import { createPomniSpeaking } from './characters/pomniSpeaking.js';
 import { OPENING_HANDOFF } from './cinematics/pomniOpening.js';
 import { createOpeningAudio } from './cinematics/openingAudio.js';
 import { createRagathaEntrance } from './cinematics/ragathaEntrance.js';
+import { createJaxBedroomPass, JAX_PASS_BEAT, JAX_PASS_RESUME } from './cinematics/jaxBedroomPass.js';
 import { POMNI_INVITATION, POMNI_SEATED_DIALOGUE, RAGATHA_ENTRANCE_EVENT } from './cinematics/pomniInvitation.js';
 import { bendBone, SIDEWAYS } from './characters/bendBone.js';
 import { preloadJaxHallwayCutscene, playJaxHallwayCutscene } from './cutscenes/jaxHallwayCutscene.js';
@@ -30,6 +32,7 @@ import { createObjectiveHUD } from './ui/objectiveHUD.js';
 import { shouldShowObjective } from './ui/objectiveHUD.js';
 import { createControlsTutorial } from './game/controlsTutorial.js';
 import { createTutorialHUD } from './ui/tutorialHUD.js';
+import { createActionCaptions } from './ui/actionCaptions.js';
 import { createCaineConversation } from './game/caineConversation.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
@@ -148,10 +151,12 @@ scene.add(player);
 
 let pomni = null;
 let pomniMixer = null;
+let pomniSpeaking = null;
 const pomniActions = {}; // lower-cased clip name -> AnimationAction
 let currentAction = null;
 const pomniReady = loadPomni().then(({ pomni: model, animations }) => {
   pomni = model;
+  pomniSpeaking = createPomniSpeaking(pomni);
   pomni.position.y = -PLAYER_HEIGHT; // feet on the floor
   player.add(pomni);
 
@@ -195,6 +200,7 @@ const btnLevelCompleteContinue = document.getElementById('btn-level-complete-con
 
 const pictureCounter = document.getElementById('picture-counter');
 const dialogueUI = createDialogueUI({ speakers: SPEAKERS });
+const actionCaptions = createActionCaptions();
 const minimap = createMinimap();
 const objectives = createObjectiveController();
 const objectiveHUD = createObjectiveHUD({ objectives, root: document.getElementById('objective-hud') });
@@ -223,7 +229,8 @@ let paused = false;
 let loadToken = 0;
 let activeOpening = null;
 let activeEntrance = null;
-const activeCinematic = () => activeEntrance?.active ? activeEntrance : activeOpening;
+let activeJaxPass = null;
+const activeCinematic = () => activeJaxPass?.active ? activeJaxPass : activeEntrance?.active ? activeEntrance : activeOpening;
 let openingCompleted = false; // per new game; room previews do not start a game
 let skipIntroRequested = false; // the Skip intro button, until play starts
 let openingFrameProfile = { frames: 0, seconds: 0, maxSeconds: 0 };
@@ -464,6 +471,7 @@ function returnToHome({ toRoomPicker = false } = {}) {
   dropRoomPreload();
   resetObjectiveSession();
   loadToken++; // invalidate dialogue callbacks before cancelling the old UI
+  activeJaxPass?.dispose(); activeJaxPass = null;
   cancelCutscene();
   cancelLevelComplete();
   activeEntrance?.dispose(); activeEntrance = null;
@@ -549,8 +557,7 @@ function resetObjectiveSession(active = false) {
 function playMorningDialogue(finish) {
   const token = loadToken, room = currentRoom;
   const valid = () => preLevel1Session && token === loadToken && room === currentRoom;
-  playRoomDialogue('preLevel1', {
-    startAt: 'ragathaMorningGreeting',
+  const handlers = {
     onNode: node => room.userData.ragathaEntrance?.dialogueNode(node),
     onComplete: () => {
       if (!valid()) return;
@@ -565,6 +572,30 @@ function playMorningDialogue(finish) {
       showHint('Morning conversation interrupted. Press T in Pomni\'s room to retry.', 8000);
       finish();
     },
+  };
+  const canPass = room.userData.jaxCast && room.userData.dormHallPreview?.group.visible;
+  function continueMorning() {
+    if (!valid()) return;
+    activeJaxPass = null; cinematicSkip.hidden = true;
+    playRoomDialogue('preLevel1', { ...handlers, startAt: JAX_PASS_RESUME });
+  }
+  playRoomDialogue('preLevel1', { ...handlers, startAt: 'ragathaMorningGreeting',
+    ...(canPass ? { stopAt: JAX_PASS_BEAT, onComplete: () => {
+      if (!valid()) return;
+      if (room.userData.jaxMorningPassed) { continueMorning(); return; }
+      let audio;
+      try {
+        audio = openingAudio.createEntranceSession(room, { manual: true });
+        activeJaxPass = createJaxBedroomPass({ room, cast: room.userData.jaxCast,
+          audio, onComplete: continueMorning });
+        room.userData.jaxMorningPassed = true;
+        cinematicSkip.hidden = false;
+      } catch (error) {
+        audio?.dispose();
+        console.warn('Jax pass unavailable; continuing morning conversation.', error);
+        continueMorning();
+      }
+    } } : {}),
   });
 }
 
@@ -574,6 +605,7 @@ function pauseOpening(value) {
   paused = value;
   activeOpening?.setPaused(value);
   activeEntrance?.setPaused(value);
+  activeJaxPass?.setPaused(value);
   dialogueUI.setPaused(value);
   if (!value) clock.getDelta(); // a background-tab pause must not fast-forward on resume
   resetMoveState();
@@ -1103,6 +1135,7 @@ function updatePictureCounter() {
 function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
   objectiveHUD.hide();
   caineConversation.cancelPending();
+  activeJaxPass?.dispose(); activeJaxPass = null;
   dropRoomPreload();
 
   activeEntrance?.dispose(); activeEntrance = null;
@@ -2400,7 +2433,9 @@ function dampAngle(current, target, sharpness, dt) {
  * side-to-side waddle, faded in and out with her speed.
  */
 function updatePomniWalk(dt, speed) {
+  if (paused) dt = 0;
   if (pomniMixer) {
+    pomniSpeaking?.remove();
     animSpeed = THREE.MathUtils.damp(animSpeed, speed, 12, dt);
     if (animSpeed < 0.2) {
       playAction('idle');
@@ -2413,6 +2448,8 @@ function updatePomniWalk(dt, speed) {
     }
     pomniMixer.update(dt);
     applyStagePose(dt);
+    pomniSpeaking?.update(dt, dialogueUI.currentSpeaker === 'pomni' && player.visible
+      && !activeOpening?.active && !stageWalk && !stageGesture && stageSeatY === null && animSpeed < .2);
     return;
   }
 
@@ -2528,6 +2565,7 @@ const stage = {
 
 /** Cancels anything staged; on room change and when a room resets its scene. */
 function resetStage() {
+  pomniSpeaking?.reset();
   stageWalk?.resolve(false);
   stageGesture?.resolve(false);
   stageDelay?.resolve(false);
@@ -2823,14 +2861,19 @@ function animate() {
       }
     } else {
       if (stageWalk && !paused) updateStageWalk(delta);
-      else if (isLocked && readyToPlay && !dialogueUI.isActive && !stageBusy() && !activeCutscene) updateMovement(delta);
+      else if (isLocked && readyToPlay && !dialogueUI.isActive && !activeJaxPass?.active && !stageBusy() && !activeCutscene) updateMovement(delta);
       else updatePomniWalk(delta, 0); // settle the waddle while paused/talking
       if (!activeCutscene) updateCamera(delta);
     }
   }
+  // Background room compilation can stall a frame; keep the brief visible
+  // crossing from completing between two renders on slower machines.
+  if (!paused) activeJaxPass?.update(Math.min(rawDelta, .1));
   minimap.update(player.position.x, player.position.z, cameraYaw);
   updateInteractionFocus();
   const hudContext = gameplayHUDContext();
+  actionCaptions.update({ opening: activeOpening, jaxPass: activeJaxPass,
+    hidden: hudContext.paused || hudContext.menu || dialogueUI.isActive });
   objectiveHUD.update(hudContext, currentRoomKey === 'dorm' && portals.length > 0);
   tutorialHUD.update(hudContext, focusedBedroomDoor());
   updatePictureCounter();
@@ -2879,9 +2922,11 @@ export function getOpeningDiagnostics() {
   if (!import.meta.env.DEV) return null;
   const opening = currentRoom?.userData.pomniOpening;
   let cover, actorMeshes = 0, mirrorCount = 0;
+  const jaxNodes = new Set();
+  currentRoom?.userData.jaxCast?.jax.traverse(o => jaxNodes.add(o));
   currentRoom?.traverse((o) => {
     if (o.userData.name === 'Plane.003') cover = o;
-    if (o.isSkinnedMesh && o.parent && o.name !== 'Caine') actorMeshes++;
+    if (o.isSkinnedMesh && o.parent && o.name !== 'Caine' && !jaxNodes.has(o)) actorMeshes++;
     if (o.isReflector) mirrorCount++;
   });
   return {
@@ -2898,10 +2943,14 @@ export function getOpeningDiagnostics() {
     morningDialoguePending, preLevel1Session,
     completionCardVisible: !levelCompletePanel.hidden, caineArrivalIn,
     caineConversationBusy: caineConversation.busy,
+    caineCount: scene.children.filter(child => child.name === 'Caine').length,
+    pomniSpeaking: pomniSpeaking?.diagnostics ?? null, dialogueSpeaker: dialogueUI.currentSpeaker,
     caineWarningComplete: objectives.isComplete('find-caine'),
     focusedPrompt: focusedInteractable?.prompt() ?? null,
     openingElapsed: opening?.elapsed ?? null, dialogueActive: dialogueUI.isActive,
     openingCoordinated: opening?.coordinated ?? false,
+    jaxPass: activeJaxPass?.diagnostics ?? null,
+    jaxLoaded: Boolean(currentRoom?.userData.jaxCast),
     dialogueText: document.getElementById('dialogue-text').textContent,
     entrancePhase: currentRoom?.userData.ragathaEntrance?.phase ?? null,
     ragatha: currentRoom?.userData.ragathaEntrance?.diagnostics ?? null,
