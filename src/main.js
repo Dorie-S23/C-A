@@ -120,6 +120,8 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// For Pomni's room seen from the hall (bedroomClip, below).
+renderer.localClippingEnabled = true;
 document.body.appendChild(renderer.domElement);
 
 const ambient = new THREE.AmbientLight(0xffffff, 0.15);
@@ -175,7 +177,6 @@ const btnResume = document.getElementById('btn-resume');
 const btnHome = document.getElementById('btn-home');
 const btnTitle = document.getElementById('btn-title');
 const crosshair = document.getElementById('crosshair');
-const pictureCounter = document.getElementById('picture-counter');
 const hint = document.getElementById('hint');
 const interactPrompt = document.getElementById('prompt');
 const cinematicSkip = document.getElementById('cinematic-skip');
@@ -195,7 +196,7 @@ const caineConversation = createCaineConversation({
 let currentRoom = null;
 let currentRoomKey = null;
 let currentRoomInfo = null; // the current room loader's full result (hallDoors etc.)
-let hallPreload = null; // the Dorm Hall loading behind Pomni's open door (see updateHallLink)
+let roomPreload = null; // the room loading behind the open bedroom doorway (see updateHallLink)
 let readyToPlay = false;
 let hintTimeout = null;
 // True only while the pause menu is actually up (pointer unlocked mid-room).
@@ -446,7 +447,7 @@ function showRoomPicker() {
  */
 function returnToHome({ toRoomPicker = false } = {}) {
   skipIntroRequested = false;
-  dropHallPreload();
+  dropRoomPreload();
   resetObjectiveSession();
   loadToken++; // invalidate dialogue callbacks before cancelling the old UI
   activeEntrance?.dispose(); activeEntrance = null;
@@ -1025,30 +1026,17 @@ const itemState = createLevel2Items({
   onCollect: (count) => showHint(`Picked up a photo. (${count}/3)`),
 });
 
-function updatePictureCounter() {
-  // Only free exploration shows the HUD, including between room visits.
-  const visible = isLocked && readyToPlay && !paused && !dialogueUI.isActive
-    && !activeCutscene && !activeCinematic()?.active && !stageBusy() && !titleScreen.active
-    && overlay.classList.contains('hidden') && controlsPanel.hidden
-    && creditsPanel.classList.contains('hidden');
-  if (pictureCounter.hidden === visible) pictureCounter.hidden = !visible;
-
-  // Handed-in pictures still count as found. Only update the live region
-  // when its text changes, rather than announcing it every animation frame.
-  const text = `Pictures found: ${itemState.totalFound()}/3`;
-  if (pictureCounter.textContent !== text) pictureCounter.textContent = text;
-}
-
 /**
  * Tears down the current room and every bit of its live state, ready for
  * the next one. Returns the new load token: any older in-flight load is
  * stale from this moment. `keepMoving` leaves held movement keys alone
  * (walking straight through into the next room).
  */
-function leaveCurrentRoom({ keepMoving = false } = {}) {
+/** `keepRoom`: take it out of the scene but don't dispose it (see parkRoom). */
+function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
   objectiveHUD.hide();
   caineConversation.cancelPending();
-  dropHallPreload();
+  dropRoomPreload();
 
   activeEntrance?.dispose(); activeEntrance = null;
   // Invalidate callbacks before cancelling a dialogue owned by the old room.
@@ -1062,7 +1050,7 @@ function leaveCurrentRoom({ keepMoving = false } = {}) {
 
   if (currentRoom) {
     scene.remove(currentRoom);
-    disposeObject3D(currentRoom);
+    if (!keepRoom) disposeObject3D(currentRoom);
     currentRoom = null;
     bounds = null;
   }
@@ -1086,16 +1074,10 @@ function leaveCurrentRoom({ keepMoving = false } = {}) {
   return myToken;
 }
 
-/** What every room loader is handed. `isCurrent`: whether that load is still the live room. */
-function roomLoadOptions(roomKey, { from, preview, openingMode, isCurrent }) {
+/** What every room loader is handed. */
+function roomLoadOptions(roomKey, { from, preview, openingMode }) {
   return {
     from, playDialogue: playRoomDialogue, preview, endLevel, stage, items: itemState, travel: travelTo,
-    caineStory: {
-      // He swoops in instead of waiting by Pomni's door (see triggerCaineArrival).
-      arrivesLater: caineArrivesInHall,
-      enabled: () => caineConversation.enabled,
-      talk: lookAt => caineConversation.talk(lookAt, () => isCurrent() && currentRoomKey === 'dorm'),
-    },
     openingMode: openingMode ?? (roomKey === 'pomni' && from && openingCompleted ? 'settled' : undefined),
   };
 }
@@ -1119,7 +1101,7 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
     loadRoom((ratio, stage) => {
       if (myToken !== loadToken) return; // a newer selectRoom()/returnToHome() superseded this one
       overlaySubtitle.textContent = `Fetching ${stage === 'opening' ? 'opening animation' : 'room model'} (${Math.round(ratio * 100)}%)`;
-    }, roomLoadOptions(roomKey, { from, preview, openingMode, isCurrent: () => myToken === loadToken })),
+    }, roomLoadOptions(roomKey, { from, preview, openingMode })),
     pomniReady,
   ])
     .then(([result]) => {
@@ -1173,6 +1155,8 @@ function applyLoadedRoom({
   controlsTutorial.enterRoom(roomKey);
   player.visible = true;
   scene.add(group);
+  // Before anything compiles: see bedroomClip.
+  if (roomKey === 'pomni') clipToBedroomDoor(group);
 
   floorY = spawn.y;
   bounds = {
@@ -1209,7 +1193,9 @@ function applyLoadedRoom({
   // room either has no portals or just the one obvious way back.
   // Rooms built onto the hall (see rooms/connectRooms.js) have no portal,
   // just a marker.
-  if (roomKey === 'dorm' && portals.length > 0) minimap.show([...portals, ...(mapMarkers ?? [])]);
+  if (roomKey === 'dorm' && portals.length > 0) {
+    minimap.show([...portals, ...(mapMarkers ?? [])], { group, floorY: spawn.y });
+  }
   else minimap.hide();
   roomLighting?.attach(scene);
 
@@ -1859,40 +1845,82 @@ function checkPortals() {
   if (portal) travelTo(portal.to);
 }
 
-// --- Walking out of Pomni's room into the real Dorm Hall ---------------
-// Her room shows the real hall through its open door (rooms/dormHallPreview.js),
-// placed exactly where it is. So once she's free to walk, the hall itself
-// loads quietly in the background, and stepping through the doorway swaps
-// it in where she stands — no loading screen, no E (see pomniRoom.js's
-// createHallLink for the doorway and coordinate change).
+// --- Walking between Pomni's room and the Dorm Hall --------------------
+// The two are really side by side: her room shows the real hall through
+// its open door (rooms/dormHallPreview.js), and that placement says where
+// her room sits behind the hall's door too. So whichever one Pomni's in,
+// the other loads quietly in the background, and walking through the open
+// doorway swaps it in where she stands — no loading screen.
+//   - Out of her room: the door's open once Ragatha's been (pomniRoom.js's
+//     createHallLink has the doorway and the change of coordinates).
+//   - Into it: E opens her door in the hall like any other; the preloaded
+//     room is shown behind it, and stepping in swaps it in.
+// The room she walks out of isn't thrown away: it's parked as the room
+// behind the door (parkRoom), so walking back is instant too.
 
-const HALL_PREP_BUDGET_MS = 4; // per frame, uploading the hall's textures and building its collision trees
+const ROOM_PREP_BUDGET_MS = 4; // per frame, uploading textures and building collision trees
+
+// Her room is bigger than the slot behind the hall's wall, so seen from
+// the hall its outer walls would poke out into the corridor. Every one of
+// its materials clips against this plane: the hall's wall line at her
+// door while it's shown there, and nothing (KEEP_ALL) once she's inside.
+// It's on her materials from the start, so moving it never rebuilds a
+// shader.
+const KEEP_ALL = new THREE.Plane(new THREE.Vector3(0, 1, 0), 1e9);
+const bedroomClip = KEEP_ALL.clone();
+
+function clipToBedroomDoor(group) {
+  group.traverse((object) => {
+    if (!object.isMesh || object.isReflector) return;
+    for (const material of [object.material].flat()) {
+      if (material && !material.clippingPlanes) material.clippingPlanes = [bedroomClip];
+    }
+  });
+}
 
 function updateHallLink() {
   const link = currentRoomInfo?.hallLink;
   if (currentRoomKey !== 'pomni' || !link?.isOpen()) return;
-  if (!hallPreload) startHallPreload();
-  prepareHall(hallPreload);
+  if (!roomPreload) preloadRoom('dorm', 'pomni');
+  prepareRoom(roomPreload);
   if (link.crossed(player.position)) walkIntoHall(link);
 }
 
+function updatePomniDoorway() {
+  const doorway = currentRoomInfo?.pomniDoorway;
+  if (currentRoomKey !== 'dorm' || !doorway) return;
+  if (!roomPreload) preloadRoom('pomni', 'dorm');
+  prepareRoom(roomPreload);
+  const entry = roomPreload;
+  const showing = doorway.control.isOpen && roomReady(entry) && Boolean(entry.result.hallLink);
+  if (showing !== entry.peeking) showRoomBehindDoor(entry, showing);
+  if (doorway.crossed(player.position)) walkIntoPomniRoom(entry, doorway);
+}
+
+const roomReady = (entry) => Boolean(entry?.result && entry.compiled && !entry.trees.length && !entry.textures.length);
+
 /**
- * Loads the hall, then gets it ready to step into — the work a loading
+ * Loads a room, then gets it ready to step into — the work a loading
  * screen would otherwise hide: its shaders compile in the background
  * (against its own lights, plus Pomni's materials against them), and its
  * textures are uploaded and collision trees built a few each frame in
- * prepareHall().
+ * prepareRoom(). Pomni's room also has its doorway opened, and is compiled
+ * a second time lit only by the hall's lights, as it's seen from there.
  */
-function startHallPreload() {
-  const entry = { result: null, failed: false, token: null, compiled: false, trees: [], textures: [] };
-  hallPreload = entry;
-  ROOM_LOADERS.dorm(null, roomLoadOptions('dorm', { from: 'pomni', isCurrent: () => entry.token === loadToken }))
+function preloadRoom(key, from) {
+  const entry = {
+    key, result: null, failed: false, compiled: false, trees: [], textures: [], peeking: false, hidden: [],
+  };
+  roomPreload = entry;
+  entry.settled = ROOM_LOADERS[key](null, roomLoadOptions(key, { from }))
     .then((result) => {
-      if (hallPreload !== entry) {
+      if (roomPreload !== entry) {
         disposeObject3D(result.group); // she left another way first
-        return;
+        return null;
       }
       entry.result = result;
+      result.openDoorway?.();
+      if (key === 'pomni') clipToBedroomDoor(result.group);
       entry.trees = result.collisionMeshes.map(({ mesh }) => mesh)
         .filter((mesh) => !mesh.isSkinnedMesh && !mesh.geometry.boundsTree);
       const textures = new Set();
@@ -1902,25 +1930,51 @@ function startHallPreload() {
         }
       });
       entry.textures = [...textures];
-      // Lit and reflected as it will be: the scene's ambient, the hall's own lights.
+      // Lit and reflected as it will be: the scene's ambient, the room's own
+      // lights, with whatever it only shows later (her room's hall preview)
+      // switched on — compile skips anything hidden.
       const staging = new THREE.Scene();
       staging.background = scene.background;
       staging.environment = result.environment ? environmentMap : null;
       staging.add(new THREE.AmbientLight(), result.group);
-      return Promise.all([renderer.compileAsync(staging, camera), renderer.compileAsync(player, camera, staging)])
+      const preview = result.group.userData.dormHallPreview?.group;
+      if (preview) preview.visible = true;
+      const compiling = [renderer.compileAsync(staging, camera), renderer.compileAsync(player, camera, staging)];
+      // A mirror draws the room into its own texture, which needs its own
+      // build of every material (compileAsync sets its programs up at once).
+      const target = renderer.getRenderTarget();
+      result.group.traverse((object) => {
+        if (!object.isReflector) return;
+        renderer.setRenderTarget(object.getRenderTarget());
+        compiling.push(renderer.compileAsync(staging, camera));
+      });
+      renderer.setRenderTarget(target);
+      if (preview) preview.visible = false;
+      return Promise.all(compiling)
         .finally(() => staging.remove(result.group))
+        .then(() => {
+          if (key !== 'pomni' || roomPreload !== entry) return null;
+          // Seen from the hall: its own lights and mirrors stay off, so
+          // showing it never changes the scene's light count (which would
+          // rebuild every material's shader), and only the hall's light it.
+          result.group.traverse((object) => {
+            if ((object.isLight || object.isReflector) && object.visible) entry.hidden.push(object);
+          });
+          for (const object of entry.hidden) object.visible = false;
+          return renderer.compileAsync(result.group, camera, scene);
+        })
         .then(() => { entry.compiled = true; });
     })
     .catch((error) => {
-      console.warn('Dorm Hall could not preload; the doorway falls back to a normal trip.', error);
+      console.warn(`${key} could not preload; its doorway falls back to a normal trip.`, error);
       entry.failed = true;
     });
 }
 
-function prepareHall(entry) {
+function prepareRoom(entry) {
   if (!entry || (!entry.textures.length && !entry.trees.length)) return;
   const start = performance.now();
-  while (performance.now() - start < HALL_PREP_BUDGET_MS) {
+  while (performance.now() - start < ROOM_PREP_BUDGET_MS) {
     if (entry.textures.length) renderer.initTexture(entry.textures.pop());
     else if (entry.trees.length) {
       const mesh = entry.trees.pop();
@@ -1929,49 +1983,145 @@ function prepareHall(entry) {
   }
 }
 
-/** Throws away a preloaded hall nobody walked into. */
-function dropHallPreload() {
-  const entry = hallPreload;
-  hallPreload = null;
-  if (entry?.result) disposeObject3D(entry.result.group);
+/**
+ * Throws away a preloaded room nobody walked into. One still compiling
+ * waits for that to finish first: three.js keeps checking its shaders
+ * until they're ready, and would trip over them disposed.
+ */
+function dropRoomPreload() {
+  const entry = roomPreload;
+  roomPreload = null;
+  if (!entry?.result) return; // still loading: it disposes itself on arrival
+  entry.result.group.removeFromParent();
+  if (entry.compiled || entry.failed) disposeObject3D(entry.result.group);
+  else entry.settled.then(() => disposeObject3D(entry.result.group));
+}
+
+/** Puts the preloaded bedroom behind the hall's open door (or takes it away). */
+function showRoomBehindDoor(entry, show) {
+  entry.peeking = show;
+  const { group, hallLink } = entry.result;
+  if (!show) {
+    group.removeFromParent();
+    bedroomClip.copy(KEEP_ALL);
+    return;
+  }
+  bedroomClip.copy(currentRoomInfo.pomniDoorway.wallPlane);
+  hallLink.toHall.decompose(group.position, group.quaternion, group.scale);
+  currentRoom.add(group);
+  group.updateMatrixWorld(true);
 }
 
 const HALL_DOOR_CLEARANCE = PLAYER_RADIUS + 0.15; // metres out from the hall's door
+const BEDROOM_DOOR_CLEARANCE = PLAYER_RADIUS + 0.25; // metres into her room
+
+/** Pomni's pose now, for carrying across into the next room through `toNext`. */
+function carryPose(toNext, yawOffset) {
+  const feet = player.position.clone();
+  feet.y -= PLAYER_HEIGHT;
+  return {
+    feet: feet.applyMatrix4(toNext),
+    yaw: cameraYaw + yawOffset,
+    pomniYaw: pomni.rotation.y + yawOffset,
+    pitch: cameraPitch,
+    distance: currentCameraDistance,
+  };
+}
+
+/**
+ * Swaps a preloaded room in where Pomni stands, mid-step. The room she's
+ * leaving is parked behind the doorway (parkRoom) rather than thrown away.
+ */
+function enterPreloadedRoom(entry, pose) {
+  roomPreload = null; // it's becoming the room, not to be thrown away
+  const room = entry.result;
+  const leaving = { key: currentRoomKey, result: currentRoomInfo };
+  room.group.removeFromParent();
+  room.group.position.set(0, 0, 0);
+  room.group.quaternion.identity();
+  room.group.scale.set(1, 1, 1);
+  room.group.updateMatrixWorld(true);
+  bedroomClip.copy(KEEP_ALL);
+  for (const object of entry.hidden) object.visible = true;
+  leaveCurrentRoom({ keepMoving: true, keepRoom: true });
+  room.spawn = pose.feet;
+  room.spawnFacing = pose.yaw;
+  currentRoomInfo = room;
+  applyLoadedRoom(room, () => {}, entry.key);
+  pomni.rotation.y = pose.pomniYaw;
+  cameraPitch = pose.pitch;
+  currentCameraDistance = pose.distance;
+  parkRoom(leaving.key, leaving.result);
+}
+
+/**
+ * Keeps the room Pomni just walked out of as the next room behind the
+ * doorway, in the state she left it, ready to walk back into: no reload.
+ * The hall's copy of her door is shut behind her (walkIntoHall brings her
+ * out just clear of it). Her room, seen from the hall, has its own lights
+ * and mirrors off and is lit by the hall's, so it builds those shaders
+ * once in the background before it's shown there.
+ */
+function parkRoom(key, result) {
+  const entry = {
+    key, result, failed: false, compiled: key !== 'pomni', trees: [], textures: [], peeking: false, hidden: [],
+  };
+  roomPreload = entry;
+  if (key === 'dorm') {
+    const door = result.hallDoors?.pomni?.control;
+    door?.close({ immediate: true });
+    door?.update(0);
+    return;
+  }
+  result.lighting?.detach();
+  // The hall itself is right there now; its stand-in through her doorway
+  // would only sit on top of it.
+  result.group.userData.dormHallPreview?.setVisible(false);
+  clipToBedroomDoor(result.group);
+  result.group.traverse((object) => {
+    if ((object.isLight || object.isReflector) && object.visible) entry.hidden.push(object);
+  });
+  for (const object of entry.hidden) object.visible = false;
+  renderer.compileAsync(result.group, camera, scene)
+    .catch((error) => console.warn('Could not pre-build her room as seen from the hall.', error))
+    .then(() => { entry.compiled = true; });
+}
 
 function walkIntoHall(link) {
-  const entry = hallPreload;
+  const entry = roomPreload;
   if (entry?.failed) {
-    dropHallPreload();
+    dropRoomPreload();
     travelTo('dorm');
     return;
   }
   // Still getting ready: the widened bounds hold her at the threshold.
-  if (!entry?.result || !entry.compiled || entry.trees.length || entry.textures.length) return;
-  hallPreload = null; // it's becoming the room, not to be thrown away
+  if (!roomReady(entry)) return;
 
-  // Where she is and which way she and the camera face, in hall terms.
   // The hall's own copy of her door is shut, so she comes out just clear
   // of it — it reads as having closed behind her.
-  const feet = player.position.clone();
-  feet.y -= PLAYER_HEIGHT;
-  const past = link.depthPast(feet);
-  feet.applyMatrix4(link.toHall);
-  feet.addScaledVector(link.outward, Math.max(0, HALL_DOOR_CLEARANCE - past));
-  const yaw = cameraYaw + link.yawToHall;
-  const pomniYaw = pomni.rotation.y + link.yawToHall;
-  const pitch = cameraPitch;
-  const distance = currentCameraDistance;
-
-  entry.token = leaveCurrentRoom({ keepMoving: true });
-  const hall = entry.result;
-  hall.spawn = feet;
-  hall.spawnFacing = yaw;
-  currentRoomInfo = hall;
-  applyLoadedRoom(hall, () => {}, 'dorm');
-  pomni.rotation.y = pomniYaw;
-  cameraPitch = pitch;
-  currentCameraDistance = distance;
+  const past = link.depthPast(player.position);
+  const pose = carryPose(link.toHall, link.yawToHall);
+  pose.feet.addScaledVector(link.outward, Math.max(0, HALL_DOOR_CLEARANCE - past));
+  enterPreloadedRoom(entry, pose);
   armCaineArrival();
+}
+
+function walkIntoPomniRoom(entry, doorway) {
+  if (entry?.failed || (roomReady(entry) && !entry.result.hallLink)) {
+    dropRoomPreload();
+    travelTo('pomni');
+    return;
+  }
+  if (!entry?.peeking) return; // not ready yet: she's at the edge of the hall's floor
+
+  const link = entry.result.hallLink;
+  const past = doorway.depthPast(player.position);
+  const pose = carryPose(link.toHall.clone().invert(), -link.yawToHall);
+  // Just clear of her (open) door's leaf and the doorway, inside.
+  pose.feet.addScaledVector(link.outward, -Math.max(0, BEDROOM_DOOR_CLEARANCE - past));
+  enterPreloadedRoom(entry, pose);
+  // Looking back out, the hall's right there through the open door.
+  currentRoom.userData.dormHallPreview?.setVisible(true);
 }
 
 /**
@@ -2104,6 +2254,7 @@ function updateMovement(deltaSeconds) {
   checkTriggers(player);
   checkPortals();
   updateHallLink();
+  updatePomniDoorway();
 }
 
 /** Frame-rate-independent turn toward `target`, always taking the short way round. */
@@ -2525,7 +2676,6 @@ function animate() {
   const hudContext = gameplayHUDContext();
   objectiveHUD.update(hudContext, currentRoomKey === 'dorm' && portals.length > 0);
   tutorialHUD.update(hudContext, focusedBedroomDoor());
-  updatePictureCounter();
   if (activeCutscene) {
     const finished = activeCutscene.update(delta);
     if (finished) {

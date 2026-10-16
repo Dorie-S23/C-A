@@ -157,7 +157,7 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
         door(1);
         if (stageTime >= .7) {
           setStage('walking-out');
-          walk([blocking.threshold, blocking.start], () => {
+          walk([blocking.threshold, blocking.outside, blocking.away], () => {
             actor.visible = false; beginReturn();
           });
         }
