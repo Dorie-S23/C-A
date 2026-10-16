@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# npm run package output (deploy zip + the folder it's built from)
+release/
 .claude/
 Mine.pptx
 Digital Circus - Storyline Outline.pdf
