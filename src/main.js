@@ -976,7 +976,6 @@ const itemState = createLevel2Items({
   onCollect: (count) => showHint(`Picked up a photo. (${count}/3)`),
 });
 
-function selectRoom(roomKey, { onReady, from, preview } = {}) {
 function updatePictureCounter() {
   // Only free exploration shows the HUD, including between room visits.
   const visible = isLocked && readyToPlay && !paused && !dialogueUI.isActive
@@ -1044,8 +1043,6 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
   Promise.all([
     loadRoom((ratio, stage) => {
       if (myToken !== loadToken) return; // a newer selectRoom()/returnToHome() superseded this one
-      overlaySubtitle.textContent = `Fetching room model (${Math.round(ratio * 100)}%)`;
-    }, { from, playDialogue: playRoomDialogue, endLevel, stage, items: itemState, preview }),
       overlaySubtitle.textContent = `Fetching ${stage === 'opening' ? 'opening animation' : 'room model'} (${Math.round(ratio * 100)}%)`;
     }, { from, playDialogue: playRoomDialogue, preview, endLevel, stage, items: itemState, travel: travelTo,
       caineStory: {
@@ -1787,8 +1784,6 @@ function checkPortals() {
   // Her actual feet, not floorY: the dorm arch stands on a few steps.
   triggerProbe.set(player.position.x, player.position.y - PLAYER_HEIGHT + 0.5, player.position.z);
   // A door portal only leads anywhere once it's open (see makeDoorOpenable).
-  const portal = portals.find((p) => !p.disabled && p.box.containsPoint(triggerProbe));
-  // A door portal (see rooms/doors.js) only leads anywhere once it's open.
   const portal = portals.find((p) => p.box.containsPoint(triggerProbe) && !p.disabled && (p.enabled?.() ?? true));
   if (portal) travelTo(portal.to);
 }

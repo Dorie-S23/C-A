@@ -69,16 +69,14 @@ const PICTURE_ANCHOR = 'Short_Photo002';
 const PICTURE_OFFSET = new THREE.Vector3(-0.3, 0, 0); // just off the wall, into the hall
 const PICTURE_LEAN = 0.2; // radians, top resting back against the wall
 
-export function loadDormHallRoom(onProgress, { from, items } = {}) {
+export function loadDormHallRoom(onProgress, { from, items, travel, caineStory } = {}) {
   const connected = Object.entries(CONNECTED_ROOMS).map(([key, load]) =>
     load(null, { items, embedded: true }).then((guest) => [key, guest]));
   return Promise.all([
     loadRoomModel(DORM_HALL_URL, onProgress, { spawnAt: SPAWN }),
     Promise.all(connected),
-  ]).then(([room, guests]) => {
+  ]).then(async ([room, guests]) => {
     const guestRooms = Object.fromEntries(guests);
-export function loadDormHallRoom(onProgress, { from, items, travel, caineStory } = {}) {
-  return loadRoomModel(DORM_HALL_URL, onProgress, { spawnAt: SPAWN }).then(async (room) => {
     // The door handles and light fittings are real metals.
     room.environment = true;
     useDialogueIcons(room.group);
@@ -287,6 +285,7 @@ function onlyRenderWhenSeen(room, guest, control, roomBounds, doorway) {
     for (const child of culled) child.frustumCulled = true;
     show(false);
   };
+}
 /** Position from the exported Pomni door icon, not guessed world coordinates. */
 function cainePositionByPomniDoor({ group, collisionMeshes, spawn }) {
   const doorIcon = group.getObjectByName('Pomni');
