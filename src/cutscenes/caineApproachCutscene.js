@@ -3,7 +3,8 @@ import { loadCaine } from '../characters/caine.js';
 import { level1OpenDialogue } from '../data/dialogues.js';
 
 /**
- * Cutscene where Caine swoops in to meet Pomni after her 8-second exploration,
+ * Cutscene where Caine swoops in to meet Pomni after she's had a look round
+ * the Dorm Hall (see main.js's triggerCaineArrival),
  * settles into a buoyant hover in front of her, and plays the "Caine's Warning"
  * dialogue with full speech chattering, mood poses, and animated eye tracking.
  */
@@ -199,6 +200,8 @@ export function createCaineApproachCutscene({
           },
           onCancel: () => {
             cleanup();
+            // Hand the camera back: update() reports done from here on.
+            phase = 'done';
             onCancel?.();
           },
         });

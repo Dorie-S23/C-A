@@ -159,24 +159,10 @@ export function loadDormHallRoom(onProgress, { from, items, travel, caineStory }
       }
     }
 
-    const position = cainePositionByPomniDoor({ ...room, spawn: defaultSpawn });
-    const { caine, collider } = await loadCaine();
-    caine.position.copy(position);
-    // Greet Pomni approaching from the hallway entrance.
-    caine.rotation.y = Math.atan2(defaultSpawn.x - position.x, defaultSpawn.z - position.z);
-    room.group.add(caine);
-    caine.updateMatrixWorld(true);
-    // main.js invokes mesh.dispose() on room teardown, including stale loads.
-    caine.traverse((child) => {
-      if (child.isSkinnedMesh) child.dispose = () => child.skeleton.dispose();
-    });
-    room.collisionMeshes.push({ mesh: collider, box: new THREE.Box3().setFromObject(collider) });
-    const caineIdle = createCaineIdle(caine);
-    const hallUpdate = room.update; // doors, plus any connected rooms
-    room.update = (deltaSeconds, playerPosition) => {
-      caineIdle(deltaSeconds);
-      hallUpdate(deltaSeconds, playerPosition);
-    };
+    // In the story he isn't waiting here: he swoops in once Pomni's had a
+    // look around (main.js's triggerCaineArrival). Otherwise he stands by
+    // her door.
+    const caine = caineStory?.arrivesLater?.() ? null : await placeWaitingCaine(room, defaultSpawn);
     // Configure arrival only after Caine's placement, so entering from the
     // bedroom does not change his established position or orientation.
     const bedroom = createDoorConnection(room, {
@@ -184,7 +170,7 @@ export function loadDormHallRoom(onProgress, { from, items, travel, caineStory }
       to: 'pomni', prompt: "Enter Pomni's Room", travel,
     });
     room.interactables = [bedroom.interactable, ...(room.interactables ?? [])];
-    if (caineStory) {
+    if (caine && caineStory) {
       const objects = [];
       // Include the existing invisible collider: it is a stable ray target
       // and must also be ignored by this NPC's own line-of-sight check.
@@ -286,6 +272,29 @@ function onlyRenderWhenSeen(room, guest, control, roomBounds, doorway) {
     for (const child of culled) child.frustumCulled = true;
     show(false);
   };
+}
+
+/** Caine standing beside Pomni's door, idling, with his collider. Returns him. */
+async function placeWaitingCaine(room, defaultSpawn) {
+  const position = cainePositionByPomniDoor({ ...room, spawn: defaultSpawn });
+  const { caine, collider } = await loadCaine();
+  caine.position.copy(position);
+  // Greet Pomni approaching from the hallway entrance.
+  caine.rotation.y = Math.atan2(defaultSpawn.x - position.x, defaultSpawn.z - position.z);
+  room.group.add(caine);
+  caine.updateMatrixWorld(true);
+  // main.js invokes mesh.dispose() on room teardown, including stale loads.
+  caine.traverse((child) => {
+    if (child.isSkinnedMesh) child.dispose = () => child.skeleton.dispose();
+  });
+  room.collisionMeshes.push({ mesh: collider, box: new THREE.Box3().setFromObject(collider) });
+  const caineIdle = createCaineIdle(caine);
+  const hallUpdate = room.update; // doors, plus any connected rooms
+  room.update = (deltaSeconds, playerPosition) => {
+    caineIdle(deltaSeconds);
+    hallUpdate(deltaSeconds, playerPosition);
+  };
+  return caine;
 }
 
 /** Position from the exported Pomni door icon, not guessed world coordinates. */
