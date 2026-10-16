@@ -140,10 +140,20 @@ export function runLevel1(game, { hall: startingHall = null } = {}) {
       startAt: INSIDE,
       lookAt: points.BEDSIDE,
       onNode: (node) => actions[node.action]?.(),
-      onComplete: () => {
+      onComplete: async () => {
         logEscapeProgress(tally);
-        // The meter is hidden: the result is told as story, not numbers.
-        game.endLevel('Level 1 Complete', LEVEL1_OUTCOME[tally.correct] ?? LEVEL1_OUTCOME[0]);
+        // The story continues straight into Level 2 instead of stopping
+        // here on an end screen — the same "chain the next beat onto
+        // onComplete" pattern Pre-Level 1 already uses to lead into this
+        // mission (see caineConversation.js). The score-reactive line that
+        // used to be the end screen's subtitle still shows, just as a
+        // brief hint instead of a hard stop. Kaufmo's "hurries past,
+        // mumbling" scene is written for this exact spot: the Dorm Hall,
+        // right outside Ribbit's door, the moment Pomni steps back out.
+        game.showHint(LEVEL1_OUTCOME[tally.correct] ?? LEVEL1_OUTCOME[0], 6000);
+        await game.travel('dorm');
+        stage.place({ ...KNOCK_SPOT, lookAt: RIBBIT_DOOR });
+        game.playDialogue('level2Opening');
       },
     });
   }

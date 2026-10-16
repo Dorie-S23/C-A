@@ -999,6 +999,7 @@ const missionApi = {
   },
   playDialogue: playRoomDialogue,
   endLevel: (title, subtitle) => endLevel(title, subtitle),
+  showHint,
   get stage() {
     return stage;
   },
