@@ -40,6 +40,7 @@ export function createDialogueUI({ speakers }) {
   let onCancel = null;
   let distressFor = null;
   let onNode = null;
+  let lineFor = null;
   let leftSpeaker = null;
   let rightSpeaker = null;
   let leftMood = 'neutral';
@@ -50,6 +51,8 @@ export function createDialogueUI({ speakers }) {
   let optionButtons = [];
   let highlightedIndex = 0;
   let pointerTravel = 0;
+  let awaitingNode = false;
+  let nodeGeneration = 0;
 
   /**
    * Fills a portrait slot with whichever speaker last occupied that side.
@@ -142,7 +145,30 @@ export function createDialogueUI({ speakers }) {
       finish();
       return;
     }
-    onNode?.(node);
+    const generation = ++nodeGeneration;
+    const pending = onNode?.(node);
+    if (pending && typeof pending.then === 'function') {
+      // Scene actions own this beat until they arrive. Escape still cancels.
+      awaitingNode = true;
+      stopTyping();
+      root.style.visibility = 'hidden';
+      Promise.resolve(pending).then(() => {
+        if (!engine || generation !== nodeGeneration) return;
+        awaitingNode = false;
+        root.style.visibility = paused ? 'hidden' : '';
+        displayNode(node);
+      }).catch(error => {
+        if (!engine || generation !== nodeGeneration) return;
+        console.error('Dialogue scene action failed', error);
+        cancelDialogue();
+      });
+      return;
+    }
+    displayNode(node);
+  }
+
+  function displayNode(node) {
+    node = lineFor?.(node) ?? node;
 
     // A silent sync point for the scene behind the dialogue (e.g. cueing a
     // background animation) rather than anything the player reads — skip
@@ -200,14 +226,14 @@ export function createDialogueUI({ speakers }) {
   }
 
   function selectOption(i) {
-    if (paused) return;
+    if (!engine || paused || awaitingNode) return;
     const option = engine.choose(i);
     if (option && onChoice) onChoice(option, engine.current);
     renderNode();
   }
 
   function advance() {
-    if (!engine || paused) return;
+    if (!engine || paused || awaitingNode) return;
     const node = engine.current;
     if (!node || node.type === 'choice') return;
     if (typing) {
@@ -230,6 +256,7 @@ export function createDialogueUI({ speakers }) {
   }
 
   function finish() {
+    nodeGeneration++; awaitingNode = false;
     paused = false; root.style.visibility = '';
     root.classList.add('hidden');
     stopTyping();
@@ -240,6 +267,7 @@ export function createDialogueUI({ speakers }) {
     onCancel = null;
     distressFor = null;
     onNode = null;
+    lineFor = null;
     setDistress(0);
     if (callback) callback();
   }
@@ -253,6 +281,7 @@ export function createDialogueUI({ speakers }) {
    */
   function cancelDialogue() {
     if (!engine) return;
+    nodeGeneration++; awaitingNode = false;
     paused = false; root.style.visibility = '';
     root.classList.add('hidden');
     stopTyping();
@@ -263,6 +292,7 @@ export function createDialogueUI({ speakers }) {
     onCancel = null;
     distressFor = null;
     onNode = null;
+    lineFor = null;
     setDistress(0);
     if (callback) callback();
   }
@@ -275,6 +305,7 @@ export function createDialogueUI({ speakers }) {
       cancelDialogue();
       return;
     }
+    if (awaitingNode) { event.preventDefault(); return; }
 
     const choosing = engine?.current?.type === 'choice';
     if (choosing) {
@@ -313,7 +344,7 @@ export function createDialogueUI({ speakers }) {
   // option buttons. Handle them here instead: moving the mouse steps the
   // highlight, and a click anywhere picks it or continues.
   document.addEventListener('mousemove', (event) => {
-    if (paused || !document.pointerLockElement || engine?.current?.type !== 'choice') return;
+    if (paused || awaitingNode || !document.pointerLockElement || engine?.current?.type !== 'choice') return;
     pointerTravel += event.movementY;
     const steps = Math.trunc(pointerTravel / OPTION_STEP_PX);
     if (steps === 0) return;
@@ -348,9 +379,10 @@ export function createDialogueUI({ speakers }) {
      *   createDialogueEngine).
      */
     play(script, {
-      onComplete: complete, onChoice: choice, onCancel: cancel, distressFor: distress, onNode: node,
+      onComplete: complete, onChoice: choice, onCancel: cancel, distressFor: distress, onNode: node, lineFor: transform,
       startAt, stopAt,
     } = {}) {
+      nodeGeneration++; awaitingNode = false;
       paused = false; root.style.visibility = '';
       engine = createDialogueEngine(script, { startAt, stopAt });
       onComplete = complete ?? null;
@@ -358,6 +390,7 @@ export function createDialogueUI({ speakers }) {
       onCancel = cancel ?? null;
       distressFor = distress ?? null;
       onNode = node ?? null;
+      lineFor = transform ?? null;
       leftSpeaker = null;
       rightSpeaker = null;
       leftMood = 'neutral';
@@ -375,12 +408,12 @@ export function createDialogueUI({ speakers }) {
      * ends in onComplete — unlike cancel(), it counts as finished.
      */
     skipToEnd() {
-      if (!engine || paused) return;
+      if (!engine || paused || awaitingNode) return;
+      const running = engine;
       stopTyping();
-      for (let guard = 0; engine?.current && guard < 1000; guard++) {
+      for (let guard = 0; engine === running && engine.current && guard < 1000; guard++) {
+        if (awaitingNode) return;
         const node = engine.current;
-        onNode?.(node);
-        if (!engine) return; // a cue's handler ended the conversation itself
         if (node.type === 'choice') {
           const best = node.options.reduce((top, option, i) =>
             ((option.points ?? 0) > (node.options[top].points ?? 0) ? i : top), 0);
@@ -389,15 +422,18 @@ export function createDialogueUI({ speakers }) {
         } else {
           engine.advance();
         }
+        if (engine !== running) return;
+        renderNode(); // Runs each new cue once and honours awaited scene actions.
+        stopTyping();
       }
-      if (engine) finish();
     },
     setPaused(value) {
       paused = value;
-      root.style.visibility = value ? 'hidden' : '';
+      root.style.visibility = value || awaitingNode ? 'hidden' : '';
     },
     get isActive() {
       return engine !== null;
     },
+    get isWaiting() { return awaitingNode; },
   };
 }

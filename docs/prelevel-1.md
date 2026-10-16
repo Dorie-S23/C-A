@@ -15,6 +15,8 @@ Click the game to capture the mouse when needed. WASD moves, the mouse looks,
 Shift runs, and E interacts. Use E at the open bedroom doorway to enter Dorm Hall.
 Find Caine activates only after successful morning dialogue; talking to Caine
 with E advances the objective to Find Ribbit. X dismisses the contextual tips.
+Knock on Ribbit’s door to continue the story through her conversation and
+Kaufmo’s hallway encounter; see [story-flow.md](story-flow.md) for the sequence.
 Returning to the bedroom does not replay the opening. New Game resets the run.
 
 P pauses/resumes the cinematic, including seated dialogue. Escape pauses the cinematic or cancels dialogue. Cancelling the morning dialogue
@@ -65,8 +67,8 @@ coverage; transient entrance-phase waits can time out on overloaded headless run
 
 Known limits: the source door jamb/header contacts the slab during part of its
 swing; the fully-open door clears the room, and Ragatha waits for that clearance.
-The live morning retains the text-only Jax beat; a physical Jax pass-by is not
-integrated here. Native Chrome pointer capture and audible balance still require
+The live morning now plays the hallway Jax cutaway before Ragatha's worried
+response. Native Chrome pointer capture and audible balance still require
 interactive review. The production bundle currently triggers Vite's size warning.
 
 ## Seated invitation choreography

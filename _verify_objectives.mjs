@@ -46,6 +46,7 @@ hud.update(gameplay,true); assert.equal(root.hidden,false); assert.ok(classes.ha
 hud.hide(); assert.equal(root.hidden,true); assert.equal(objectives.active.id,'find-caine');
 hud.update(gameplay,false); assert.equal(root.hidden,false); assert.equal(classes.size,0);
 objectives.reset(); assert.equal(root.hidden,true); assert.equal(title.textContent,'');
-objectives.activate('find-ribbit'); assert.equal(title.textContent,'Find Ribbit'); assert.equal(detail.hidden,true);
+objectives.activate('find-ribbit'); assert.equal(title.textContent,'Find Ribbit'); assert.equal(detail.hidden,false);
+assert.ok(detail.textContent.includes('Knock'));
 hud.dispose(); assert.equal(root.hidden,true); objectives.reset(); assert.equal(title.textContent,'Find Ribbit');
 console.log('PASS HUD renders active state, preserves it while hidden, avoids minimap and releases subscription');
