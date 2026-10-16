@@ -34,6 +34,7 @@ export function createDialogueUI({ speakers }) {
   const continueEl = document.getElementById('dialogue-continue');
 
   let engine = null;
+  let paused = false;
   let onComplete = null;
   let onChoice = null;
   let onCancel = null;
@@ -101,6 +102,7 @@ export function createDialogueUI({ speakers }) {
     typing = true;
     let i = 0;
     typeTimer = setInterval(() => {
+      if (paused) return;
       i++;
       textEl.textContent = fullText.slice(0, i);
       if (i >= fullText.length) stopTyping();
@@ -198,13 +200,14 @@ export function createDialogueUI({ speakers }) {
   }
 
   function selectOption(i) {
+    if (paused) return;
     const option = engine.choose(i);
     if (option && onChoice) onChoice(option, engine.current);
     renderNode();
   }
 
   function advance() {
-    if (!engine) return;
+    if (!engine || paused) return;
     const node = engine.current;
     if (!node || node.type === 'choice') return;
     if (typing) {
@@ -227,6 +230,7 @@ export function createDialogueUI({ speakers }) {
   }
 
   function finish() {
+    paused = false; root.style.visibility = '';
     root.classList.add('hidden');
     stopTyping();
     const callback = onComplete;
@@ -249,6 +253,7 @@ export function createDialogueUI({ speakers }) {
    */
   function cancelDialogue() {
     if (!engine) return;
+    paused = false; root.style.visibility = '';
     root.classList.add('hidden');
     stopTyping();
     const callback = onCancel;
@@ -263,7 +268,7 @@ export function createDialogueUI({ speakers }) {
   }
 
   function handleKeydown(event) {
-    if (root.classList.contains('hidden')) return;
+    if (paused || root.classList.contains('hidden')) return;
 
     if (event.code === 'Escape') {
       event.preventDefault();
@@ -308,7 +313,7 @@ export function createDialogueUI({ speakers }) {
   // option buttons. Handle them here instead: moving the mouse steps the
   // highlight, and a click anywhere picks it or continues.
   document.addEventListener('mousemove', (event) => {
-    if (!document.pointerLockElement || engine?.current?.type !== 'choice') return;
+    if (paused || !document.pointerLockElement || engine?.current?.type !== 'choice') return;
     pointerTravel += event.movementY;
     const steps = Math.trunc(pointerTravel / OPTION_STEP_PX);
     if (steps === 0) return;
@@ -346,6 +351,7 @@ export function createDialogueUI({ speakers }) {
       onComplete: complete, onChoice: choice, onCancel: cancel, distressFor: distress, onNode: node,
       startAt, stopAt,
     } = {}) {
+      paused = false; root.style.visibility = '';
       engine = createDialogueEngine(script, { startAt, stopAt });
       onComplete = complete ?? null;
       onChoice = choice ?? null;
@@ -362,6 +368,34 @@ export function createDialogueUI({ speakers }) {
     // Lets a caller bail out of a conversation it started (e.g. the room
     // unloading from under it) without faking a normal completion.
     cancel: cancelDialogue,
+    /**
+     * Runs the rest of the script at once, as if played through: every node
+     * still reaches onNode (so the scene's cues and actions happen), each
+     * choice takes its best (highest-points) answer through onChoice, and it
+     * ends in onComplete — unlike cancel(), it counts as finished.
+     */
+    skipToEnd() {
+      if (!engine || paused) return;
+      stopTyping();
+      for (let guard = 0; engine?.current && guard < 1000; guard++) {
+        const node = engine.current;
+        onNode?.(node);
+        if (!engine) return; // a cue's handler ended the conversation itself
+        if (node.type === 'choice') {
+          const best = node.options.reduce((top, option, i) =>
+            ((option.points ?? 0) > (node.options[top].points ?? 0) ? i : top), 0);
+          const option = engine.choose(best);
+          if (option && onChoice) onChoice(option, engine.current);
+        } else {
+          engine.advance();
+        }
+      }
+      if (engine) finish();
+    },
+    setPaused(value) {
+      paused = value;
+      root.style.visibility = value ? 'hidden' : '';
+    },
     get isActive() {
       return engine !== null;
     },

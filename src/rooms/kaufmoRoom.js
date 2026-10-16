@@ -3,9 +3,22 @@ import { loadRoomModel } from './loadRoomModel.js';
 import { loadKaufmo } from '../characters/kaufmo.js';
 import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { createDoorPortal } from './portals.js';
+import { pickKaufmoScript } from '../state/level2Items.js';
+import { findWallSpot, placeOfficePicture } from '../props/officePicture.js';
 
 const KAUFMO_DISTANCE = 2.2; // how far in front of spawn he stands, pulled in by furniture
 const KAUFMO_WALL_GAP = 0.6;
+
+// Level 2's three office photos, all kept in here for now rather than
+// scattered round the circus (that's for when Level 2 is built out).
+const PICTURES = [
+  { id: 'ca1', url: './models/objects/ca1.png' },
+  { id: 'ca2', url: './models/objects/ca2.png' },
+  { id: 'ca3', url: './models/objects/ca3.png' },
+];
+const PICTURE_HEIGHT = 1.5;
+const PICTURE_SPACING = 2;  // metres between photos, so each is its own find
+const PICTURE_KEEP_CLEAR = 1.5; // metres from the door and from Kaufmo
 
 const DOOR_FRAME_NAME = 'Door_Frame';
 const DOOR_SLAB_NAME = 'Door_Slab';
@@ -47,6 +60,8 @@ export function loadKaufmoRoom(onProgress, { playDialogue, from, items, endLevel
     }
 
     placeInFrontOfSpawn(kaufmo, { group: room.group, spawn: defaultSpawn });
+    // Before Kaufmo's in the room, so the wall sweep doesn't hang one on him.
+    if (items) placePictures(room, items, defaultSpawn, [kaufmo.position, door?.frameBox.getCenter(new THREE.Vector3())]);
     room.group.add(kaufmo);
     kaufmo.updateMatrixWorld(true);
     room.collisionMeshes.push({ mesh: collider, box: new THREE.Box3().setFromObject(collider) });
@@ -78,32 +93,6 @@ export function loadKaufmoRoom(onProgress, { playDialogue, from, items, endLevel
 
     return room;
   });
-}
-
-/**
- * Which Level 2 script to play when Pomni interacts with Kaufmo, driven
- * entirely by the shared item state (main.js's itemState) rather than any
- * room-local flag:
- *   - holding one or more pictures: hands them all over at once and plays
- *     the reaction for however many have now been presented in total
- *     (1-3) — not necessarily the opening script first, since a player
- *     who collects all three before ever talking to him should still get
- *     the big "three" reveal, not a replay of the intro.
- *   - nothing held, nothing presented yet: the opening script.
- *   - nothing held, some presented: a short idle line.
- *   - nothing held, all three presented: a short "working on it" line the
- *     first time, then the actual payoff (what he found) every visit
- *     after that — see itemState.pickPostHandInScript() in main.js.
- */
-function pickKaufmoScript(items) {
-  if (!items) return 'level2Opening';
-  if (items.heldCount() > 0) {
-    const total = items.presentHeld();
-    return `level2HandIn${total}`;
-  }
-  if (items.totalPresented() >= 3) return items.pickPostHandInScript();
-  if (items.totalPresented() > 0) return 'level2Idle';
-  return 'level2Opening';
 }
 
 /**
@@ -152,5 +141,29 @@ function fixExportedMaterials(group) {
         material.metalness = 0;
       }
     }
+  });
+}
+
+/**
+ * Hangs each not-yet-collected photo on a different wall, swept round from
+ * the spawn at picture height: spots too close to another photo, the door
+ * or Kaufmo (`keepClear`) are passed over.
+ */
+function placePictures(room, items, spawn, keepClear) {
+  const origin = new THREE.Vector3(spawn.x, spawn.y + PICTURE_HEIGHT, spawn.z);
+  const avoid = keepClear.filter(Boolean).map((point) => new THREE.Vector3(point.x, origin.y, point.z));
+  const spots = [];
+  for (let i = 0; i < 16 && spots.length < PICTURES.length; i++) {
+    const angle = (i / 16) * Math.PI * 2;
+    const spot = findWallSpot(room.group, origin, new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle)), 10);
+    if (!spot) continue;
+    const flat = new THREE.Vector3(spot.position.x, origin.y, spot.position.z);
+    if (avoid.some((point) => point.distanceTo(flat) < PICTURE_KEEP_CLEAR)) continue;
+    if (spots.some((other) => other.position.distanceTo(spot.position) < PICTURE_SPACING)) continue;
+    spots.push(spot);
+  }
+  PICTURES.forEach(({ id, url }, i) => {
+    const spot = spots[i];
+    if (spot) placeOfficePicture(room, items, id, url, spot.position, spot.rotationY);
   });
 }
