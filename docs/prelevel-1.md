@@ -12,13 +12,13 @@ Pomni resumes the same animation and stands. Ragatha waves and starts the
 remaining morning dialogue. The camera frames both characters
 and the open doorway. After the conversation, Ragatha leaves; the door stays open.
 Click the game to capture the mouse when needed. WASD moves, the mouse looks,
-Shift runs, and E interacts. Use E at the open bedroom doorway to enter Dorm Hall.
-Find Caine activates only after successful morning dialogue. In the story,
-Caine arrives automatically after ten seconds of active Dorm Hall gameplay;
-there is no standing Caine target or minimap search. Completing his warning
-starts Find Ribbit and Level 1's E-to-knock interaction in the same hall.
-Cancelling his warning preserves Find Caine and schedules another arrival.
-X dismisses the contextual controls tips.
+Shift runs, and E opens closed doors. Walk through the open bedroom doorway into
+Dorm Hall. Find Caine activates only after successful morning dialogue. Caine
+arrives after ten seconds of active hallway gameplay; completing his warning
+advances the objective to Find Ribbit. Cancellation retains Find Caine and allows
+another arrival. X dismisses the contextual tips.
+Knock on Ribbit’s door to continue the story through her conversation and
+Kaufmo’s hallway encounter; see [story-flow.md](story-flow.md) for the sequence.
 Returning to the bedroom does not replay the opening. New Game resets the run.
 
 P pauses/resumes the cinematic, including seated dialogue. Escape pauses the cinematic or cancels dialogue. Cancelling the morning dialogue
@@ -69,7 +69,8 @@ coverage; transient entrance-phase waits can time out on overloaded headless run
 
 Known limits: the source door jamb/header contacts the slab during part of its
 swing; the fully-open door clears the room, and Ragatha waits for that clearance.
-The live morning includes Jax's physical hallway pass and a short action caption.
+The live morning keeps the conversation camera fixed for Jax's physical hallway
+pass and the short "Jax storms past." caption before Ragatha's worried response.
 Native Chrome pointer capture and audible balance still require
 interactive review. The production bundle currently triggers Vite's size warning.
 
@@ -189,8 +190,10 @@ also waits through this wordless interval before verifying E travel.
 
 ## Compatible story additions
 
-The teammate's Caine arrival/cutscene, room connections, portrait fixes,
-Level 1 handoff and Level 2 scoring remain in place. The superseded hallway
+The teammate's Caine arrival/cutscene, walk-through doorway, whole-intro Skip,
+room connections, portrait fixes, Level 1 handoff and Level 2 photo placement/scoring
+remain in place. There is no waiting Caine in either story or preview Dorm Hall.
+The superseded hallway
 search, Caine relocation and proximity camera remain only in the local
 `backup/prelevel-search-20261016` branch; they are not part of this integration.
 
@@ -207,6 +210,6 @@ his original running style remains the default for other cutscenes.
 Run `node _verify_pomni_speaking.mjs`, `node _verify_action_captions.mjs` and
 `node _verify_jax_bedroom_pass.mjs` for targeted checks. With Vite running,
 `node tools/verify_prelevel_compatibility_browser.mjs` checks the combined
-bedroom story, short captions, gestures, Jax, E travel, automatic Caine
+bedroom story, short captions, gestures, Jax, walk-through travel, automatic Caine
 arrival/cancellation/retry, Find Ribbit and Level 1's Knock interaction.
 Reports and screenshots go to `artifacts/prelevel-compatibility/`.

@@ -4,7 +4,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
-const output=path.resolve('artifacts/prelevel-compatibility');fs.mkdirSync(output,{recursive:true});
+const navigationOnly=process.argv.includes('--navigation-only');
+const output=path.resolve('artifacts/prelevel-compatibility'+(navigationOnly?'/navigation':''));fs.mkdirSync(output,{recursive:true});
 const browser=spawn(process.env.CGV_BROWSER_PATH||'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',[
  '--headless=new','--no-first-run','--no-default-browser-check','--disable-extensions','--disable-background-networking',
  '--remote-debugging-port=9247','--window-size=1000,760','--force-device-scale-factor=1',
@@ -39,6 +40,10 @@ try{
  ws.addEventListener('message',event=>{const r=JSON.parse(event.data);if(r.id){const p=pending.get(r.id);pending.delete(r.id);r.error?p?.reject(Error(r.error.message)):p?.resolve(r.result)}else if(r.method==='Runtime.exceptionThrown')errors.push(r.params.exceptionDetails.exception?.description??r.params.exceptionDetails.text);else if(r.method==='Network.responseReceived'&&r.params.response.status>=400){const response=r.params.response,detail=response.status+' '+response.url;(new URL(response.url).pathname==='/favicon.ico'&&response.status===404?report.optionalRequests:errors).push(detail)}});
  await command('Page.enable');await command('Runtime.enable');await command('Network.enable');await command('Page.navigate',{url:'http://127.0.0.1:5173/'});
  await until(async()=> Boolean(await state()));
+ if(navigationOnly){
+  await click('[data-story]');await until(async()=> ['playing','seated'].includes((await state()).phase));
+  await click('#cinematic-skip');
+ }else{
  // Observe in the render loop: external CDP polling can miss brief opening phases.
  await evaluate(`(async()=>{const m=await import('/src/main.js');window.__openingCaptions=[];
   function watch(){const s=m.getOpeningDiagnostics(),c=document.querySelector('#action-caption');
@@ -54,7 +59,7 @@ try{
  await screenshot('seated-opening');await until(async()=> (await state()).dialogueActive);
  for(let i=0;i<8&&!(await state()).entranceStarted;i++){await key('Space');await sleep(70)}
  const arrival=await until(async()=>{const s=await state();return s.entrancePhase&&s});
- if(arrival.entrancePhase==='entering')await click('#cinematic-skip');
+ // Skip intro now skips the whole story chain; let this entrance play naturally.
  const morning=await until(async()=>{const s=await state();return s.entrancePhase==='dialogue'&&s.dialogueActive&&s});
  check('Ragatha enters with the real hallway visible; no premature objective',()=>{assert.equal(morning.ragathaCount,1);assert.equal(morning.hallPreview.visible,true);assert.equal(morning.objective,null)});
  await verifySpeaking();
@@ -68,13 +73,19 @@ try{
  check('Jax uses the pocket-style strut and short caption with the conversation camera fixed',()=>{assert.equal(capture.caption,'Jax storms past.');assert.equal(capture.state.jaxPass.style,'sly');assert.deepEqual(paused.camera,morning.camera);assert.equal(paused.doorAngle,morning.doorAngle)});
  await key('KeyP');await screenshot('jax-storms-past');await until(async()=> (await state()).dialogueActive&&!(await state()).jaxPass);
  await finishDialogue();const leaving=await until(async()=>{const s=await state();return (s.entrancePhase==='exiting'||s.ready)&&s});
- if(leaving.entrancePhase==='exiting')await click('#cinematic-skip');
+ }
+ // Keep the teammate's new whole-intro Skip semantics; wait for normal departure.
  const ready=await until(async()=>{const s=await state();return s.ready&&s});await setLock(true);
  check('Successful morning retains Find Caine and the existing controls tutorial',()=>{assert.equal(ready.objective.id,'find-caine');assert.equal(ready.tutorial.unlocked,true)});
- const bedroomDoor=ready.interactables.find(i=>i.prompt==='Exit to Hallway');await aim(bedroomDoor.center);await key('KeyW');await sleep(450);await key('KeyW','keyup');
- await aim(bedroomDoor.center);await until(async()=> (await state()).focusedPrompt==='Exit to Hallway');await key('KeyE');
+ const bedroomDoor=ready.interactables.find(i=>i.prompt==='Exit to Hallway');
+ const door=ready.ragatha.route.panelMin.map((v,i)=>(v+ready.ragatha.route.panelMax[i])/2);
+ const walkStarted=Date.now();
+ while((await state()).room==='pomni'){
+  assert.ok(Date.now()-walkStarted<45000,'Walk through the open bedroom doorway');
+  await aim([door[0],1.3,door[2]+1]);await key('KeyW');await sleep(160);await key('KeyW','keyup');
+ }
  const hall=await until(async()=>{const s=await state();return s.room==='dorm'&&s.ready&&s});await setLock(true);
- check('Teammate E travel enters Dorm Hall with delayed Caine, not a standing talk target',()=>{assert.equal(hall.objective.id,'find-caine');assert.equal(hall.tutorial.complete,true);assert.equal(hall.caineCount,0);assert.ok(hall.caineArrivalIn>0);assert.equal(hall.interactables.some(i=>i.prompt==='Talk to Caine'),false)});
+ check('Teammate walk-through travel enters Dorm Hall with delayed Caine, not a standing talk target',()=>{assert.equal(hall.objective.id,'find-caine');assert.equal(hall.tutorial.complete,true);assert.equal(hall.caineCount,0);assert.ok(hall.caineArrivalIn>0);assert.equal(hall.interactables.some(i=>i.prompt==='Talk to Caine'),false)});
  await setLock(false);const counter=(await state()).caineArrivalIn;await sleep(350);assert.equal((await state()).caineArrivalIn,counter);await setLock(true);
  await until(async()=>{const s=await state();return s.cutsceneActive&&s.dialogueActive&&s.dialogueSpeaker==='caine'});
  const warning=await state();await screenshot('teammate-caine-warning');
@@ -82,13 +93,24 @@ try{
  await key('Escape');await until(async()=> !(await state()).cutsceneActive);
  const cancelled=await state();check('Cancelling preserves Find Caine and schedules the teammate retry',()=>{assert.equal(cancelled.objective.id,'find-caine');assert.equal(cancelled.caineCount,0);assert.ok(cancelled.caineArrivalIn>0)});
  await until(async()=>{const s=await state();return s.cutsceneActive&&s.dialogueActive&&s.dialogueSpeaker==='caine'});await finishDialogue();
- const mission=await until(async()=>{const s=await state();return !s.cutsceneActive&&s.objective?.id==='find-ribbit'&&s.interactables.some(i=>i.prompt==='Knock')&&s});await screenshot('teammate-level1-handoff');
+ const mission=await until(async()=>{const s=await state();return !s.cutsceneActive&&s.objective?.id==='find-ribbit'&&s.interactables.some(i=>i.prompt.startsWith('Knock'))&&s});await screenshot('teammate-level1-handoff');
  check('Completing the warning starts Find Ribbit and Level 1 Knock in the same hall',()=>{assert.equal(mission.room,'dorm');assert.equal(mission.caineCount,0);assert.equal(mission.caineWarningComplete,true)});
- const back=mission.interactables.find(i=>i.prompt==="Enter Pomni's Room");await aim(back.center);await until(async()=> (await state()).focusedPrompt==="Enter Pomni's Room");await key('KeyE');
+ const back=mission.interactables.filter(i=>['Open door','Close door'].includes(i.prompt)).sort((a,b)=>Math.hypot(a.center[0]-mission.player[0],a.center[2]-mission.player[2])-Math.hypot(b.center[0]-mission.player[0],b.center[2]-mission.player[2]))[0];
+ assert.ok(back,'Pomni hallway door is available near the bedroom arrival');
+ await aim(back.center);
+ if(back.prompt==='Open door'){await until(async()=> (await state()).focusedPrompt==='Open door');await key('KeyE');await sleep(800)}
+ const dx=back.center[0]-mission.player[0],dz=back.center[2]-mission.player[2],distance=Math.hypot(dx,dz);
+ const inside=[back.center[0]+dx/distance,1.3,back.center[2]+dz/distance],returnStarted=Date.now();
+ while((await state()).room==='dorm'){
+  assert.ok(Date.now()-returnStarted<45000,'Walk through Pomni hallway doorway');
+  await aim(inside);await key('KeyW');await sleep(160);await key('KeyW','keyup');
+ }
  const reentry=await until(async()=>{const s=await state();return s.room==='pomni'&&s.ready&&s});
- check('Bedroom re-entry preserves Find Ribbit without repeating the opening or Ragatha',()=>{assert.equal(reentry.phase,'done');assert.equal(reentry.entranceStarted,false);assert.equal(reentry.ragathaCount,0);assert.equal(reentry.objective.id,'find-ribbit')});
+ check('Bedroom re-entry preserves Find Ribbit without repeating the opening or Ragatha',()=>{assert.equal(reentry.phase,'done');assert.notEqual(reentry.entrancePhase,'entering');assert.notEqual(reentry.ragatha?.visible,true);assert.equal(reentry.objective.id,'find-ribbit')});
  await click('#btn-home');await click('[data-story]');const fresh=await until(async()=>{const s=await state();return ['playing','seated'].includes(s.phase)&&s});
  check('New Game resets story state without duplicate captions or stale gestures',()=>{assert.equal(fresh.objective,null);assert.equal(fresh.pomniSpeaking.weight,0);assert.equal(fresh.caineCount,0)});
+ await click('#cinematic-skip');const skipped=await until(async()=>{const s=await state();return s.ready&&s.objective?.id==='find-caine'&&s});
+ check('Teammate Skip intro completes the entire opening chain and restores gameplay',()=>{assert.equal(skipped.dialogueActive,false);assert.equal(skipped.entrancePhase,'done');assert.equal(skipped.jaxPass,null);assert.equal(skipped.tutorial.unlocked,true)});
  assert.equal(await evaluate("document.querySelectorAll('#action-caption').length"),1);assert.deepEqual(errors,[]);report.pass=true;
 }catch(error){report.failure=error.stack;try{report.lastState=await state();await screenshot('failure')}catch{}console.error(error)}
 finally{fs.writeFileSync(path.join(output,'browser-validation.json'),JSON.stringify(report,null,2));ws?.close();browser.kill();if(!report.pass)process.exitCode=1}

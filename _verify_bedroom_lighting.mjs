@@ -133,12 +133,11 @@ check('Re-entry starts in GAMEPLAY with working exit and existing mirrors', () =
   assert.equal(bedroom.group.getObjectByName('Caine'), undefined);
 });
 const dorm = await loadDormHallRoom(undefined, { from: 'pomni' });
-check('Dorm lighting, bedroom door, Caine placement and lobby portal are preserved', () => {
+check('Dorm lighting, bedroom door, automatic-Caine flow and lobby portal are preserved', () => {
   assert.equal(dorm.lighting, undefined);
-  assert.equal(dorm.interactables[0].prompt(), "Enter Pomni's Room");
-  const caine = dorm.group.getObjectByName('Caine');
-  near(caine.position.x, -2.131381070613861);
-  near(caine.position.z, -38.45658950805664);
+  assert.equal(dorm.hallDoors.pomni.control.interactable.prompt(), 'Open door');
+  assert.equal(typeof dorm.pomniDoorway.crossed, 'function');
+  assert.equal(dorm.group.getObjectByName('Caine'), undefined);
   assert.equal(typeof dorm.update, 'function');
   assert.equal(dorm.portals[0].to, 'tadc');
 });

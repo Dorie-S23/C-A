@@ -15,6 +15,7 @@ export function createCaineApproachCutscene({
   pomni,
   renderer,
   dialogueUI,
+  dispose = () => {},
   // (origin, direction, maxDistance) => free distance before a wall; without
   // it every direction counts as open.
   clearance = (origin, direction, maxDistance) => maxDistance,
@@ -74,6 +75,7 @@ export function createCaineApproachCutscene({
     return bestSpot;
   }
   let caineApi = null;
+  let disposed = false;
   let phase = 'loading'; // 'loading' | 'flying' | 'talking' | 'exiting' | 'done'
   let elapsed = 0;
   const APPROACH_DURATION = 2.2;
@@ -88,6 +90,7 @@ export function createCaineApproachCutscene({
 
   // Load Caine into the active scene
   loadCaine().then((api) => {
+    if (disposed) { dispose(api.caine); return; }
     caineApi = api;
     const { caine } = caineApi;
 
@@ -136,6 +139,7 @@ export function createCaineApproachCutscene({
     phase = 'flying';
     elapsed = 0;
   }).catch((err) => {
+    if (disposed) return;
     console.error('Failed to load Caine for cutscene', err);
     phase = 'done';
     onComplete?.();
@@ -242,9 +246,11 @@ export function createCaineApproachCutscene({
   }
 
   function cleanup() {
-    if (caineApi && caineApi.caine.parent) {
-      caineApi.caine.parent.remove(caineApi.caine);
-    }
+    if (disposed) return;
+    disposed = true;
+    phase = 'done';
+    caineApi?.caine.removeFromParent();
+    if (caineApi) dispose(caineApi.caine);
   }
 
   return {

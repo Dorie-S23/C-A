@@ -8,6 +8,7 @@ import {
 } from './src/state/escapeThreshold.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
+  level2HallwayDialogue, ribbitFollowupDialogue,
   level2HandIn1Dialogue, level2HandIn2Dialogue, level2HandIn3Dialogue,
   level2IdleDialogue, level2CompleteDialogue, level2PayoffDialogue,
 } from './src/data/dialogues.js';
@@ -34,6 +35,7 @@ function runLinear(script) {
 // speakers that exist in the registry.
 for (const [name, script] of [
   ['preLevel1', preLevel1Dialogue], ['level1Open', level1OpenDialogue],
+  ['level2Hallway', level2HallwayDialogue], ['ribbitFollowup', ribbitFollowupDialogue],
   ['level2HandIn1', level2HandIn1Dialogue], ['level2HandIn2', level2HandIn2Dialogue],
   ['level2HandIn3', level2HandIn3Dialogue], ['level2Idle', level2IdleDialogue],
   ['level2Complete', level2CompleteDialogue], ['level2Payoff', level2PayoffDialogue],
