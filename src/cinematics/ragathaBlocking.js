@@ -10,6 +10,10 @@ export function createRagathaBlocking(room, inward, side) {
   const at = (depth, offset = 0) => center.clone().addScaledVector(inward, depth)
     .addScaledVector(side, offset).setY(floor);
   const start = at(-1.2), threshold = at(.95, -.25), talk = at(2.55, -.6);
+  // Leaving: out through the doorway, then right along the hall (as seen
+  // from inside, where the exit shot's camera sits on that same side), so
+  // the wall beside the door hides her before she's taken away.
+  const outside = at(-.9, -.1), away = at(-1.4, -3);
   const aperture = createDoorwayAperture(room, box);
   const backdrop = new THREE.Group(); backdrop.name = 'RagathaDoorVestibule';
   const width = box.getSize(new THREE.Vector3())[Math.abs(inward.z) > .5 ? 'x' : 'z'];
@@ -43,9 +47,10 @@ export function createRagathaBlocking(room, inward, side) {
     room.collisionMeshes.push({mesh,box,paddedBox:box.clone().expandByScalar(.35)});
   });
   backdrop.visible = false;
-  return { start, threshold, talk, backdrop, aperture,
+  return { start, threshold, talk, outside, away, backdrop, aperture,
     setVisible(value) { backdrop.visible = value; preview?.setVisible(value); }, measurements: {
     panelMin: box.min.toArray(), panelMax: box.max.toArray(), width, height,
     start: start.toArray(), threshold: threshold.toArray(), talk: talk.toArray(),
+    outside: outside.toArray(), away: away.toArray(),
   } };
 }

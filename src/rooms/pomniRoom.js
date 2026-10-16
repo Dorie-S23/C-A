@@ -6,6 +6,8 @@ import { createBedroomLighting } from './bedroomLighting.js';
 import { loadPomniOpening } from '../cinematics/pomniOpening.js';
 import { loadRagatha } from '../characters/ragatha.js';
 import { loadDormHallPreview } from './dormHallPreview.js';
+import { createBedroomDoorHinge } from '../cinematics/bedroomDoor.js';
+import { createDoorwayAperture } from '../cinematics/doorwayAperture.js';
 
 // Exported from "Pomnis Room V3.blend" by tools/blender/export_pomnis_room_v3.py,
 // which converts the materials the glTF exporter can't read — re-run it
@@ -68,6 +70,10 @@ export function loadPomniRoom(onProgress, { from, travel, openingMode,
         room.group.add(preview.group);
         room.group.userData.dormHallPreview = preview;
         room.hallLink = createHallLink(room, preview);
+        room.openDoorway = () => openDoorway(room);
+        // With the door open she just walks out (main.js swaps the hall
+        // in), so E has nothing left to offer there.
+        exit.interactable.enabled = () => !room.hallLink.isOpen();
       } catch (error) {
         room.group.userData.dormHallPreviewError = String(error.message ?? error);
         console.warn('Hall preview unavailable; retaining the temporary vestibule.', error);
@@ -118,4 +124,21 @@ function createHallLink(room, preview) {
     crossed: (point) => (point[axis] - centre[axis]) * outward > 0
       && Math.abs(point[wide] - centre[wide]) < size[wide] / 2,
   };
+}
+
+/**
+ * Opens the bedroom doorway for good, outside Ragatha's entrance (which
+ * opens its own): the door swung wide on its real hinge and the wall
+ * behind the decorative door cut through. For Pomni walking in from the
+ * Dorm Hall (main.js's walkIntoPomniRoom): the hall preview beyond is
+ * shown separately, once she's actually in here.
+ */
+function openDoorway(room) {
+  if (room.group.userData.doorwayOpen) return;
+  room.group.userData.doorwayOpen = true;
+  room.group.updateMatrixWorld(true);
+  const panelBox = new THREE.Box3().setFromObject(room.group.getObjectByName('Plane_1'));
+  createDoorwayAperture(room, panelBox).setEnabled(true);
+  createBedroomDoorHinge({ group: room.group, collisionMeshes: room.collisionMeshes, insidePoint: room.spawn })
+    .setOpenFraction(1);
 }

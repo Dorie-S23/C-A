@@ -46,8 +46,8 @@ const DIALOGUE_ICON_DOORS = ['Kaufmo', 'Ribbit'];
 // connectRooms.js) instead of reached through a portal and a loading
 // screen: open the door and the room is right there. Each needs a loader
 // with an `embedded` mode that leaves its own door out and reports its
-// doorway. Pomni's door is parked for now: its bedroom connection and
-// doorway preview (createDoorConnection, dormHallPreview.js) own it.
+// doorway. Pomni's door isn't one of these: it opens onto her real room,
+// which main.js swaps in as she walks through (see walkIntoPomniRoom).
 const CONNECTED_ROOMS = {};
 // How close (metres from the doorway) a connected room keeps its mirrors
 // reflecting and its shadows updating while Pomni's out in the hall with
@@ -70,12 +70,18 @@ export function loadDormHallRoom(onProgress, { from, items, travel } = {}) {
     const entrance = createCurtainPortal(room.group, ENTRANCE_CURTAIN, -1, 'tadc');
     const portals = entrance ? [entrance] : [];
 
+    // Where Pomni arrives from her room by the old E trip — measured off
+    // the door panel now, while it's still shut.
+    const bedroom = createDoorConnection(room, {
+      doorName: 'Plane_36', detailNames: ['Door_Frame068', 'Plane_37', 'Pomni'],
+      to: 'pomni', prompt: "Enter Pomni's Room", travel,
+    });
+
     room.hallDoors = {};
     room.mapMarkers = [];
     const joins = [];
     let arrival = null;
     for (const { frame, slab, icon, to } of ROOM_DOORS) {
-      if (to === 'pomni') continue; // Existing bedroom E connection owns this door.
       const frameObject = room.group.getObjectByName(frame);
       if (!frameObject) continue;
       const centre = new THREE.Box3().setFromObject(frameObject).getCenter(new THREE.Vector3());
@@ -84,12 +90,16 @@ export function loadDormHallRoom(onProgress, { from, items, travel } = {}) {
       if (!door) continue;
       const guest = guestRooms[to];
       const doorway = guest?.doorway;
-      // A connected room needs no portal: the doorway just leads into it.
-      const portal = doorway ? null : createDoorPortal(room.group, door.frameBox, inFront, to);
+      // Pomni's own door opens onto her room itself (main.js walks her in
+      // through it), and a connected room's doorway just leads into it:
+      // neither needs a portal.
+      const walkIn = to === 'pomni';
+      const portal = doorway || walkIn ? null : createDoorPortal(room.group, door.frameBox, inFront, to);
       if (portal) portals.push(portal);
       // Shut until Pomni walks up and opens it; the character's icon swings with it.
       const control = makeDoorOpenable(room, door, { portal, attach: [room.group.getObjectByName(icon)] });
       room.hallDoors[to] = { portal, control, shut: () => control.lock(), open: () => control.open() };
+      if (walkIn) room.pomniDoorway = walkInDoorway(door.frameBox, inFront, control);
 
       if (doorway) {
         const intoHall = new THREE.Vector3(Math.sign(HALL_CENTRE_X - centre.x), 0, 0);
@@ -131,11 +141,6 @@ export function loadDormHallRoom(onProgress, { from, items, travel } = {}) {
 
     // No Caine waiting here: in the story he swoops in once Pomni's had a
     // look around (main.js's triggerCaineArrival).
-    const bedroom = createDoorConnection(room, {
-      doorName: 'Plane_36', detailNames: ['Door_Frame068', 'Plane_37', 'Pomni'],
-      to: 'pomni', prompt: "Enter Pomni's Room", travel,
-    });
-    room.interactables = [bedroom.interactable, ...(room.interactables ?? [])];
     // No portal or hallDoors entry for this one, so mark it for the minimap.
     const bedroomFrame = room.group.getObjectByName('Door_Frame068');
     if (bedroomFrame) room.mapMarkers.push({ to: 'pomni', box: new THREE.Box3().setFromObject(bedroomFrame) });
@@ -228,5 +233,34 @@ function onlyRenderWhenSeen(room, guest, control, roomBounds, doorway) {
     renderer.setRenderTarget(target);
     for (const child of culled) child.frustumCulled = true;
     show(false);
+  };
+}
+
+/**
+ * Pomni's door, opened with E like the others, as main.js needs it to walk
+ * her through into her room: whether it's open, and when she's stepped
+ * past it. `hallSide` is any point out in the hall.
+ */
+function walkInDoorway(frameBox, hallSide, control) {
+  const size = frameBox.getSize(new THREE.Vector3());
+  const centre = frameBox.getCenter(new THREE.Vector3());
+  const axis = size.x < size.z ? 'x' : 'z';
+  const wide = axis === 'x' ? 'z' : 'x';
+  const inward = hallSide[axis] < centre[axis] ? 1 : -1; // into her room
+  const into = new THREE.Vector3();
+  into[axis] = inward;
+  return {
+    control,
+    into,
+    /**
+     * The hall's wall line here; her room, shown behind it, is clipped to
+     * its far side. Set a little into the room: her walls sit right on the
+     * line and would otherwise flicker through the hall's as thin dashes.
+     */
+    wallPlane: new THREE.Plane(into.clone(), -centre[axis] * inward - 0.15),
+    /** How far a point is past the doorway, into her room. */
+    depthPast: (point) => (point[axis] - centre[axis]) * inward,
+    crossed: (point) => (point[axis] - centre[axis]) * inward > 0
+      && Math.abs(point[wide] - centre[wide]) < size[wide] / 2,
   };
 }

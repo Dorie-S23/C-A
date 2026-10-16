@@ -82,6 +82,11 @@ export function createBedroomLighting({ group, spawn }) {
       originalEnvironmentIntensity = scene.environmentIntensity;
       applyEnvironment();
     },
+    /** Hands the scene's environment back, for a room kept aside (main.js parkRoom). */
+    detach() {
+      if (scene) scene.environmentIntensity = originalEnvironmentIntensity;
+      scene = null;
+    },
     setState(nextState, { duration: seconds = presets[nextState]?.duration } = {}) {
       if (disposed) return;
       if (!presets[nextState]) throw new RangeError(`Unknown bedroom lighting state: ${nextState}`);
