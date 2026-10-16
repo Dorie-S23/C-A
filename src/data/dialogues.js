@@ -225,6 +225,11 @@ export const level1OpenDialogue = [
 // Two branch points (CHOICE 1 / CHOICE 2 in the source script) are flavor
 // only — every option reconverges on the same next line, same as the
 // source script never gates progress on which one is picked.
+//
+// Played in two parts (see level2.js): the hallway bit up to and including
+// "Objective: Go after Kaufmo", then — once Pomni's actually travelled into
+// Kaufmo's room, not just stood still while the text claims she caught up
+// to him — the rest resumes from 'l2_inside', where he's pacing.
 export const level2OpeningDialogue = [
   {
     type: 'beat',
@@ -252,6 +257,7 @@ export const level2OpeningDialogue = [
     text: 'Objective: Go after Kaufmo',
   },
   {
+    id: 'l2_inside',
     type: 'beat',
     text: 'Pomni catches up. Kaufmo is pacing in a tight circle.',
   },
