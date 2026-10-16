@@ -555,7 +555,7 @@
                 outline: 2px solid #ffd27a;
                 outline-offset: 2px;
             }
-            #cinematic-skip { position: fixed; right: 24px; bottom: 24px; z-index: 12;
+            #cinematic-skip { position: fixed; right: 24px; top: 24px; z-index: 12;
                 padding: 12px 20px; color: white; background: #242036dd;
                 border: 1px solid #c6bfda; border-radius: 6px; cursor: pointer; }
             #cinematic-skip[hidden] { display: none; }
@@ -701,6 +701,10 @@
                     <input id="dev-skip-intro" type="checkbox" />
                     <span>Dev mode: open on room selection</span>
                 </label>
+                <label class="title-toggle">
+                    <input id="dev-skip-cutscenes" type="checkbox" />
+                    <span>Dev mode: skip cutscenes and dialogue</span>
+                </label>
                 <button id="btn-new-game">New Game</button>
                 <button id="btn-replay-intro">&#9654; Replay intro</button>
                 <button id="btn-room-previews">Room previews</button>
@@ -721,7 +725,7 @@
             <p id="objective-title" data-objective-title></p>
             <p id="objective-detail" data-objective-detail hidden></p>
         </aside>
-        <button id="cinematic-skip" hidden>Skip opening</button>
+        <button id="cinematic-skip" hidden>Skip intro</button>
         <aside id="tutorial-hud" role="status" aria-live="polite" aria-atomic="true" hidden>
             <div class="objective-label">First steps</div>
             <div data-tutorial-lines></div>

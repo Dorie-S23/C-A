@@ -87,6 +87,7 @@ export function loadPomniRoom(onProgress, { from, travel, openingMode, items,
         const preview = await loadDormHallPreview();
         room.group.add(preview.group);
         room.group.userData.dormHallPreview = preview;
+        room.hallLink = createHallLink(room, preview);
       } catch (error) {
         room.group.userData.dormHallPreviewError = String(error.message ?? error);
         console.warn('Hall preview unavailable; retaining the temporary vestibule.', error);
@@ -94,4 +95,47 @@ export function loadPomniRoom(onProgress, { from, travel, openingMode, items,
     }
     return room;
   });
+}
+
+// How far past the doorway Pomni can step before main.js swaps her into
+// the real Dorm Hall (the preview beyond it has no floor of its own).
+const HALL_LINK_REACH = 0.6;
+
+/**
+ * The preview is the real Dorm Hall, placed exactly where it sits outside
+ * this door — so with the door open Pomni can just walk out: main.js
+ * swaps the real hall in as she crosses the doorway, carrying her position
+ * and facing over through `toHall` (this room's coordinates to the hall's).
+ * The room's bounds are widened through the doorway so she can reach it.
+ */
+function createHallLink(room, preview) {
+  room.group.updateMatrixWorld(true);
+  const frameBox = new THREE.Box3().setFromObject(room.group.getObjectByName('Door_Frame024'));
+  const size = frameBox.getSize(new THREE.Vector3());
+  const centre = frameBox.getCenter(new THREE.Vector3());
+  const axis = size.x < size.z ? 'x' : 'z';
+  const wide = axis === 'x' ? 'z' : 'x';
+  const outward = room.spawn[axis] < centre[axis] ? 1 : -1;
+
+  const reach = centre.clone();
+  reach[axis] += outward * (HALL_LINK_REACH + 0.4); // plus main.js's WALL_MARGIN
+  room.bounds = room.bounds.clone().expandByPoint(reach);
+
+  const toHall = preview.group.matrix.clone().invert();
+  const out = new THREE.Vector3();
+  out[axis] = outward;
+  return {
+    toHall,
+    // Out through the doorway, in the hall's coordinates.
+    outward: out.transformDirection(toHall),
+    /** How far a point is past the doorway, outward. */
+    depthPast: (point) => (point[axis] - centre[axis]) * outward,
+    // Rotating the world by the preview's turn adds it to every facing.
+    yawToHall: -preview.group.rotation.y,
+    doorway: centre,
+    isOpen: () => preview.group.visible,
+    /** Whether a point has stepped out through the doorway. */
+    crossed: (point) => (point[axis] - centre[axis]) * outward > 0
+      && Math.abs(point[wide] - centre[wide]) < size[wide] / 2,
+  };
 }
