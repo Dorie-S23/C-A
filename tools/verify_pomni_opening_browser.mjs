@@ -84,7 +84,7 @@ try{
  report.gpu=await evaluate(`(()=>{const gl=document.querySelector('canvas').getContext('webgl2');const e=gl.getExtension('WEBGL_debug_renderer_info');return e?gl.getParameter(e.UNMASKED_RENDERER_WEBGL):'Unavailable'})()`);
  // The same New Game handler is used by PLAY and the fallback preview menu.
  await evaluate(`new MutationObserver(function(_,observer){if(!document.querySelector('#cinematic-skip').hidden){observer.disconnect();window.dispatchEvent(new KeyboardEvent('keydown',{code:'Escape',key:'Escape'}))}}).observe(document.querySelector('#cinematic-skip'),{attributes:true,attributeFilter:['hidden']})`);
- await click('#btn-new-game');
+ await click('[data-story]');
  await until(async()=>{const s=await state();return s.phase==='playing'&&s.paused&&s});
  const sleeping=await state();report.snapshots.push({stage:'sleeping',...sleeping});await screenshot('sleeping-paused');
  check('Sleeping uses R5 only, with static cover hidden and controls blocked',()=>{assert.equal(sleeping.caineWarningComplete,false);assert.equal(sleeping.objective,null);assert.equal(sleeping.objectiveVisible,false);assert.equal(sleeping.phase,'playing');assert.equal(sleeping.lighting,'SLEEPING');assert.equal(sleeping.gameplayActorVisible,false);assert.equal(sleeping.staticCoverVisible,false);assert.equal(sleeping.cinematicSkinMeshes,24);assert.equal(sleeping.ready,false);assert.equal(sleeping.paused,true)});
@@ -199,7 +199,7 @@ try{
  const revisit=await state();check('Dorm reload preserves Find Ribbit and contains one disabled Caine target',()=>{assert.equal(revisit.objective.id,'find-ribbit');assert.equal(revisit.caineWarningComplete,true);assert.equal(revisit.interactables.filter(i=>i.prompt==='Talk to Caine').length,1);assert.equal(revisit.interactables.find(i=>i.prompt==='Talk to Caine').enabled,false)});
  await aimCaine();await key('KeyE');assert.equal((await state()).dialogueActive,false);await aimDoor();await until(async()=> (await state()).focusedPrompt==="Enter Pomni's Room");await key('KeyE');await until(async()=>{const s=await state();return s.room==='pomni'&&s.ready});
  await setLock(false);await until(async()=>(await state()).paused);
- await click('#btn-home');await click('#btn-new-game');await until(async()=> ['playing','blending','done'].includes((await state()).phase));await click('#cinematic-skip');
+ await click('#btn-home');await click('[data-story]');await until(async()=> ['playing','blending','done'].includes((await state()).phase));await click('#cinematic-skip');
  await invitation();
  const skipped=await until(async()=>{const s=await state();return s.phase==='done'&&s.ready&&s});report.snapshots.push({stage:'skip',...skipped});
  check('New game resets tutorial; cancelled morning never unlocks it',()=>{assert.equal(skipped.tutorial.unlocked,false);assert.equal(skipped.tutorial.complete,false);assert.equal(skipped.tutorial.dismissed,false);assert.equal(skipped.tutorialVisible,false)});
@@ -223,7 +223,7 @@ try{
  await setLock(false);
  const memories=[skipped.memory];
  for(let i=0;i<3;i++){
-  await click('#btn-home');await click('#btn-new-game');await until(async()=> ['playing','blending','done'].includes((await state()).phase));await click('#cinematic-skip');
+  await click('#btn-home');await click('[data-story]');await until(async()=> ['playing','blending','done'].includes((await state()).phase));await click('#cinematic-skip');
   await invitation();
   const s=await until(async()=>{const v=await state();return v.phase==='done'&&v.ready&&v});memories.push(s.memory);
  }
@@ -236,14 +236,14 @@ try{
   assert.ok(Math.max(...warmed.map(m=>m.textures))-Math.min(...warmed.map(m=>m.textures))<=2);
  });
  // Cancel during the staged entrance; no stale dialogue or audio may survive.
- await click('#btn-home');await click('#btn-new-game');await until(async()=> ['playing','blending','done'].includes((await state()).phase));await click('#cinematic-skip');
+ await click('#btn-home');await click('[data-story]');await until(async()=> ['playing','blending','done'].includes((await state()).phase));await click('#cinematic-skip');
  await until(()=>evaluate("document.querySelector('#dialogue-text').textContent==='Come in.'"));await key('Space');
  await until(async()=> (await state()).entrancePhase==='entering');await key('Escape');await click('#btn-home');await sleep(4500);
  const abandoned=await state();check('Home disposes entrance without delayed dialogue, audio or room resurrection',()=>{assert.equal(abandoned.entrancePhase,null);assert.equal(abandoned.dialogueActive,false);assert.equal(abandoned.entranceSounds.length,0);assert.equal(abandoned.ready,false);assert.equal(abandoned.objective,null);assert.equal(abandoned.objectiveVisible,false)});
  // Cancel during a loaded cinematic, then cancel a load still in flight.
- await click('#btn-home');await click('#btn-new-game');await until(async()=> (await state()).phase==='playing');await key('Escape');await click('#btn-home');await sleep(400);
+ await click('#btn-home');await click('[data-story]');await until(async()=> (await state()).phase==='playing');await key('Escape');await click('#btn-home');await sleep(400);
  const afterCancel=await state();check('Home cancels the cinematic without a delayed completion',()=>{assert.equal(afterCancel.ready,false);assert.equal(afterCancel.phase,null)});
- await click('#btn-new-game');await click('#btn-title');await sleep(1500);const late=await state();check('Loading cancellation cannot resurrect a room',()=>{assert.equal(late.ready,false);assert.equal(late.phase,null)});
+ await click('[data-story]');await click('#btn-title');await sleep(1500);const late=await state();check('Loading cancellation cannot resurrect a room',()=>{assert.equal(late.ready,false);assert.equal(late.phase,null)});
  // Developer dialogue previews must not advance the real game's objectives.
  await click('[data-dialogue="preLevel1"]');await until(async()=> (await state()).dialogueActive);
  for(let i=0;i<24&&(await state()).dialogueActive;i++){await key('Space');await sleep(65)}

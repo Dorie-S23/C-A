@@ -194,6 +194,8 @@ const caineConversation = createCaineConversation({
 });
 let currentRoom = null;
 let currentRoomKey = null;
+let currentRoomInfo = null; // the current room loader's full result (hallDoors etc.)
+let hallPreload = null; // the Dorm Hall loading behind Pomni's open door (see updateHallLink)
 let readyToPlay = false;
 let hintTimeout = null;
 // True only while the pause menu is actually up (pointer unlocked mid-room).
@@ -208,7 +210,27 @@ let activeOpening = null;
 let activeEntrance = null;
 const activeCinematic = () => activeEntrance?.active ? activeEntrance : activeOpening;
 let openingCompleted = false; // per new game; room previews do not start a game
+let skipIntroRequested = false; // the Skip intro button, until play starts
 let openingFrameProfile = { frames: 0, seconds: 0, maxSeconds: 0 };
+
+const skippingCutscenes = () => skipIntroRequested || devSkipCutscenesInput.checked;
+
+/**
+ * While skipping, finishes whatever's playing as if it had played out:
+ * a conversation runs to its end (cues, best answers, onComplete), and a
+ * skippable cinematic skips its current part. Run every frame, so each
+ * next part of a chain (opening -> dialogue -> entrance -> ...) goes too.
+ */
+function fastForwardCutscenes() {
+  if (!skippingCutscenes() || paused) return;
+  if (skipIntroRequested) cinematicSkip.hidden = true;
+  if (dialogueUI.isActive) {
+    dialogueUI.skipToEnd();
+    return;
+  }
+  const cinematic = activeCinematic();
+  if (cinematic?.active && cinematic.skippable) cinematic.skip();
+}
 
 function showHint(text, durationMs = 3000) {
   hint.textContent = text;
@@ -229,8 +251,10 @@ roomPicker.querySelectorAll('button[data-room]').forEach((button) => {
 dialoguePicker.querySelectorAll('button').forEach((button) => {
   button.addEventListener('click', (event) => {
     event.stopPropagation();
-    // Levels are played for real (src/levels/); the rest are text previews.
-    if (button.dataset.mission) startMission(button.dataset.mission);
+    // The story runs for real from the start; levels are played for real
+    // (src/levels/); the rest are text previews.
+    if ('story' in button.dataset) startNewGame();
+    else if (button.dataset.mission) startMission(button.dataset.mission);
     else playDialoguePreview(button.dataset.dialogue);
   });
 });
@@ -264,10 +288,6 @@ const titleScreen = createTitleScreen({
   isBlocked: () => !titleOptions.hidden || !titleQuit.hidden || !creditsPanel.classList.contains('hidden'),
   onAction: (action) => {
     if (action === 'play') {
-      // PLAY starts a fresh run: hidden score and Level 2's photos.
-      resetEscapeThreshold();
-      itemState.reset();
-      titleScreen.hide();
       startNewGame();
     } else if (action === 'options') {
       titleOptions.hidden = false;
@@ -329,22 +349,47 @@ if (devParam !== null) {
 }
 devSkipIntroInput.addEventListener('change', () => setDevSkipIntro(devSkipIntroInput.checked));
 
+// Dev mode: fast-forward every cutscene and story conversation (see
+// fastForwardCutscenes), straight to the gameplay after it. Remembered in
+// this browser like the setting above.
+const DEV_SKIP_CUTSCENES_KEY = 'tadc.devSkipCutscenes';
+const devSkipCutscenesInput = document.getElementById('dev-skip-cutscenes');
+try {
+  devSkipCutscenesInput.checked = localStorage.getItem(DEV_SKIP_CUTSCENES_KEY) === '1';
+} catch {
+  devSkipCutscenesInput.checked = false;
+}
+devSkipCutscenesInput.addEventListener('change', () => {
+  try {
+    if (devSkipCutscenesInput.checked) localStorage.setItem(DEV_SKIP_CUTSCENES_KEY, '1');
+    else localStorage.removeItem(DEV_SKIP_CUTSCENES_KEY);
+  } catch {
+    // Storage blocked — it just won't persist past this page.
+  }
+});
+
 document.getElementById('btn-replay-intro').addEventListener('click', () => {
   titleOptions.hidden = true;
   titleScreen.show({ playIntro: true });
 });
 document.getElementById('btn-new-game').addEventListener('click', (event) => {
-  event.stopPropagation(); startNewGame();
+  event.stopPropagation();
+  titleOptions.hidden = true;
+  startNewGame();
 });
 document.getElementById('btn-room-previews').addEventListener('click', () => {
   titleOptions.hidden = true;
   titleScreen.hide();
   showRoomPicker();
 });
+// Skips the whole intro, not just the shot on screen: the opening, its
+// dialogue, Ragatha's entrance and the morning conversation all
+// fast-forward (completed, not cancelled) until play starts.
 cinematicSkip.addEventListener('click', () => {
   if (paused) return;
-  if (activeOpening?.phase === 'seated' && dialogueUI.isActive) dialogueUI.cancel();
-  else activeCinematic()?.skip();
+  skipIntroRequested = true;
+  cinematicSkip.hidden = true;
+  fastForwardCutscenes();
 });
 document.getElementById('btn-options-credits').addEventListener('click', () => {
   creditsPanel.classList.remove('hidden');
@@ -400,6 +445,8 @@ function showRoomPicker() {
  * hatch below, which can fire before any room's ever been picked).
  */
 function returnToHome({ toRoomPicker = false } = {}) {
+  skipIntroRequested = false;
+  dropHallPreload();
   resetObjectiveSession();
   loadToken++; // invalidate dialogue callbacks before cancelling the old UI
   activeEntrance?.dispose(); activeEntrance = null;
@@ -409,10 +456,7 @@ function returnToHome({ toRoomPicker = false } = {}) {
   if (dialogueUI.isActive) dialogueUI.cancel();
   minimap.hide();
   paused = false;
-  if (preLevel1Timer) {
-    clearInterval(preLevel1Timer);
-    preLevel1Timer = null;
-  }
+  caineArrivalIn = null;
   resetMoveState();
   resetStage();
 
@@ -420,6 +464,7 @@ function returnToHome({ toRoomPicker = false } = {}) {
     scene.remove(currentRoom);
     disposeObject3D(currentRoom);
     currentRoom = null;
+    currentRoomInfo = null;
     bounds = null;
   }
 
@@ -453,7 +498,17 @@ function returnToHome({ toRoomPicker = false } = {}) {
   }
 }
 
+/**
+ * A fresh story run: the waking opening, Ragatha's morning conversation,
+ * the Dorm Hall until Caine swoops in, then straight into Level 1 at
+ * Ribbit's door. PLAY, Options > New Game and the room picker's story
+ * button all start here.
+ */
 function startNewGame() {
+  skipIntroRequested = false;
+  // Hidden score and Level 2's photos start over too.
+  resetEscapeThreshold();
+  itemState.reset();
   resetObjectiveSession(true);
   openingAudio.unlock();
   if (isLocked) document.exitPointerLock();
@@ -592,6 +647,7 @@ function finishOpeningInvitation(token, cancelled) {
 
 function resumeOpeningGameplay(token) {
   if (token !== loadToken || currentRoomKey !== 'pomni') return;
+  skipIntroRequested = false;
   readyToPlay = true;
   paused = false;
   resetMoveState();
@@ -662,6 +718,11 @@ let activeCutscene = null;
  * whatever dialogue/preview was paused for it.
  */
 function runCutscene(cutscene, onDone) {
+  if (skippingCutscenes()) {
+    cutscene.cleanup?.();
+    onDone();
+    return;
+  }
   activeCutscene = { update: cutscene.update, onDone };
 }
 
@@ -780,15 +841,6 @@ function playDialoguePreview(key) {
               runCutscene(playJaxHallwayCutscene(renderer, cutsceneAssets), () => {
                 disposeCutsceneAssets();
                 dialogueUI.play(script, {
-                  startAt: 'afterJaxPassBy',
-                  onComplete: () => {
-                    if (key === 'preLevel1') {
-                      startPreLevel1Exploration();
-                    } else {
-                      finish();
-                    }
-                  },
-                  onCancel: cancel,
                   startAt: 'afterJaxPassBy', onNode: roomDialogueCue, onComplete: finish, onCancel: cancel,
                 });
               });
@@ -797,13 +849,6 @@ function playDialoguePreview(key) {
           });
         } else {
           dialogueUI.play(script, {
-            onComplete: () => {
-              if (key === 'preLevel1') {
-                startPreLevel1Exploration();
-              } else {
-                finish();
-              }
-            },
             onNode: withKaufmoHallwayCutscene(key, roomDialogueCue),
             onComplete: finish,
             onCancel: cancel,
@@ -814,44 +859,51 @@ function playDialoguePreview(key) {
   });
 }
 
-let preLevel1Timer = null;
-let preLevel1SecondsLeft = 0;
+// Pre-Level 1 in the story: once Pomni's in the Dorm Hall looking for
+// Caine, she gets this long to look around before he swoops in (counted
+// only while she's actually free to roam: not paused, talking or staged).
+const CAINE_ARRIVAL_SECONDS = 10;
+let caineArrivalIn = null; // seconds left, or null when he isn't due
 
-function startPreLevel1Exploration() {
-  readyToPlay = true;
-  overlay.classList.add('hidden');
-  resetMoveState();
-  stage.hold(false);
-
-  // Attempt pointer lock so Pomni can immediately walk out and explore
-  try {
-    renderer.domElement.requestPointerLock?.();
-  } catch (_) {}
-
-  showHint('Explore the circus... Caine arrives in 8s!', 4000);
-
-  if (preLevel1Timer) clearInterval(preLevel1Timer);
-  preLevel1SecondsLeft = 8;
-
-  preLevel1Timer = setInterval(() => {
-    preLevel1SecondsLeft--;
-    if (preLevel1SecondsLeft === 5) {
-      showHint('5s remaining to explore...', 1800);
-    } else if (preLevel1SecondsLeft === 2) {
-      showHint('2s... Look around!', 1500);
-    } else if (preLevel1SecondsLeft <= 0) {
-      clearInterval(preLevel1Timer);
-      preLevel1Timer = null;
-      triggerCaineCutscene();
-    }
-  }, 1000);
+function caineArrivesInHall() {
+  return preLevel1Session && objectives.active?.id === 'find-caine';
 }
 
-function triggerCaineCutscene() {
+function armCaineArrival() {
+  caineArrivalIn = caineArrivesInHall() ? CAINE_ARRIVAL_SECONDS : null;
+}
+
+function updateCaineArrival(deltaSeconds) {
+  if (caineArrivalIn === null) return;
+  if (currentRoomKey !== 'dorm' || !caineArrivesInHall()) { caineArrivalIn = null; return; }
+  if (!isLocked || !readyToPlay || paused || dialogueUI.isActive || activeCutscene || stageBusy()) return;
+  caineArrivalIn -= deltaSeconds;
+  if (caineArrivalIn <= 0) {
+    caineArrivalIn = null;
+    triggerCaineArrival();
+  }
+}
+
+/**
+ * Caine swoops in to Pomni, gives his warning (level1Open) and flies off;
+ * that completes "Find Caine" and Level 1 picks up right here in the hall,
+ * at Ribbit's door. Backing out of his warning with Escape just sends him
+ * off for now: he comes back after another CAINE_ARRIVAL_SECONDS.
+ */
+function triggerCaineArrival() {
+  const token = loadToken;
+  const stillHere = () => token === loadToken && currentRoomKey === 'dorm' && caineArrivesInHall();
+  const warned = () => {
+    objectives.complete('find-caine');
+    objectives.activate('find-ribbit');
+    runLevel1(missionApi, { hall: currentRoomInfo });
+  };
+  if (skippingCutscenes()) {
+    warned();
+    return;
+  }
   stage.hold(true);
   resetMoveState();
-  showHint('Here comes Caine!', 2500);
-
   const cutscene = createCaineApproachCutscene({
     scene,
     camera,
@@ -859,20 +911,17 @@ function triggerCaineCutscene() {
     pomni,
     renderer,
     dialogueUI,
+    clearance: cameraCollisionDistance,
     onComplete: () => {
       stage.hold(false);
-      showHint('Objective: Check on Ribbit down the hall (Level 1)', 6000);
+      if (stillHere()) warned();
     },
     onCancel: () => {
       stage.hold(false);
-      returnToHome();
+      if (stillHere()) armCaineArrival();
     },
   });
-
-  runCutscene(cutscene, () => {
-    stage.hold(false);
-    showHint('Objective: Check on Ribbit down the hall (Level 1)', 6000);
-  });
+  runCutscene(cutscene, () => {});
 }
 
 /**
@@ -976,7 +1025,6 @@ const itemState = createLevel2Items({
   onCollect: (count) => showHint(`Picked up a photo. (${count}/3)`),
 });
 
-function selectRoom(roomKey, { onReady, from, preview } = {}) {
 function updatePictureCounter() {
   // Only free exploration shows the HUD, including between room visits.
   const visible = isLocked && readyToPlay && !paused && !dialogueUI.isActive
@@ -991,11 +1039,16 @@ function updatePictureCounter() {
   if (pictureCounter.textContent !== text) pictureCounter.textContent = text;
 }
 
-function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
-  const loadRoom = ROOM_LOADERS[roomKey];
-  if (!loadRoom) return;
+/**
+ * Tears down the current room and every bit of its live state, ready for
+ * the next one. Returns the new load token: any older in-flight load is
+ * stale from this moment. `keepMoving` leaves held movement keys alone
+ * (walking straight through into the next room).
+ */
+function leaveCurrentRoom({ keepMoving = false } = {}) {
   objectiveHUD.hide();
   caineConversation.cancelPending();
+  dropHallPreload();
 
   activeEntrance?.dispose(); activeEntrance = null;
   // Invalidate callbacks before cancelling a dialogue owned by the old room.
@@ -1004,7 +1057,7 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
   activeOpening = null;
   cinematicSkip.hidden = true;
   paused = false;
-  resetMoveState();
+  if (!keepMoving) resetMoveState();
   resetStage();
 
   if (currentRoom) {
@@ -1030,6 +1083,27 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
   foundJax = false;
   reachedExit = false;
   caught = false;
+  return myToken;
+}
+
+/** What every room loader is handed. `isCurrent`: whether that load is still the live room. */
+function roomLoadOptions(roomKey, { from, preview, openingMode, isCurrent }) {
+  return {
+    from, playDialogue: playRoomDialogue, preview, endLevel, stage, items: itemState, travel: travelTo,
+    caineStory: {
+      // He swoops in instead of waiting by Pomni's door (see triggerCaineArrival).
+      arrivesLater: caineArrivesInHall,
+      enabled: () => caineConversation.enabled,
+      talk: lookAt => caineConversation.talk(lookAt, () => isCurrent() && currentRoomKey === 'dorm'),
+    },
+    openingMode: openingMode ?? (roomKey === 'pomni' && from && openingCompleted ? 'settled' : undefined),
+  };
+}
+
+function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
+  const loadRoom = ROOM_LOADERS[roomKey];
+  if (!loadRoom) return;
+  const myToken = leaveCurrentRoom();
   roomPicker.hidden = true;
   dialoguePicker.hidden = true;
   btnTitle.hidden = false; // allow cancellation even while the GLBs are loading
@@ -1044,16 +1118,8 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
   Promise.all([
     loadRoom((ratio, stage) => {
       if (myToken !== loadToken) return; // a newer selectRoom()/returnToHome() superseded this one
-      overlaySubtitle.textContent = `Fetching room model (${Math.round(ratio * 100)}%)`;
-    }, { from, playDialogue: playRoomDialogue, endLevel, stage, items: itemState, preview }),
       overlaySubtitle.textContent = `Fetching ${stage === 'opening' ? 'opening animation' : 'room model'} (${Math.round(ratio * 100)}%)`;
-    }, { from, playDialogue: playRoomDialogue, preview, endLevel, stage, items: itemState, travel: travelTo,
-      caineStory: {
-        enabled: () => caineConversation.enabled,
-        talk: lookAt => caineConversation.talk(lookAt,
-          () => myToken === loadToken && currentRoomKey === 'dorm'),
-      },
-      openingMode: openingMode ?? (roomKey === 'pomni' && from && openingCompleted ? 'settled' : undefined) }),
+    }, roomLoadOptions(roomKey, { from, preview, openingMode, isCurrent: () => myToken === loadToken })),
     pomniReady,
   ])
     .then(([result]) => {
@@ -1064,7 +1130,9 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
         disposeObject3D(result.group);
         return;
       }
+      currentRoomInfo = result;
       applyLoadedRoom(result, onReady && (() => onReady(result)), roomKey, openingMode === 'play');
+      if (roomKey === 'dorm') armCaineArrival();
     })
     .catch((err) => {
       if (myToken !== loadToken) return; // superseded — the active room already shows its own state
@@ -1786,11 +1854,124 @@ function checkPortals() {
   if (portals.length === 0) return;
   // Her actual feet, not floorY: the dorm arch stands on a few steps.
   triggerProbe.set(player.position.x, player.position.y - PLAYER_HEIGHT + 0.5, player.position.z);
-  // A door portal only leads anywhere once it's open (see makeDoorOpenable).
-  const portal = portals.find((p) => !p.disabled && p.box.containsPoint(triggerProbe));
   // A door portal (see rooms/doors.js) only leads anywhere once it's open.
   const portal = portals.find((p) => p.box.containsPoint(triggerProbe) && !p.disabled && (p.enabled?.() ?? true));
   if (portal) travelTo(portal.to);
+}
+
+// --- Walking out of Pomni's room into the real Dorm Hall ---------------
+// Her room shows the real hall through its open door (rooms/dormHallPreview.js),
+// placed exactly where it is. So once she's free to walk, the hall itself
+// loads quietly in the background, and stepping through the doorway swaps
+// it in where she stands — no loading screen, no E (see pomniRoom.js's
+// createHallLink for the doorway and coordinate change).
+
+const HALL_PREP_BUDGET_MS = 4; // per frame, uploading the hall's textures and building its collision trees
+
+function updateHallLink() {
+  const link = currentRoomInfo?.hallLink;
+  if (currentRoomKey !== 'pomni' || !link?.isOpen()) return;
+  if (!hallPreload) startHallPreload();
+  prepareHall(hallPreload);
+  if (link.crossed(player.position)) walkIntoHall(link);
+}
+
+/**
+ * Loads the hall, then gets it ready to step into — the work a loading
+ * screen would otherwise hide: its shaders compile in the background
+ * (against its own lights, plus Pomni's materials against them), and its
+ * textures are uploaded and collision trees built a few each frame in
+ * prepareHall().
+ */
+function startHallPreload() {
+  const entry = { result: null, failed: false, token: null, compiled: false, trees: [], textures: [] };
+  hallPreload = entry;
+  ROOM_LOADERS.dorm(null, roomLoadOptions('dorm', { from: 'pomni', isCurrent: () => entry.token === loadToken }))
+    .then((result) => {
+      if (hallPreload !== entry) {
+        disposeObject3D(result.group); // she left another way first
+        return;
+      }
+      entry.result = result;
+      entry.trees = result.collisionMeshes.map(({ mesh }) => mesh)
+        .filter((mesh) => !mesh.isSkinnedMesh && !mesh.geometry.boundsTree);
+      const textures = new Set();
+      result.group.traverse((object) => {
+        for (const material of [object.material].flat()) {
+          for (const value of Object.values(material ?? {})) if (value?.isTexture) textures.add(value);
+        }
+      });
+      entry.textures = [...textures];
+      // Lit and reflected as it will be: the scene's ambient, the hall's own lights.
+      const staging = new THREE.Scene();
+      staging.background = scene.background;
+      staging.environment = result.environment ? environmentMap : null;
+      staging.add(new THREE.AmbientLight(), result.group);
+      return Promise.all([renderer.compileAsync(staging, camera), renderer.compileAsync(player, camera, staging)])
+        .finally(() => staging.remove(result.group))
+        .then(() => { entry.compiled = true; });
+    })
+    .catch((error) => {
+      console.warn('Dorm Hall could not preload; the doorway falls back to a normal trip.', error);
+      entry.failed = true;
+    });
+}
+
+function prepareHall(entry) {
+  if (!entry || (!entry.textures.length && !entry.trees.length)) return;
+  const start = performance.now();
+  while (performance.now() - start < HALL_PREP_BUDGET_MS) {
+    if (entry.textures.length) renderer.initTexture(entry.textures.pop());
+    else if (entry.trees.length) {
+      const mesh = entry.trees.pop();
+      if (!mesh.geometry.boundsTree) computeBoundsTree.call(mesh.geometry);
+    } else break;
+  }
+}
+
+/** Throws away a preloaded hall nobody walked into. */
+function dropHallPreload() {
+  const entry = hallPreload;
+  hallPreload = null;
+  if (entry?.result) disposeObject3D(entry.result.group);
+}
+
+const HALL_DOOR_CLEARANCE = PLAYER_RADIUS + 0.15; // metres out from the hall's door
+
+function walkIntoHall(link) {
+  const entry = hallPreload;
+  if (entry?.failed) {
+    dropHallPreload();
+    travelTo('dorm');
+    return;
+  }
+  // Still getting ready: the widened bounds hold her at the threshold.
+  if (!entry?.result || !entry.compiled || entry.trees.length || entry.textures.length) return;
+  hallPreload = null; // it's becoming the room, not to be thrown away
+
+  // Where she is and which way she and the camera face, in hall terms.
+  // The hall's own copy of her door is shut, so she comes out just clear
+  // of it — it reads as having closed behind her.
+  const feet = player.position.clone();
+  feet.y -= PLAYER_HEIGHT;
+  const past = link.depthPast(feet);
+  feet.applyMatrix4(link.toHall);
+  feet.addScaledVector(link.outward, Math.max(0, HALL_DOOR_CLEARANCE - past));
+  const yaw = cameraYaw + link.yawToHall;
+  const pomniYaw = pomni.rotation.y + link.yawToHall;
+  const pitch = cameraPitch;
+  const distance = currentCameraDistance;
+
+  entry.token = leaveCurrentRoom({ keepMoving: true });
+  const hall = entry.result;
+  hall.spawn = feet;
+  hall.spawnFacing = yaw;
+  currentRoomInfo = hall;
+  applyLoadedRoom(hall, () => {}, 'dorm');
+  pomni.rotation.y = pomniYaw;
+  cameraPitch = pitch;
+  currentCameraDistance = distance;
+  armCaineArrival();
 }
 
 /**
@@ -1922,6 +2103,7 @@ function updateMovement(deltaSeconds) {
 
   checkTriggers(player);
   checkPortals();
+  updateHallLink();
 }
 
 /** Frame-rate-independent turn toward `target`, always taking the short way round. */
@@ -2298,22 +2480,11 @@ function animate() {
   // (the pointer is unlocked there too, but it's not a pause) — only the
   // actual pause menu freezes them, so a patrolling hazard can't close in
   // on a player who is sitting in the pause menu.
+  updateCaineArrival(delta);
+  fastForwardCutscenes();
   if (!paused) {
     updateMovers(delta);
-    roomUpdate?.(delta, player.position);
-    refreshDynamicColliders();
-  }
-  if (pomni) {
-    // No walking while the next room loads, mid-conversation, or while a
-    // room is staging her (see `stage`): a scripted walk drives her instead.
-    if (stageWalk && !paused) updateStageWalk(delta);
-    else if (isLocked && readyToPlay && !dialogueUI.isActive && !stageBusy()) updateMovement(delta);
-    else updatePomniWalk(delta, 0); // settle the waddle while paused/talking
-    // Don't run the orbit camera while a cutscene owns it — the cutscene
-    // sets camera.position / lookAt itself, and running updateCamera on top
-    // would fight it every frame, causing a visible shake/jitter.
-    if (!activeCutscene) updateCamera(delta);
-    if (!activeOpening?.active) roomUpdate?.(delta);
+    if (!activeOpening?.active) roomUpdate?.(delta, player.position);
     refreshDynamicColliders();
   }
   if (pomni) {
@@ -2343,7 +2514,10 @@ function animate() {
       if (stageWalk && !paused) updateStageWalk(delta);
       else if (isLocked && readyToPlay && !dialogueUI.isActive && !stageBusy() && !activeCutscene) updateMovement(delta);
       else updatePomniWalk(delta, 0); // settle the waddle while paused/talking
-      updateCamera(delta);
+      // Don't run the orbit camera while a cutscene owns it — the cutscene
+      // sets camera.position / lookAt itself, and running updateCamera on top
+      // would fight it every frame, causing a visible shake/jitter.
+      if (!activeCutscene) updateCamera(delta);
     }
   }
   minimap.update(player.position.x, player.position.z, cameraYaw);

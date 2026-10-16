@@ -25,9 +25,14 @@ import {
  * score. Escape mid-conversation restarts the mission at her door, with
  * Level 1's points put back as they were.
  *
+ * Run straight on from the story (Caine has just warned Pomni in the
+ * hall), `hall` is the Dorm Hall she's already standing in: the knock is
+ * set up there, without reloading it or moving her to the door.
+ *
  * @param {object} game the mission API from main.js (see `missionApi`)
+ * @param {{ hall?: object }} [options] the already-loaded Dorm Hall, if any
  */
-export function runLevel1(game) {
+export function runLevel1(game, { hall: startingHall = null } = {}) {
   const { stage } = game;
   const pointsBefore = getLevelPoints('level1');
   let tally = null;
@@ -61,13 +66,16 @@ export function runLevel1(game) {
   /** Part 1: Pomni in the Dorm Hall at Ribbit's shut door. */
   async function atTheDoor() {
     ribbitScene = null;
-    const hall = await game.enterRoom('dorm');
+    // Only the first time: a retry after Escape starts over at her door.
+    const alreadyHere = startingHall;
+    startingHall = null;
+    const hall = alreadyHere ?? await game.enterRoom('dorm');
     // Her door normally stands open as the way into her room; for the
     // knock it's shut (and its doorway won't carry Pomni through) until
     // the script lets her in.
     hall.hallDoors?.ribbit?.shut();
     const door = ribbitsDormDoor(hall.group);
-    stage.place({ ...KNOCK_SPOT, lookAt: RIBBIT_DOOR });
+    if (!alreadyHere) stage.place({ ...KNOCK_SPOT, lookAt: RIBBIT_DOOR });
     game.addInteractable({
       objects: door.meshes,
       anchor: door.knockSpot,

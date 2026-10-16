@@ -1,5 +1,7 @@
 # C-A - The Amazing Digital Circus (CGV project)
 
+**Deployed game:** https://wmc.ms.wits.ac.za/students/sgroup3913/index.html
+
 ## Requirements
 
 - Node.js 22.12 or newer (Node 24 LTS recommended; see `.nvmrc`).
