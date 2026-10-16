@@ -1,3 +1,6 @@
+Deployed game:
+    https://wmc.ms.wits.ac.za/students/sgroup3913/index.html
+
 Requirements:
     Node.js 22.12 or newer (Node 24 LTS recommended; see .nvmrc).
     Tested with Node 24.18.1 and npm 12.2.0.
