@@ -21,6 +21,7 @@ import { createTitleScreen } from './ui/titleScreen.js';
 import { resetEscapeThreshold } from './state/escapeThreshold.js';
 import { createLevel2Items } from './state/level2Items.js';
 import { runLevel1 } from './levels/level1.js';
+import { runLevel2 } from './levels/level2.js';
 import { createMinimap } from './ui/minimap.js';
 import { createObjectiveController } from './game/objectives.js';
 import { createObjectiveHUD } from './ui/objectiveHUD.js';
@@ -897,7 +898,7 @@ function triggerCaineArrival() {
   const warned = () => {
     objectives.complete('find-caine');
     objectives.activate('find-ribbit');
-    runLevel1(missionApi, { hall: currentRoomInfo });
+    runLevel1(missionApi, { hall: currentRoomInfo, objectives });
   };
   if (skippingCutscenes()) {
     warned();
@@ -969,6 +970,7 @@ function playRoomDialogue(key, {
 
 const MISSIONS = {
   level1: runLevel1,
+  level2: runLevel2,
 };
 
 const missionApi = {

@@ -2,6 +2,9 @@ export const OBJECTIVES = Object.freeze({
   'find-caine': Object.freeze({ id: 'find-caine', title: 'Find Caine', detail: 'Look for him in the Dorm Hall.' }),
   // Caine's completed warning activates this; it does not start Ribbit's encounter.
   'find-ribbit': Object.freeze({ id: 'find-ribbit', title: 'Find Ribbit', detail: '' }),
+  // Level 1 finishing activates this (see level1.js); Kaufmo's hallway
+  // scene playing through completes it (see level2.js).
+  'find-kaufmo': Object.freeze({ id: 'find-kaufmo', title: 'Find Kaufmo', detail: '' }),
 });
 
 /** Session state, independent of room loads, rendering and dialogue previews. */

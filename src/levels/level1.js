@@ -4,6 +4,7 @@ import { level1RibbitDialogue } from '../data/dialogues.js';
 import {
   ESCAPE_MAX, ESCAPE_PASS_MARK, getEscapeTotal, getLevelPoints, setLevelPoints,
 } from '../state/escapeThreshold.js';
+import { runLevel2 } from './level2.js';
 
 /**
  * Level 1, "Talk Her Down" — the mission, as opposed to the rooms it
@@ -30,9 +31,12 @@ import {
  * set up there, without reloading it or moving her to the door.
  *
  * @param {object} game the mission API from main.js (see `missionApi`)
- * @param {{ hall?: object }} [options] the already-loaded Dorm Hall, if any
+ * @param {{ hall?: object, objectives?: object }} [options] the already-loaded
+ *   Dorm Hall, if any, and the objective controller — passed straight
+ *   through to runLevel2 on finishing, not used directly here (Level 1
+ *   itself doesn't own any objective; see main.js for Find Ribbit).
  */
-export function runLevel1(game, { hall: startingHall = null } = {}) {
+export function runLevel1(game, { hall: startingHall = null, objectives } = {}) {
   const { stage } = game;
   const pointsBefore = getLevelPoints('level1');
   let tally = null;
@@ -151,9 +155,11 @@ export function runLevel1(game, { hall: startingHall = null } = {}) {
         // mumbling" scene is written for this exact spot: the Dorm Hall,
         // right outside Ribbit's door, the moment Pomni steps back out.
         game.showHint(LEVEL1_OUTCOME[tally.correct] ?? LEVEL1_OUTCOME[0], 6000);
+        objectives?.complete('find-ribbit');
+        objectives?.activate('find-kaufmo');
         await game.travel('dorm');
         stage.place({ ...KNOCK_SPOT, lookAt: RIBBIT_DOOR });
-        game.playDialogue('level2Opening');
+        runLevel2(game, { objectives });
       },
     });
   }
