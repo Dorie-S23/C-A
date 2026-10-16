@@ -10,6 +10,7 @@ export function createLevel2Items({ onCollect = () => {} } = {}) {
   const collectedItems = new Set();
   const presentedItems = new Set();
   let stallSeen = false;
+  let done = false; // the payoff has actually been heard once already
 
   const items = {
     hasCollected: (id) => collectedItems.has(id) || presentedItems.has(id),
@@ -36,10 +37,18 @@ export function createLevel2Items({ onCollect = () => {} } = {}) {
       }
       return 'level2Payoff';
     },
+    /** Whether the payoff has actually played through once already — lets
+     *  a caller show the "Level 2 Complete" beat only the first time a
+     *  replay still hears the same line. */
+    isDone: () => done,
+    markDone() {
+      done = true;
+    },
     reset() {
       collectedItems.clear();
       presentedItems.clear();
       stallSeen = false;
+      done = false;
       setLevelPoints('level2', 0);
     },
   };
