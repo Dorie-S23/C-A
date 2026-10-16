@@ -931,6 +931,56 @@ function triggerCaineArrival() {
 }
 
 /**
+ * Pre-Level 1's "Jax storms past" plays as a cutscene cut away to the real
+ * Dorm Hall (see jaxHallwayCutscene.js) instead of the inline text beat —
+ * the preview button (playDialoguePreview) already does this by hand;
+ * this is the same split for the real morning conversation
+ * (playMorningDialogue, via playRoomDialogue), since preLevel1Dialogue
+ * plays through both. Unlike Kaufmo's hallway cutscene, the dialogue box
+ * has to close for Jax's run — he's cut to the real Dorm Hall, not
+ * anywhere Pomni's Room can show alongside it — so this actually splits
+ * the script around it (stopAt 'jaxPassByText', the cutscene, then startAt
+ * 'afterJaxPassBy') instead of just decorating onNode.
+ *
+ * `cutsceneReady` is a promise of the preloaded assets (or null if the
+ * load failed) — passed in rather than started here so a caller that's
+ * already got something else in flight (the preceding dialogue lines give
+ * it a head start) doesn't make the player wait twice.
+ */
+function playPastJaxCutscene(script, cutsceneReady, {
+  startAt, stopAt, onChoice, distressFor, onNode, onComplete, onCancel,
+} = {}) {
+  let cutsceneDisposed = false;
+  function disposeCutsceneAssets(assets) {
+    if (cutsceneDisposed || !assets) return;
+    cutsceneDisposed = true;
+    disposeObject3D(assets.scene);
+  }
+  dialogueUI.play(script, {
+    startAt, onChoice, distressFor, onNode,
+    stopAt: 'jaxPassByText',
+    onComplete: () => {
+      cutsceneReady.then((cutsceneAssets) => {
+        if (!cutsceneAssets) {
+          // Preload failed — fall back to the plain text beat rather than
+          // stalling the conversation on a cutscene that'll never come.
+          dialogueUI.play(script, { startAt: 'jaxPassByText', stopAt, onNode, onComplete, onCancel });
+          return;
+        }
+        runCutscene(playJaxHallwayCutscene(renderer, cutsceneAssets), () => {
+          disposeCutsceneAssets(cutsceneAssets);
+          dialogueUI.play(script, { startAt: 'afterJaxPassBy', stopAt, onNode, onComplete, onCancel });
+        });
+      });
+    },
+    onCancel: () => {
+      cutsceneReady.then(disposeCutsceneAssets);
+      onCancel?.();
+    },
+  });
+}
+
+/**
  * Plays a dialogue script as an in-world NPC conversation, triggered by a
  * room's own interactable (see kaufmoRoom.js). Unlike playDialoguePreview,
  * the pointer stays locked the whole time — movement and look are frozen
@@ -960,10 +1010,16 @@ function playRoomDialogue(key, {
   if (!entry || dialogueUI.isActive) return false;
   resetMoveState();
   if (lookAt) turnPomniTowards(lookAt);
-  dialogueUI.play(entry.script, {
-    onChoice, onComplete, onCancel, distressFor, startAt, stopAt,
-    onNode: withKaufmoHallwayCutscene(key, onNode),
-  });
+  const node = withKaufmoHallwayCutscene(key, onNode);
+  if (key === 'preLevel1') {
+    playPastJaxCutscene(entry.script, preloadJaxHallwayCutscene(), {
+      startAt, stopAt, onChoice, distressFor, onNode: node, onComplete, onCancel,
+    });
+  } else {
+    dialogueUI.play(entry.script, {
+      onChoice, onComplete, onCancel, distressFor, startAt, stopAt, onNode: node,
+    });
+  }
   return true;
 }
 

@@ -70,7 +70,8 @@ export const preLevel1Dialogue = [
     text: 'Thrilling. Another one of his "brilliant" ideas.',
   },
   {
-    // Keep the live morning's text beat until its own cutscene is integrated.
+    // Only shown if the cutscene fails to preload (see playPastJaxCutscene
+    // in main.js) — the normal path never renders this node at all.
     id: 'jaxPassByText',
     type: 'beat',
     text: 'Jax storms past in the background — no dialogue, just animation/SFX.',
