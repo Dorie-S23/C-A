@@ -1188,7 +1188,9 @@ function applyLoadedRoom({
   // room either has no portals or just the one obvious way back.
   // Rooms built onto the hall (see rooms/connectRooms.js) have no portal,
   // just a marker.
-  if (roomKey === 'dorm' && portals.length > 0) minimap.show([...portals, ...(mapMarkers ?? [])]);
+  if (roomKey === 'dorm' && portals.length > 0) {
+    minimap.show([...portals, ...(mapMarkers ?? [])], { group, floorY: spawn.y });
+  }
   else minimap.hide();
   roomLighting?.attach(scene);
 
