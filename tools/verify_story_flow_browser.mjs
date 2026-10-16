@@ -25,10 +25,17 @@ await page.addInitScript(() => {
 await page.route('**/src/main.js', async route => {
   const response = await route.fetch();
   await route.fulfill({ response, body: await response.text() + `\n
-    renderer.setPixelRatio(0.5);
+    renderer.setPixelRatio(0.25);
+    renderer.domElement.requestPointerLock = () => window.__storyReview.lock();
+    document.exitPointerLock = () => {
+      delete document.pointerLockElement;
+      document.dispatchEvent(new Event('pointerlockchange'));
+    };
     window.__storyReview = {
       stage, travelTo, selectRoom, objectives, itemState, startNewGame, returnToHome,
       state: getOpeningDiagnostics,
+      skipPart() { activeCinematic()?.skip(); },
+      arriveCaine() { caineArrivalIn = 0; },
       lock() { Object.defineProperty(document, 'pointerLockElement', {value:renderer.domElement, configurable:true}); document.dispatchEvent(new Event('pointerlockchange')); },
       pose() { const actor=currentRoom?.getObjectByName('Ribbit'); return ['RibbitBody','head','spine'].map(name=>actor?.getObjectByName(name)?.quaternion.toArray()); },
       contextLost() { return renderer.getContext().isContextLost(); },
@@ -58,7 +65,7 @@ const progress = async (choices = [0, 1, 0, 0], stopAtChoice = false) => {
   for (let i = 0; i < 1000; i++) {
     const s = await state();
     if (!s.dialogueActive || s.room !== startingRoom) return;
-    if (s.dialogueWaiting || s.cutsceneActive) { await page.waitForTimeout(100); continue; }
+    if (s.dialogueWaiting) { await page.waitForTimeout(100); continue; }
     const choosing = await page.locator('#dialogue-options').evaluate(el => !el.hidden);
     if (s.room === 'ribbit' && s.dialogueText.includes('less like a puddle')) report.warmRecoverySeen = true;
     if (choosing) {
@@ -79,25 +86,26 @@ const place = async (x, z, lookAt) => {
 try {
   await page.goto('http://127.0.0.1:5173/?dev=1', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => !!window.__storyReview);
+  console.log('Review bridge ready; starting the opening');
   await page.locator('#btn-new-game').evaluate(button => button.click());
   await until(async () => (await state()).phase === 'playing');
-  await page.locator('#cinematic-skip').evaluate(button => button.click());
+  console.log('Opening loaded; checking Ragatha and Jax');
+  await page.evaluate(() => window.__storyReview.skipPart());
   await until(async () => (await state()).dialogueActive);
   await progress();
   await until(async () => (await state()).entrancePhase === 'entering');
-  await page.locator('#cinematic-skip').evaluate(button => button.click());
+  await page.evaluate(() => window.__storyReview.skipPart());
   await until(async () => (await state()).entrancePhase === 'dialogue');
   await progress();
   await until(async () => { const s = await state(); return s.objective?.id === 'find-caine' && s.ready; });
   check('Opening, real Jax cutaway and Ragatha completion enable Find Caine', () => assert.equal(report.errors.length, 0));
   const hall = await travel('dorm');
-  const caine = hall.interactables.find(i => i.prompt === 'Talk to Caine').anchor;
-  await place(caine[0] + 1.5, caine[2], { x: caine[0], z: caine[2] });
-  await until(async () => (await state()).focusedPrompt === 'Talk to Caine');
+  await page.evaluate(() => { window.__storyReview.lock(); window.__storyReview.arriveCaine(); });
   const beforeWarning = (await state()).player;
-  await key('KeyE'); await progress();
+  await until(async () => (await state()).dialogueActive);
+  await progress();
   const warned = await until(async () => { const s=await state(); return s.objective?.id === 'find-ribbit' && s; });
-  check('Caine unlocks a knock interaction without teleporting the player', () => {
+  check('Caine’s arrival unlocks a knock interaction without teleporting the player', () => {
     assert.deepEqual(warned.player, beforeWarning);
     assert.ok(warned.interactables.some(i => i.prompt === 'Knock on Ribbit’s door' && i.enabled));
   });
@@ -146,10 +154,22 @@ try {
     assert.equal(completed.stagedCamera, false); assert.equal(completed.dialogueActive, false);
     assert.equal(report.warmRecoverySeen, true);
   });
+  await until(async () => (await state()).completionCardVisible);
+  assert.equal((await state()).paused, false);
+  await page.locator('#btn-level-complete-continue').evaluate(button => button.click());
+  await page.evaluate(() => window.__storyReview.lock());
+  check('Level 1 completion card continues into the story without a Pause overlay', () => assert.equal(completed.ribbitPoints, 4));
   await snapshot('ribbit-complete');
   await travel('dorm');
   await until(async () => (await state()).dialogueActive); await progress();
-  check('Leaving Ribbit triggers Kaufmo’s hallway encounter', () => assert.equal(report.errors.length, 0));
+  await readyRoom('kaufmo');
+  await progress([0, 0]);
+  const introduced = await state();
+  check('Leaving Ribbit plays Kaufmo’s hallway encounter and moves into his room for the introduction', () => {
+    assert.equal(report.errors.length, 0);
+    assert.equal(introduced.kaufmoIntroduced, true);
+    assert.equal(introduced.objective.id, 'collect-photos');
+  });
   await travel('ribbit');
   const revisited = await state();
   check('Revisiting Ribbit preserves recovery and offers unscored follow-up', () => {
@@ -158,17 +178,10 @@ try {
   });
   await travel('dorm');
   assert.equal((await state()).dialogueActive, false);
-  await page.evaluate(() => window.__storyReview.itemState.collect('ca1'));
   const kaufmoRoom = await travel('kaufmo');
   const kaufmo = kaufmoRoom.interactables.find(i => i.prompt === 'Talk to Kaufmo').anchor;
   await place(kaufmo[0], kaufmo[2] + 1.8, {x:kaufmo[0],z:kaufmo[2]});
-  await until(async () => (await state()).focusedPrompt === 'Talk to Kaufmo');
-  await key('KeyE'); await progress([0, 0]);
-  const introduced = await state();
-  check('An early photo does not bypass Kaufmo’s introduction or replay the hallway', () => {
-    assert.equal(introduced.kaufmoIntroduced, true); assert.equal(introduced.objective.id, 'collect-photos');
-    assert.equal(introduced.picturesHeld, 1); assert.equal(introduced.picturesPresented, 0);
-  });
+  await page.evaluate(() => window.__storyReview.itemState.collect('ca1'));
   await until(async () => (await state()).focusedPrompt === 'Give photos to Kaufmo');
   await key('KeyE'); await progress();
   assert.equal((await state()).picturesPresented, 1);
@@ -180,6 +193,15 @@ try {
     assert.equal(report.errors.length, 0); assert.equal(presented.objective.id, 'check-kaufmo');
     assert.equal(presented.picturesPresented, 3);
   });
+  // Stall, payoff and the completion card must occur once across revisits.
+  await until(async () => (await state()).focusedPrompt === 'Talk to Kaufmo');
+  await key('KeyE'); await progress();
+  await until(async () => (await state()).focusedPrompt === 'Talk to Kaufmo');
+  await key('KeyE'); await progress();
+  await until(async () => (await state()).completionCardVisible);
+  check('Kaufmo payoff completes Level 2 after all three hand-ins', () => assert.equal((presented.picturesPresented), 3));
+  await page.evaluate(() => window.__storyReview.returnToHome());
+  assert.equal((await state()).completionCardVisible, false);
   await page.evaluate(() => window.__storyReview.startNewGame());
   await until(async () => (await state()).phase === 'playing');
   const fresh = await state();

@@ -123,6 +123,9 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
         stage.lookAt(points.DOORWAY);
         stage.hold(false);
         door.open();
+        if (game.showLevelComplete) {
+          if (!await game.showLevelComplete('Level 1 Complete', LEVEL1_OUTCOME[tally.correct]) || !live()) return;
+        }
         game.showHint(story
           ? 'Ribbit is steadier. Leave her room and look for Kaufmo.'
           : 'Ribbit is steadier. You can leave through the door.', 6500);
@@ -163,3 +166,11 @@ function ribbitsDormDoor(group) {
     },
   };
 }
+
+const LEVEL1_OUTCOME = [
+  'Ribbit is holding on — but only just.',
+  'Ribbit is holding on — but only just.',
+  'Ribbit is okay. For now.',
+  'Ribbit seems a little steadier.',
+  'Ribbit is steadier than she’s been in days.',
+];

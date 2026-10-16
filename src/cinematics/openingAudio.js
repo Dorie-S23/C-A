@@ -27,6 +27,42 @@ export function makeOpeningBuffers(context) {
   return { snore, knock };
 }
 
+// TEMPORARY synthesized feedback cues (picking an item up, handing it
+// over, an objective/level actually completing) — same reasoning as the
+// cues above: no approved sound design yet, so these are small procedural
+// blips rather than real audio, just enough that these moments aren't
+// silent. Not positional (UI feedback, not something in the 3D scene), so
+// these play straight to the listener's context, no panner involved.
+export function makeFeedbackBuffers(context) {
+  const rate = 22050;
+  const make = (seconds, sample) => {
+    const b = context.createBuffer(1, Math.ceil(rate * seconds), rate), data = b.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = sample(i / rate);
+    return b;
+  };
+  // A short, bright upward blip — picking something up.
+  const pickup = make(.18, t => {
+    const envelope = Math.min(1, t / .01) * Math.exp(-t * 14);
+    const freq = 740 + 520 * Math.min(1, t / .12);
+    return envelope * .32 * Math.sin(2 * Math.PI * freq * t);
+  });
+  // Two quick overlapping notes, a small rising "yes" — handing something over.
+  const handIn = make(.32, t => {
+    const note1 = Math.exp(-t * 18) * Math.sin(2 * Math.PI * 523 * t);
+    const note2 = t >= .12 ? Math.exp(-(t - .12) * 14) * Math.sin(2 * Math.PI * 659 * (t - .12)) : 0;
+    return .26 * (note1 + note2);
+  });
+  // A fuller three-note rise — an objective, or a level, actually completing.
+  const complete = make(.62, t => {
+    let sum = 0;
+    for (const [start, freq] of [[0, 523], [.14, 659], [.3, 784]]) {
+      if (t >= start) sum += Math.exp(-(t - start) * 7) * Math.sin(2 * Math.PI * freq * (t - start));
+    }
+    return .24 * sum;
+  });
+  return { pickup, handIn, complete };
+}
+
 // TEMPORARY procedural placeholders, pending approved door/footstep recordings.
 export const ENTRANCE_CUES = Object.freeze([
   { at: .65, kind: 'creak' }, { at: 2.05, kind: 'step' },
@@ -110,7 +146,7 @@ export function createEntranceAudioSession(listener, room, buffers = makeEntranc
 
 /** A persistent listener; short-lived, room-owned sources stop on every exit. */
 export function createOpeningAudio(camera) {
-  let listener = null, buffers = null;
+  let listener = null, buffers = null, feedbackBuffers = null;
   function unlock() {
     try {
       if (!listener) {
@@ -130,6 +166,27 @@ export function createOpeningAudio(camera) {
     get currentTime() { return listener?.context.currentTime ?? null; },
     createEntranceSession(room, options) {
       return listener ? createEntranceAudioSession(listener, room, undefined, options) : null;
+    },
+    /**
+     * A short, non-positional feedback blip for a UI moment — picking an
+     * item up, handing it over, an objective/level completing (see
+     * makeFeedbackBuffers above for exactly which). Silently does nothing
+     * before the listener's unlocked or if the context isn't running, same
+     * "never block gameplay over audio" rule the rest of this file follows.
+     */
+    playChime(kind) {
+      if (!listener || listener.context.state !== 'running') return;
+      feedbackBuffers ??= makeFeedbackBuffers(listener.context);
+      const buffer = feedbackBuffers[kind];
+      if (!buffer) return;
+      try {
+        const source = listener.context.createBufferSource();
+        source.buffer = buffer;
+        const gain = listener.context.createGain();
+        gain.gain.value = .5;
+        source.connect(gain).connect(listener.context.destination);
+        source.start();
+      } catch { /* same silent fallback as unlock() above */ }
     },
     createSession(room) {
       if (!listener) return null;

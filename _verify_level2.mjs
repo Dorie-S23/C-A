@@ -160,3 +160,17 @@ test('a fresh run restores the completion-then-payoff dialogue sequence', () => 
     assert.equal(getEscapeTotal(), 0);
   }
 });
+
+test('the Level 2 completion card remains consumed on replay until a new run', () => {
+  const items = createLevel2Items();
+  assert.equal(items.isDone(), false);
+  for (const id of PICTURES) items.collect(id);
+  pickKaufmoScript(items); pickKaufmoScript(items);
+  assert.equal(pickKaufmoScript(items), 'level2Payoff');
+  assert.equal(items.isDone(), false);
+  items.markDone();
+  assert.equal(pickKaufmoScript(items), 'level2Payoff');
+  assert.equal(items.isDone(), true);
+  items.reset();
+  assert.equal(items.isDone(), false);
+});

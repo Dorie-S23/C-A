@@ -48,6 +48,11 @@ const GLOVE_BOB = 0.04;           // resting bob height, in spacings
 const GLOVE_BOB_PERIOD = 1.6;     // seconds
 const GLOVE_FOLLOW_SHARPNESS = 30; // per second; how tightly the glove trails the mouse
 
+// Once the menu is live the sky drifts sideways and its clouds billow a
+// little (see createSkyBackdrop). The intro keeps the still, authored shot.
+const SKY_DRIFT_SPEED = 0.008;  // texture widths per second (the view spans ~0.8)
+const SKY_EASE_IN = 2.5;        // seconds for the motion to build up to full speed
+
 // Lighting, matched to the .blend: one sun (strength 6.22, aimed as below
 // after converting Blender's Z-up to three's Y-up) plus the world's dim
 // white fill (0.07) for everything that isn't a camera ray. three's ambient
@@ -83,6 +88,8 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
 
   const sky = createSkyBackdrop();
   scene.add(sky);
+  let skyMotion = 0; // 0 = the authored still sky, 1 = drifting at full speed
+  let skyTime = 0;
   const fade = createFade();
   scene.add(fade);
 
@@ -369,8 +376,21 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
     camera.updateProjectionMatrix();
   }
 
+  /** Builds the sky's motion up from still once the menu is live. */
+  function updateSky(delta) {
+    if (state !== 'intro') skyMotion = Math.min(1, skyMotion + delta / SKY_EASE_IN);
+    const eased = skyMotion * skyMotion * (3 - 2 * skyMotion);
+    // Advancing by the eased rate (not scaling the clock) ramps the speed
+    // up without the clouds jumping.
+    skyTime += delta * eased;
+    sky.material.uniforms.time.value = skyTime;
+    sky.material.uniforms.drift.value = skyTime * SKY_DRIFT_SPEED;
+    sky.material.uniforms.motion.value = eased;
+  }
+
   function update(delta) {
     if (!active || !mixer) return;
+    updateSky(delta);
 
     if (state === 'intro') {
       time += delta;
@@ -534,6 +554,8 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
       if (playIntro) {
         state = 'intro';
         time = 0;
+        skyMotion = 0; // back to the authored still sky
+        skyTime = 0;
         seek(0);
       } else {
         enterMenu();
@@ -547,14 +569,6 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
   };
 }
 
-/**
- * The .blend's sky isn't a skybox: its world shader maps the image by
- * *camera* coordinates (Mapping: scale 0.8 × 2.32, offset 0.35, 0.06, then
- * a flat projection), so the clouds stay put on screen as the camera moves,
- * like a painted backdrop. This reproduces that mapping per pixel, along
- * with the world's saturation ×2 and strength 1.6, on a full-screen quad
- * drawn behind everything.
- */
 /** A full-screen black layer drawn over the scene, for the fade into the tent. */
 function createFade() {
   const material = new THREE.ShaderMaterial({
@@ -579,6 +593,16 @@ function createFade() {
   return quad;
 }
 
+/**
+ * The .blend's sky isn't a skybox: its world shader maps the image by
+ * *camera* coordinates (Mapping: scale 0.8 × 2.32, offset 0.35, 0.06, then
+ * a flat projection), so the clouds stay put on screen as the camera moves,
+ * like a painted backdrop. This reproduces that mapping per pixel, along
+ * with the world's saturation ×2 and strength 1.6, on a full-screen quad
+ * drawn behind everything. On top of that the menu adds motion the .blend
+ * doesn't have: a sideways drift and a faint noise billow (time, drift and
+ * motion uniforms, driven by updateSky).
+ */
 function createSkyBackdrop() {
   const texture = new THREE.TextureLoader().load(SKY_URL);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -590,6 +614,9 @@ function createSkyBackdrop() {
     uniforms: {
       map: { value: texture },
       inverseProjection: { value: new THREE.Matrix4() },
+      time: { value: 0 },   // seconds of sky motion, for the billow
+      drift: { value: 0 },  // how far the clouds have slid, in texture widths
+      motion: { value: 0 }, // 0..1 strength of the billow (0 = the still shot)
     },
     vertexShader: `
       varying vec2 vNdc;
@@ -600,7 +627,32 @@ function createSkyBackdrop() {
     fragmentShader: `
       uniform sampler2D map;
       uniform mat4 inverseProjection;
+      uniform float time;
+      uniform float drift;
+      uniform float motion;
       varying vec2 vNdc;
+
+      // Smooth value noise, a few octaves deep, for the billow.
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
+      float noise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+                   mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+      }
+      float fbm(vec2 p) {
+        float sum = 0.0;
+        float amplitude = 0.5;
+        for (int i = 0; i < 4; i++) {
+          sum += amplitude * noise(p);
+          p *= 2.0;
+          amplitude *= 0.5;
+        }
+        return sum;
+      }
 
       vec3 rgb2hsv(vec3 c) {
         vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
@@ -618,6 +670,19 @@ function createSkyBackdrop() {
         vec4 view = inverseProjection * vec4(vNdc, 1.0, 1.0);
         vec3 dir = normalize(view.xyz / view.w); // camera space, like Blender's
         vec2 uv = vec2(0.35, 0.06) + vec2(0.8, 2.32) * dir.xy;
+
+        // Wind: the clouds slide right. The texture repeats mirrored, so
+        // scrolling past its edge shows no seam.
+        uv.x -= drift;
+        // Billow: nudge each pixel by a slowly evolving noise field that
+        // rides along with the clouds, so they churn as they drift
+        // instead of sliding by like a flat picture.
+        vec2 field = vec2(uv.x * 6.0, uv.y * 1.5);
+        vec2 warp = vec2(
+          fbm(field + vec2(0.0, time * 0.04)),
+          fbm(field + vec2(5.2, 1.3) - vec2(time * 0.03, 0.0))) - 0.5;
+        uv += warp * vec2(0.006, 0.012) * motion;
+
         vec3 hsv = rgb2hsv(texture2D(map, uv).rgb);
         hsv.y = clamp(hsv.y * 2.0, 0.0, 1.0);
         gl_FragColor = vec4(hsv2rgb(hsv) * 1.6, 1.0);

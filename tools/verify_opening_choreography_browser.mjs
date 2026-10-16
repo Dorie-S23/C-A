@@ -31,7 +31,7 @@ try{
  ws.addEventListener('close',()=>{for(const p of pending.values())p.reject(Error('Browser disconnected'));pending.clear()});
  ws.addEventListener('message',event=>{const r=JSON.parse(event.data);if(r.id){const p=pending.get(r.id);pending.delete(r.id);if(r.error)p?.reject(Error(JSON.stringify(r.error)));else p?.resolve(r.result)}else if(r.method==='Runtime.exceptionThrown')errors.push(r.params.exceptionDetails.exception?.description??r.params.exceptionDetails.text);else if(r.method==='Runtime.consoleAPICalled'&&r.params.type==='error')errors.push(r.params.args.map(a=>a.value??a.description).join(' '))});
  await command('Runtime.enable');await command('Page.enable');await command('Page.navigate',{url:'http://127.0.0.1:5173/'});
- await until(async()=>Boolean(await state()));await click('#btn-new-game');
+ await until(async()=>Boolean(await state()));await click('[data-story]');
  if(!process.argv.includes('--lifecycle-only')){
  const sleeping=await until(async()=>{const s=await state();return s.phase==='playing'&&s.openingElapsed<4.5&&s},20000);
  check('Five-second sleep starts without gameplay controls or early objective',()=>{assert.equal(sleeping.gameplayActorVisible,false);assert.equal(sleeping.ready,false);assert.equal(sleeping.objective,null)});
@@ -69,11 +69,11 @@ try{
  const returnDoor=hall.interactables.find(i=>i.prompt==="Enter Pomni's Room");await aim(returnDoor.center);await until(async()=> (await state()).focusedPrompt==="Enter Pomni's Room");await key('KeyE');
  const reentry=await until(async()=>{const s=await state();return s.room==='pomni'&&s.ready&&s});
  check('Bedroom re-entry preserves settled blanket/objective without repeated invitation or Ragatha',()=>{assert.equal(reentry.phase,'done');assert.equal(reentry.entranceStarted,false);assert.equal(reentry.dialogueActive,false);assert.equal(reentry.ragathaCount,0);assert.equal(reentry.objective.id,'find-caine')});
- await click('#btn-home');await click('#btn-new-game');await until(async()=> (await state()).phase==='seated');await key('Escape');
+ await click('#btn-home');await click('[data-story]');await until(async()=> (await state()).phase==='seated');await key('Escape');
  const cancelled=await until(async()=>{const s=await state();return s.ready&&s.phase==='done'&&s});
  check('Cancelling seated dialogue stands safely, awards no objective and keeps T retry available',()=>{assert.equal(cancelled.gameplayActorVisible,true);assert.equal(cancelled.objective,null);assert.equal(cancelled.morningDialoguePending,true);assert.equal(cancelled.dialogueActive,false);assert.equal(cancelled.tutorial.unlocked,false)});
  await setLock(true);await key('KeyT');await until(async()=> (await state()).dialogueActive);await key('Space');const retry=await state();assert.ok(retry.dialogueText.startsWith('Morning'));await key('Escape');
- await click('#btn-home');await click('#btn-new-game');await until(async()=> (await state()).phase==='seated');await key('KeyP');await click('#btn-home');await sleep(250);
+ await click('#btn-home');await click('[data-story]');await until(async()=> (await state()).phase==='seated');await key('KeyP');await click('#btn-home');await sleep(250);
  const disposed=await state();check('Home disposes a paused seated scene without delayed dialogue or resurrection',()=>{assert.equal(disposed.phase,null);assert.equal(disposed.dialogueActive,false);assert.equal(disposed.ready,false)});
  }else{
   await until(async()=> (await state()).phase==='playing');await click('#cinematic-skip');
@@ -82,7 +82,7 @@ try{
   check('Early Skip finishes R5 standing, retains final blanket and reaches standing invitation',()=>{assert.equal(skipped.time,7.5);assert.equal(skipped.gameplayActorVisible,true);assert.equal(skipped.cinematicSkinMeshes,0);assert.equal(skipped.objective,null)});
   await key('Escape');const cancelled=await until(async()=>{const s=await state();return s.ready&&s});
   check('Cancelling the skipped invitation retains a safe morning retry',()=>{assert.equal(cancelled.morningDialoguePending,true);assert.equal(cancelled.objective,null);assert.equal(cancelled.tutorial.unlocked,false)});
-  await click('#btn-home');await click('#btn-new-game');await until(async()=> (await state()).phase==='playing');await click('#cinematic-skip');
+  await click('#btn-home');await click('[data-story]');await until(async()=> (await state()).phase==='playing');await click('#cinematic-skip');
   await until(async()=> (await state()).dialogueActive && await evaluate("document.querySelector('#dialogue-text').textContent==='Come in.'"));await key('Space');
   await until(async()=> (await state()).entrancePhase==='entering');await click('#cinematic-skip');
   const greeting=await until(async()=>{const s=await state();return s.entrancePhase==='dialogue'&&s.dialogueActive&&s});
@@ -92,7 +92,7 @@ try{
   check('Cancelled dialogue and skipped departure restore controls without premature objective/tutorial',()=>{assert.equal(released.morningDialoguePending,true);assert.equal(released.objective,null);assert.equal(released.tutorial.unlocked,false)});
   await click('#btn-home');
   ws.addEventListener('message',event=>{const r=JSON.parse(event.data);if(r.method==='Fetch.requestPaused')command('Fetch.failRequest',{requestId:r.params.requestId,errorReason:'Failed'}).catch(()=>{})});
-  await command('Fetch.enable',{patterns:[{urlPattern:'*models/cinematics/*',requestStage:'Request'}]});await click('#btn-new-game');
+  await command('Fetch.enable',{patterns:[{urlPattern:'*models/cinematics/*',requestStage:'Request'}]});await click('[data-story]');
   const failed=await until(async()=>{const s=await state();return s.room==='pomni'&&s.ready&&s});
   check('Missing cinematic remains playable, with original cover and explicit morning retry',()=>{assert.equal(failed.phase,null);assert.equal(failed.staticCoverVisible,true);assert.equal(failed.gameplayActorVisible,true);assert.equal(failed.morningDialoguePending,true);assert.equal(failed.objective,null)});
   await command('Fetch.disable');await setLock(true);await key('KeyT');await until(async()=> (await state()).dialogueActive);

@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>CGV Game</title>
+        <title>TADC - CGV Game</title>
         <style>
             html,
             body {
@@ -133,9 +133,7 @@
                 z-index: 5;
             }
             @media (max-width: 400px) {
-                #picture-counter {
-                    top: calc(180px + 2em);
-                }
+                #picture-counter { top: calc(180px + 2em); }
             }
 
             #hint {
@@ -356,6 +354,13 @@
                 gap: 0.4em;
                 text-align: left;
             }
+            @keyframes level-complete-pop {
+                from { opacity: 0; transform: scale(0.85); }
+                to { opacity: 1; transform: scale(1); }
+            }
+            #level-complete-panel.level-complete-pop .title-panel-box {
+                animation: level-complete-pop 0.35s cubic-bezier(0.2, 0.8, 0.3, 1.1);
+            }
             .title-panel-box label.title-toggle {
                 flex-direction: row;
                 align-items: center;
@@ -555,7 +560,7 @@
                 outline: 2px solid #ffd27a;
                 outline-offset: 2px;
             }
-            #cinematic-skip { position: fixed; right: 24px; bottom: 24px; z-index: 12;
+            #cinematic-skip { position: fixed; right: 24px; top: 24px; z-index: 12;
                 padding: 12px 20px; color: white; background: #242036dd;
                 border: 1px solid #c6bfda; border-radius: 6px; cursor: pointer; }
             #cinematic-skip[hidden] { display: none; }
@@ -663,7 +668,6 @@
                 interact &mdash; Esc to release the mouse
             </p>
             <div id="room-picker">
-                <button id="btn-new-game">New Game</button>
                 <button data-room="pomni">Pomni's Room</button>
                 <button data-room="tadc">Circus Lobby</button>
                 <button data-room="dorm">Dorm Hall</button>
@@ -672,14 +676,8 @@
                 <button data-room="kaufmo">Kaufmo's Room</button>
             </div>
             <div id="dialogue-picker">
-                <button data-dialogue="preLevel1">
-                    &#9654; Pre-Level 1 Dialogue
-                </button>
-                <button data-dialogue="level1Open">
-                    &#9654; Level 1: Caine's Warning
-                </button>
-                <button data-mission="level1">
-                    &#9654; Level 1: Talk Her Down
+                <button data-story>
+                    &#9654; Story: Pre-Level 1 &rarr; Level 1
                 </button>
                 <button data-dialogue="level2Opening">
                     &#9654; Level 2: Missing Pieces
@@ -689,6 +687,13 @@
             <div id="pause-menu" hidden>
                 <button id="btn-resume">&#9654; Resume</button>
                 <button id="btn-home">&#8962; Back to Home</button>
+            </div>
+        </div>
+        <div id="level-complete-panel" class="title-panel" hidden>
+            <div class="title-panel-box">
+                <h2 id="level-complete-title"></h2>
+                <p id="level-complete-subtitle"></p>
+                <button id="btn-level-complete-continue">Continue &rarr;</button>
             </div>
         </div>
         <div id="title-options" class="title-panel" hidden>
@@ -708,6 +713,11 @@
                     <input id="dev-skip-intro" type="checkbox" />
                     <span>Dev mode: open on room selection</span>
                 </label>
+                <label class="title-toggle">
+                    <input id="dev-skip-cutscenes" type="checkbox" />
+                    <span>Dev mode: skip cutscenes and dialogue</span>
+                </label>
+                <button id="btn-new-game">New Game</button>
                 <button id="btn-replay-intro">&#9654; Replay intro</button>
                 <button id="btn-room-previews">Room previews</button>
                 <button id="btn-options-credits">Credits</button>
@@ -727,7 +737,7 @@
             <p id="objective-title" data-objective-title></p>
             <p id="objective-detail" data-objective-detail hidden></p>
         </aside>
-        <button id="cinematic-skip" hidden>Skip opening</button>
+        <button id="cinematic-skip" hidden>Skip intro</button>
         <aside id="tutorial-hud" role="status" aria-live="polite" aria-atomic="true" hidden>
             <div class="objective-label">First steps</div>
             <div data-tutorial-lines></div>

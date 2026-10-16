@@ -401,6 +401,32 @@ export function createDialogueUI({ speakers }) {
     // Lets a caller bail out of a conversation it started (e.g. the room
     // unloading from under it) without faking a normal completion.
     cancel: cancelDialogue,
+    /**
+     * Runs the rest of the script at once, as if played through: every node
+     * still reaches onNode (so the scene's cues and actions happen), each
+     * choice takes its best (highest-points) answer through onChoice, and it
+     * ends in onComplete — unlike cancel(), it counts as finished.
+     */
+    skipToEnd() {
+      if (!engine || paused || awaitingNode) return;
+      const running = engine;
+      stopTyping();
+      for (let guard = 0; engine === running && engine.current && guard < 1000; guard++) {
+        if (awaitingNode) return;
+        const node = engine.current;
+        if (node.type === 'choice') {
+          const best = node.options.reduce((top, option, i) =>
+            ((option.points ?? 0) > (node.options[top].points ?? 0) ? i : top), 0);
+          const option = engine.choose(best);
+          if (option && onChoice) onChoice(option, engine.current);
+        } else {
+          engine.advance();
+        }
+        if (engine !== running) return;
+        renderNode(); // Runs each new cue once and honours awaited scene actions.
+        stopTyping();
+      }
+    },
     setPaused(value) {
       paused = value;
       root.style.visibility = value || awaitingNode ? 'hidden' : '';

@@ -1,42 +1,24 @@
 import * as THREE from 'three';
 import { loadRoomModel } from './loadRoomModel.js';
 import { addMirrorReflections } from './mirrors.js';
-import { findWallSpot, findSpotNear, placeOfficePicture } from '../props/officePicture.js';
 import { createDoorConnection } from './portals.js';
 import { createBedroomLighting } from './bedroomLighting.js';
 import { loadPomniOpening } from '../cinematics/pomniOpening.js';
 import { loadRagatha } from '../characters/ragatha.js';
 import { loadDormHallPreview } from './dormHallPreview.js';
-
-const PICTURE_ID = 'ca1';
-const PICTURE_URL = './models/objects/ca1.png';
-const PICTURE_HEIGHT = 1.4;
-// Tucked beside the toy blocks rather than hung on the nearest wall — the
-// story has this photo kicked around the circus, not framed and displayed.
-const PICTURE_ANCHOR = 'Number_Cube';
-const PICTURE_OFFSET = new THREE.Vector3(-0.5, 0, 0.35);
-
+import { createBedroomDoorHinge } from '../cinematics/bedroomDoor.js';
+import { createDoorwayAperture } from '../cinematics/doorwayAperture.js';
 
 // Exported from "Pomnis Room V3.blend" by tools/blender/export_pomnis_room_v3.py,
 // which converts the materials the glTF exporter can't read — re-run it
 // after editing the .blend.
-export function loadPomniRoom(onProgress, { from, travel, openingMode, items,
+export function loadPomniRoom(onProgress, { from, travel, openingMode,
   hallPreview = typeof window !== 'undefined' } = {}) {
   return loadRoomModel('./models/character%20rooms/pomnis-room-v3.glb', onProgress).then(async (room) => {
     // Its metal trim needs something to reflect.
     room.environment = true;
     // The vanity and the standing mirror reflect the room for real.
     addMirrorReflections(room.group, room.spawn);
-    // Keep item placement independent of door arrival.
-    const defaultSpawn = room.spawn;
-
-    if (items) {
-      const origin = new THREE.Vector3(defaultSpawn.x, defaultSpawn.y + PICTURE_HEIGHT, defaultSpawn.z);
-      const spot = findSpotNear(room.group, PICTURE_ANCHOR, PICTURE_OFFSET)
-        ?? findWallSpot(room.group, origin, new THREE.Vector3(1, 0, 0))
-        ?? findWallSpot(room.group, origin, new THREE.Vector3(-1, 0, 0));
-      if (spot) placeOfficePicture(room, items, PICTURE_ID, PICTURE_URL, spot.position, spot.rotationY);
-    }
 
     room.lighting = createBedroomLighting(room);
     room.group.userData.bedroomLighting = room.lighting;
@@ -87,6 +69,11 @@ export function loadPomniRoom(onProgress, { from, travel, openingMode, items,
         const preview = await loadDormHallPreview();
         room.group.add(preview.group);
         room.group.userData.dormHallPreview = preview;
+        room.hallLink = createHallLink(room, preview);
+        room.openDoorway = () => openDoorway(room);
+        // With the door open she just walks out (main.js swaps the hall
+        // in), so E has nothing left to offer there.
+        exit.interactable.enabled = () => !room.hallLink.isOpen();
       } catch (error) {
         room.group.userData.dormHallPreviewError = String(error.message ?? error);
         console.warn('Hall preview unavailable; retaining the temporary vestibule.', error);
@@ -94,4 +81,64 @@ export function loadPomniRoom(onProgress, { from, travel, openingMode, items,
     }
     return room;
   });
+}
+
+// How far past the doorway Pomni can step before main.js swaps her into
+// the real Dorm Hall (the preview beyond it has no floor of its own).
+const HALL_LINK_REACH = 0.6;
+
+/**
+ * The preview is the real Dorm Hall, placed exactly where it sits outside
+ * this door — so with the door open Pomni can just walk out: main.js
+ * swaps the real hall in as she crosses the doorway, carrying her position
+ * and facing over through `toHall` (this room's coordinates to the hall's).
+ * The room's bounds are widened through the doorway so she can reach it.
+ */
+function createHallLink(room, preview) {
+  room.group.updateMatrixWorld(true);
+  const frameBox = new THREE.Box3().setFromObject(room.group.getObjectByName('Door_Frame024'));
+  const size = frameBox.getSize(new THREE.Vector3());
+  const centre = frameBox.getCenter(new THREE.Vector3());
+  const axis = size.x < size.z ? 'x' : 'z';
+  const wide = axis === 'x' ? 'z' : 'x';
+  const outward = room.spawn[axis] < centre[axis] ? 1 : -1;
+
+  const reach = centre.clone();
+  reach[axis] += outward * (HALL_LINK_REACH + 0.4); // plus main.js's WALL_MARGIN
+  room.bounds = room.bounds.clone().expandByPoint(reach);
+
+  const toHall = preview.group.matrix.clone().invert();
+  const out = new THREE.Vector3();
+  out[axis] = outward;
+  return {
+    toHall,
+    // Out through the doorway, in the hall's coordinates.
+    outward: out.transformDirection(toHall),
+    /** How far a point is past the doorway, outward. */
+    depthPast: (point) => (point[axis] - centre[axis]) * outward,
+    // Rotating the world by the preview's turn adds it to every facing.
+    yawToHall: -preview.group.rotation.y,
+    doorway: centre,
+    isOpen: () => preview.group.visible,
+    /** Whether a point has stepped out through the doorway. */
+    crossed: (point) => (point[axis] - centre[axis]) * outward > 0
+      && Math.abs(point[wide] - centre[wide]) < size[wide] / 2,
+  };
+}
+
+/**
+ * Opens the bedroom doorway for good, outside Ragatha's entrance (which
+ * opens its own): the door swung wide on its real hinge and the wall
+ * behind the decorative door cut through. For Pomni walking in from the
+ * Dorm Hall (main.js's walkIntoPomniRoom): the hall preview beyond is
+ * shown separately, once she's actually in here.
+ */
+function openDoorway(room) {
+  if (room.group.userData.doorwayOpen) return;
+  room.group.userData.doorwayOpen = true;
+  room.group.updateMatrixWorld(true);
+  const panelBox = new THREE.Box3().setFromObject(room.group.getObjectByName('Plane_1'));
+  createDoorwayAperture(room, panelBox).setEnabled(true);
+  createBedroomDoorHinge({ group: room.group, collisionMeshes: room.collisionMeshes, insidePoint: room.spawn })
+    .setOpenFraction(1);
 }

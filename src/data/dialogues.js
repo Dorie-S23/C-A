@@ -253,6 +253,7 @@ export const level2HallwayDialogue = [
 
 export const level2RoomOpeningDialogue = [
   {
+    id: 'l2_inside',
     type: 'beat',
     text: 'In his room, Kaufmo turns toward Pomni, still lost in thought.',
   },

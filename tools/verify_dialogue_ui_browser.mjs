@@ -61,4 +61,35 @@ try {
   await page.keyboard.press('Space');
   assert.equal(await page.locator('#dialogue-text').textContent(), 'Paused action.');
   console.log('PASS Scene completion while paused preserves hidden, paused dialogue until resume');
+
+  await page.evaluate(() => {
+    window.cueCalls = 0; window.choices = []; window.skipComplete = 0;
+    window.ui.play([
+      { type: 'line', speaker: 'pomni', side: 'left', text: 'Start.' },
+      { type: 'cue', id: 'walk' },
+      { type: 'choice', options: [
+        { text: 'Poor support', points: 0, next: 'end' },
+        { text: 'Good support', points: 1, next: 'end' },
+      ] },
+      { type: 'line', id: 'end', speaker: 'pomni', side: 'left', text: 'Done.' },
+    ], {
+      onNode: node => {
+        if (node.id !== 'walk') return;
+        window.cueCalls++;
+        return new Promise(resolve => { window.finishWalk = resolve; });
+      },
+      onChoice: option => window.choices.push(option.points),
+      onComplete: () => window.skipComplete++,
+    });
+    window.ui.skipToEnd(); window.ui.skipToEnd();
+  });
+  assert.equal(await page.evaluate(() => window.ui.isWaiting), true);
+  assert.equal(await page.evaluate(() => window.cueCalls), 1);
+  assert.equal(await page.evaluate(() => window.skipComplete), 0);
+  await page.evaluate(() => window.finishWalk());
+  await page.waitForFunction(() => !window.ui.isWaiting);
+  await page.evaluate(() => window.ui.skipToEnd());
+  assert.deepEqual(await page.evaluate(() => window.choices), [1]);
+  assert.equal(await page.evaluate(() => window.skipComplete), 1);
+  console.log('PASS Skip honours pending actions, runs cues once and scores the best answer');
 } finally { await browser.close(); }

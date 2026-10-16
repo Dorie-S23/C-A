@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createObjectiveController } from './src/game/objectives.js';
 import { createStoryProgress } from './src/game/storyProgress.js';
+import { runLevel2 } from './src/levels/level2.js';
 
 function fixture() {
   const objectives = createObjectiveController();
@@ -56,4 +57,42 @@ test('new run clears completed encounters and Kaufmo introduction eligibility', 
   assert.equal(progress.hallwayPending, false);
   assert.equal(progress.kaufmoIntroduced, false);
   assert.equal(progress.finishKaufmoIntro(), false);
+});
+
+function missionFixture() {
+  const calls = [], room = {};
+  let resolveTravel;
+  const game = {
+    session: 1, token: 1,
+    playDialogue(key, options) { calls.push({ key, options }); return true; },
+    travel() { return new Promise(resolve => { resolveTravel = resolve; }); },
+    isRoom: candidate => candidate === room,
+    showHint() {},
+  };
+  return { game, calls, arrive() { game.token++; resolveTravel(room); } };
+}
+
+test('Kaufmo introduction waits for real travel and awards its milestone only on completion', async () => {
+  const { game, calls, arrive } = missionFixture();
+  let hallway = 0, introduced = 0;
+  runLevel2(game, { onHallway: () => hallway++, onIntroduced: () => introduced++ });
+  assert.equal(calls[0].key, 'level2Hallway');
+  const pending = calls[0].options.onComplete();
+  assert.equal(hallway, 1);
+  assert.equal(calls.length, 1);
+  arrive(); await pending;
+  assert.equal(calls[1].key, 'level2RoomOpening');
+  calls[1].options.onCancel();
+  assert.equal(introduced, 0);
+  calls[1].options.onComplete();
+  assert.equal(introduced, 1);
+});
+
+test('leaving a session during Kaufmo travel cannot resurrect the old introduction', async () => {
+  const { game, calls, arrive } = missionFixture();
+  runLevel2(game);
+  const pending = calls[0].options.onComplete();
+  game.session++;
+  arrive(); await pending;
+  assert.equal(calls.length, 1);
 });
