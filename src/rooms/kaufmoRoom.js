@@ -17,7 +17,7 @@ const DOOR_SLAB_NAME = 'Door_Slab';
  * Walking up and pressing E plays the Level 2 opening script, via the
  * `playDialogue` hook main.js passes every room loader (see selectRoom()).
  */
-export function loadKaufmoRoom(onProgress, { playDialogue, from, items } = {}) {
+export function loadKaufmoRoom(onProgress, { playDialogue, from, items, kaufmoStory } = {}) {
   return Promise.all([
     loadRoomModel('./models/character%20rooms/kaufmos-room.glb', onProgress),
     loadKaufmo(),
@@ -52,8 +52,11 @@ export function loadKaufmoRoom(onProgress, { playDialogue, from, items } = {}) {
       });
       room.interactables = [...(room.interactables ?? []), {
         objects,
-        prompt: () => (items?.heldCount() > 0 ? 'Give photos to Kaufmo' : 'Talk to Kaufmo'),
-        interact: () => playDialogue(pickKaufmoScript(items)),
+        anchor: kaufmo, radius: 2.8,
+        prompt: () => (items?.heldCount() > 0 && (kaufmoStory?.introduced() ?? true) ? 'Give photos to Kaufmo' : 'Talk to Kaufmo'),
+        interact: () => kaufmoStory
+          ? kaufmoStory.talk(kaufmo.getWorldPosition(new THREE.Vector3()))
+          : playDialogue(pickKaufmoScript(items)),
       }];
     }
     if (doorControl) {

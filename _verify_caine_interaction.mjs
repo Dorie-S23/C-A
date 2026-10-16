@@ -24,6 +24,10 @@ current=true;refuse=true;assert.equal(caine.talk(position,()=>current),false);as
 console.log('PASS New game resets eligibility; room disposal, stale callbacks, rejected starts and failures cannot award progress');
 
 globalThis.ProgressEvent ??= class {};
+// This geometry/controller check does not decode portrait images in Node.
+// Browser checks exercise the real TextureLoader and door icons.
+const originalTextureLoad = THREE.TextureLoader.prototype.load;
+THREE.TextureLoader.prototype.load = function () { return new THREE.Texture(); };
 GLTFLoader.prototype.load=function(url,onLoad,_progress,onError){try{const b=fs.readFileSync(new URL(url.replace(/^\.\//,''),new URL('./public/',import.meta.url)));let j;if(b.readUInt32LE(0)===0x46546c67){const l=b.readUInt32LE(12);j=JSON.parse(b.subarray(20,20+l));j.buffers[0].uri='data:application/octet-stream;base64,'+b.subarray(28+l).toString('base64');}else j=JSON.parse(b);delete j.images;delete j.textures;j.materials=j.materials?.map(({name,doubleSided})=>({name,doubleSided}));new GLTFLoader().parseAsync(JSON.stringify(j),'').then(onLoad,onError);}catch(e){onError(e)}};
 const baseline=await loadDormHallRoom(undefined,{from:'pomni'});let enabled=true,talked=[];
 const room=await loadDormHallRoom(undefined,{from:'pomni',caineStory:{enabled:()=>enabled,talk:p=>talked.push(p)}});
@@ -37,3 +41,4 @@ assert.deepEqual(actor.getObjectByName('CaineCollider').geometry.parameters,orig
 assert.deepEqual(room.spawn.toArray(),baseline.spawn.toArray());assert.deepEqual(room.portals.map(p=>p.to),baseline.portals.map(p=>p.to));
 const again=await loadDormHallRoom(undefined,{from:'pomni',caineStory:{enabled:()=>true,talk:()=>{}}});assert.equal(again.interactables.filter(i=>i.prompt()==='Talk to Caine').length,1);
 console.log('PASS Real Dorm Hall has one distinct Caine target at 2.5m, including collider, with unchanged placement/idle/collider/door/portals across reloads');
+THREE.TextureLoader.prototype.load = originalTextureLoad;

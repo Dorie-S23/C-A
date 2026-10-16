@@ -33,6 +33,11 @@ Run the dialogue, collision, and Level 2 picture collection/scoring checks:
 Run only the Level 2 regression checks (no browser or model assets needed):
     node --test _verify_level2.mjs
 
+Story progression and browser verification:
+    See docs/story-flow.md for the Caine, Ribbit and Kaufmo sequence.
+    With the dev server running, run:
+    node tools/verify_story_flow_browser.mjs
+
 Push your branch:
     Check "git status" and commit the files you intend to publish first.
     For the first push of the current branch, run:

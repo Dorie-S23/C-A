@@ -14,12 +14,12 @@ import { createRagathaEntrance } from './cinematics/ragathaEntrance.js';
 import { POMNI_INVITATION, POMNI_SEATED_DIALOGUE, RAGATHA_ENTRANCE_EVENT } from './cinematics/pomniInvitation.js';
 import { bendBone, SIDEWAYS } from './characters/bendBone.js';
 import { preloadJaxHallwayCutscene, playJaxHallwayCutscene } from './cutscenes/jaxHallwayCutscene.js';
-import { createCaineApproachCutscene } from './cutscenes/caineApproachCutscene.js';
 import { preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
 import { createTitleScreen } from './ui/titleScreen.js';
 import { resetEscapeThreshold } from './state/escapeThreshold.js';
 import { createLevel2Items } from './state/level2Items.js';
+import { pickKaufmoScript } from './state/level2Items.js';
 import { runLevel1 } from './levels/level1.js';
 import { createMinimap } from './ui/minimap.js';
 import { createObjectiveController } from './game/objectives.js';
@@ -28,8 +28,11 @@ import { shouldShowObjective } from './ui/objectiveHUD.js';
 import { createControlsTutorial } from './game/controlsTutorial.js';
 import { createTutorialHUD } from './ui/tutorialHUD.js';
 import { createCaineConversation } from './game/caineConversation.js';
+import { createStoryProgress } from './game/storyProgress.js';
+import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
+  level2HallwayDialogue, level2RoomOpeningDialogue, ribbitFollowupDialogue,
   level2HandIn1Dialogue, level2HandIn2Dialogue, level2HandIn3Dialogue,
   level2IdleDialogue, level2CompleteDialogue, level2PayoffDialogue,
 } from './data/dialogues.js';
@@ -41,12 +44,16 @@ import {
 // each ray test only the handful of triangles near it. Meshes without one
 // (skinned meshes) fall back to the regular raycast.
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
+installGltfBlobCleanup();
 
 // Each preview plays over whichever room backdrop its own scene is set in.
 const DIALOGUE_SCRIPTS = {
   preLevel1: { script: preLevel1Dialogue, room: 'pomni' },
   level1Open: { script: level1OpenDialogue, room: 'pomni' },
   level2Opening: { script: level2OpeningDialogue, room: 'kaufmo' },
+  level2Hallway: { script: level2HallwayDialogue, room: 'dorm' },
+  level2RoomOpening: { script: level2RoomOpeningDialogue, room: 'kaufmo' },
+  ribbitFollowup: { script: ribbitFollowupDialogue, room: 'ribbit' },
   level1Ribbit: { script: level1RibbitDialogue, room: 'ribbit' },
   level2HandIn1: { script: level2HandIn1Dialogue, room: 'kaufmo' },
   level2HandIn2: { script: level2HandIn2Dialogue, room: 'kaufmo' },
@@ -187,6 +194,7 @@ const objectiveHUD = createObjectiveHUD({ objectives, root: document.getElementB
 const controlsTutorial = createControlsTutorial();
 const tutorialHUD = createTutorialHUD({ tutorial: controlsTutorial, root: document.getElementById('tutorial-hud') });
 let preLevel1Session = false;
+let storySessionId = 0;
 let morningDialoguePending = false;
 const caineConversation = createCaineConversation({
   objectives, isStorySession: () => preLevel1Session,
@@ -265,8 +273,6 @@ const titleScreen = createTitleScreen({
   onAction: (action) => {
     if (action === 'play') {
       // PLAY starts a fresh run: hidden score and Level 2's photos.
-      resetEscapeThreshold();
-      itemState.reset();
       titleScreen.hide();
       startNewGame();
     } else if (action === 'options') {
@@ -402,6 +408,7 @@ function showRoomPicker() {
 function returnToHome({ toRoomPicker = false } = {}) {
   resetObjectiveSession();
   loadToken++; // invalidate dialogue callbacks before cancelling the old UI
+  cancelCutscene();
   activeEntrance?.dispose(); activeEntrance = null;
   activeOpening = null;
   cinematicSkip.hidden = true;
@@ -409,10 +416,6 @@ function returnToHome({ toRoomPicker = false } = {}) {
   if (dialogueUI.isActive) dialogueUI.cancel();
   minimap.hide();
   paused = false;
-  if (preLevel1Timer) {
-    clearInterval(preLevel1Timer);
-    preLevel1Timer = null;
-  }
   resetMoveState();
   resetStage();
 
@@ -455,6 +458,8 @@ function returnToHome({ toRoomPicker = false } = {}) {
 
 function startNewGame() {
   resetObjectiveSession(true);
+  resetEscapeThreshold();
+  itemState.reset();
   openingAudio.unlock();
   if (isLocked) document.exitPointerLock();
   titleScreen.hide();
@@ -463,7 +468,9 @@ function startNewGame() {
 }
 
 function resetObjectiveSession(active = false) {
+  storySessionId++;
   caineConversation.cancelPending();
+  storyProgress.reset();
   preLevel1Session = active;
   morningDialoguePending = false;
   objectives.reset(); objectiveHUD.hide();
@@ -662,41 +669,42 @@ let activeCutscene = null;
  * whatever dialogue/preview was paused for it.
  */
 function runCutscene(cutscene, onDone) {
-  activeCutscene = { update: cutscene.update, onDone };
+  cancelCutscene();
+  activeCutscene = { update: cutscene.update, onDone, cancel: cutscene.cancel };
 }
 
-/**
- * Wires Level 2's opening script to cut to Kaufmo's hallway run the moment
- * his mumbling line comes up (see kaufmoHallwayCutscene.js) — shared by
- * the preview button (playDialoguePreview) and the real in-room
- * conversation (kaufmoRoom.js, via playRoomDialogue), since level2Opening
- * plays through both. Unlike Jax's cutscene, the dialogue box stays open
- * the whole time — his mumbled line is the point, not a silent beat — so
- * this only ever needs to decorate onNode, never split the script.
- * Starts loading immediately so the cutscene's ready by the time the line
- * actually shows, and composes with whatever onNode the caller already
- * wanted (level1.js's missions use onNode too).
- */
-function withKaufmoHallwayCutscene(key, baseOnNode) {
-  if (key !== 'level2Opening') return baseOnNode;
-  const ready = preloadKaufmoHallwayCutscene();
+function cancelCutscene() {
+  const previous = activeCutscene;
+  activeCutscene = null;
+  previous?.cancel?.();
+}
+
+/** An awaited hallway cutaway, cancelled with its owning dialogue or room. */
+function withHallwayCutscene(key, baseOnNode) {
+  const jax = key === 'preLevel1';
+  if (!jax && key !== 'level2Opening' && key !== 'level2Hallway') return baseOnNode;
+  const token = loadToken;
   let triggered = false;
   return (node) => {
-    baseOnNode?.(node);
-    if (triggered || node.id !== 'kaufmoHurriesBy') return;
+    const base = baseOnNode?.(node);
+    if (triggered || node.id !== (jax ? 'jaxPassByText' : 'kaufmoHurriesBy')) return base;
     triggered = true;
-    ready.then((assets) => {
+    const dialogue = dialogueGeneration;
+    return (async () => {
+      await base;
+      let assets;
+      try { assets = await (jax ? preloadJaxHallwayCutscene() : preloadKaufmoHallwayCutscene()); }
+      catch (error) { console.warn('Hallway scene unavailable; continuing dialogue.', error); return; }
       if (!assets) return;
-      // The preload can still be in flight when the line that needs it
-      // shows — if the player's already backed out of the conversation
-      // by the time it resolves, don't let a stale cutscene hijack
-      // whatever's on screen now; just free it unused.
-      if (!dialogueUI.isActive) {
-        disposeObject3D(assets.scene);
-        return;
+      if (token !== loadToken || dialogue !== dialogueGeneration || !dialogueUI.isActive) {
+        disposeObject3D(assets.scene); return;
       }
-      runCutscene(playKaufmoHallwayCutscene(renderer, assets), () => disposeObject3D(assets.scene));
-    });
+      await new Promise(resolve => {
+        const finish = () => { disposeObject3D(assets.scene); resolve(); };
+        const cutscene = jax ? playJaxHallwayCutscene(renderer, assets) : playKaufmoHallwayCutscene(renderer, assets);
+        runCutscene({ ...cutscene, cancel: finish }, finish);
+      });
+    })();
   };
 }
 
@@ -721,157 +729,26 @@ function playDialoguePreview(key) {
   const entry = DIALOGUE_SCRIPTS[key];
   if (!entry) return;
   resetObjectiveSession();
-  const { script, room } = entry;
+  titleScreen.hide();
   openingCompleted = false;
-
-  // Pre-Level 1's "Jax storms past" plays as a cutscene cut away to the
-  // real Dorm Hall (see jaxHallwayCutscene.js) rather than anything
-  // happening inside this preview's own room — load it alongside the
-  // room rather than after, so it's never what the player ends up
-  // waiting on.
-  const cutsceneReady = key === 'preLevel1' ? preloadJaxHallwayCutscene() : Promise.resolve(null);
-
-  selectRoom(room, {
+  selectRoom(entry.room, {
     preview: key,
-    onReady: () => {
+    onReady() {
       overlay.classList.add('hidden');
       readyToPlay = false;
-      resetMoveState();
       if (roomTalkPartner) turnPomniTowards(roomTalkPartner, PREVIEW_CAMERA_OFFSET);
-      const roomAtLoad = currentRoom;
-
-      cutsceneReady.then((cutsceneAssets) => {
-        if (currentRoom !== roomAtLoad) return; // player backed out before it finished loading
-
-        function finish() {
+      playRoomDialogue(key, {
+        onNode: roomDialogueCue,
+        onComplete() {
           roomDialogueCue?.(null);
           readyToPlay = true;
           overlay.classList.remove('hidden');
           overlayTitle.textContent = 'Click to Play';
           overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
-        }
-
-        // One-shot assets (a whole extra copy of the Dorm Hall) — free
-        // their GPU resources once used, whether that's right after the
-        // cutscene plays or because the player backed out before it got
-        // that far, rather than leaking VRAM every time this gets replayed.
-        let cutsceneDisposed = false;
-        function disposeCutsceneAssets() {
-          if (cutsceneDisposed || !cutsceneAssets) return;
-          cutsceneDisposed = true;
-          disposeObject3D(cutsceneAssets.scene);
-        }
-
-        // Escape mid-preview: don't leave the player stuck with both the
-        // dialogue and the home overlay hidden — bail all the way out.
-        const cancel = () => {
-          disposeCutsceneAssets();
-          returnToHome();
-        };
-
-        if (cutsceneAssets) {
-          // Played in two parts around the cutscene: dialogueUI.play()'s
-          // own finish() already hides the dialogue box once stopAt ends
-          // part one, so there's nothing extra to hide/show by hand here.
-          dialogueUI.play(script, {
-            stopAt: 'jaxPassByText',
-            onNode: roomDialogueCue,
-            onComplete: () => {
-              runCutscene(playJaxHallwayCutscene(renderer, cutsceneAssets), () => {
-                disposeCutsceneAssets();
-                dialogueUI.play(script, {
-                  startAt: 'afterJaxPassBy',
-                  onComplete: () => {
-                    if (key === 'preLevel1') {
-                      startPreLevel1Exploration();
-                    } else {
-                      finish();
-                    }
-                  },
-                  onCancel: cancel,
-                  startAt: 'afterJaxPassBy', onNode: roomDialogueCue, onComplete: finish, onCancel: cancel,
-                });
-              });
-            },
-            onCancel: cancel,
-          });
-        } else {
-          dialogueUI.play(script, {
-            onComplete: () => {
-              if (key === 'preLevel1') {
-                startPreLevel1Exploration();
-              } else {
-                finish();
-              }
-            },
-            onNode: withKaufmoHallwayCutscene(key, roomDialogueCue),
-            onComplete: finish,
-            onCancel: cancel,
-          });
-        }
+        },
+        onCancel: () => returnToHome(),
       });
     },
-  });
-}
-
-let preLevel1Timer = null;
-let preLevel1SecondsLeft = 0;
-
-function startPreLevel1Exploration() {
-  readyToPlay = true;
-  overlay.classList.add('hidden');
-  resetMoveState();
-  stage.hold(false);
-
-  // Attempt pointer lock so Pomni can immediately walk out and explore
-  try {
-    renderer.domElement.requestPointerLock?.();
-  } catch (_) {}
-
-  showHint('Explore the circus... Caine arrives in 8s!', 4000);
-
-  if (preLevel1Timer) clearInterval(preLevel1Timer);
-  preLevel1SecondsLeft = 8;
-
-  preLevel1Timer = setInterval(() => {
-    preLevel1SecondsLeft--;
-    if (preLevel1SecondsLeft === 5) {
-      showHint('5s remaining to explore...', 1800);
-    } else if (preLevel1SecondsLeft === 2) {
-      showHint('2s... Look around!', 1500);
-    } else if (preLevel1SecondsLeft <= 0) {
-      clearInterval(preLevel1Timer);
-      preLevel1Timer = null;
-      triggerCaineCutscene();
-    }
-  }, 1000);
-}
-
-function triggerCaineCutscene() {
-  stage.hold(true);
-  resetMoveState();
-  showHint('Here comes Caine!', 2500);
-
-  const cutscene = createCaineApproachCutscene({
-    scene,
-    camera,
-    player,
-    pomni,
-    renderer,
-    dialogueUI,
-    onComplete: () => {
-      stage.hold(false);
-      showHint('Objective: Check on Ribbit down the hall (Level 1)', 6000);
-    },
-    onCancel: () => {
-      stage.hold(false);
-      returnToHome();
-    },
-  });
-
-  runCutscene(cutscene, () => {
-    stage.hold(false);
-    showHint('Objective: Check on Ribbit down the hall (Level 1)', 6000);
   });
 }
 
@@ -898,16 +775,25 @@ function triggerCaineCutscene() {
  *   distressFor?: (lineNode) => number, onNode?: (node) => void,
  *   startAt?: string, stopAt?: string }} [options]
  */
+let dialogueGeneration = 0;
 function playRoomDialogue(key, {
-  lookAt, onChoice, onComplete, onCancel, distressFor, onNode, startAt, stopAt,
+  lookAt, onChoice, onComplete, onCancel, distressFor, lineFor, onNode, startAt, stopAt,
 } = {}) {
   const entry = DIALOGUE_SCRIPTS[key];
   if (!entry || dialogueUI.isActive) return false;
+  const generation = ++dialogueGeneration;
+  const token = loadToken;
+  const finish = callback => () => {
+    if (generation !== dialogueGeneration) return;
+    dialogueGeneration++;
+    cancelCutscene();
+    if (token === loadToken) callback?.();
+  };
   resetMoveState();
   if (lookAt) turnPomniTowards(lookAt);
   dialogueUI.play(entry.script, {
-    onChoice, onComplete, onCancel, distressFor, startAt, stopAt,
-    onNode: withKaufmoHallwayCutscene(key, onNode),
+    onChoice, onComplete: finish(onComplete), onCancel: finish(onCancel), distressFor, lineFor, startAt, stopAt,
+    onNode: withHallwayCutscene(key, onNode),
   });
   return true;
 }
@@ -924,8 +810,8 @@ const MISSIONS = {
 const missionApi = {
   /** Loads a room from the menus (Click to Play); resolves with the loaded room. */
   enterRoom(roomKey) {
-    return new Promise((resolve) => {
-      selectRoom(roomKey, {
+    return selectRoom(roomKey, {
+        from: currentRoomKey,
         onReady: (room) => {
           if (isLocked) {
             overlay.classList.add('hidden');
@@ -933,10 +819,8 @@ const missionApi = {
             overlayTitle.textContent = 'Click to Play';
             overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
           }
-          resolve(room);
         },
       });
-    });
   },
   /** Moves to another room mid-mission, keeping the mouse captured (like a portal). */
   travel(roomKey) {
@@ -949,13 +833,87 @@ const missionApi = {
   },
   playDialogue: playRoomDialogue,
   endLevel: (title, subtitle) => endLevel(title, subtitle),
+  showHint,
+  isRoom: room => currentRoom === room.group,
+  get token() { return loadToken; },
+  get session() { return storySessionId; },
   get stage() {
     return stage;
   },
 };
 
 function startMission(key) {
+  resetObjectiveSession();
+  titleScreen.hide();
   MISSIONS[key]?.(missionApi);
+}
+
+function attachStoryInteractions(room, roomKey, token) {
+  if (!preLevel1Session || roomKey !== 'dorm') return;
+  const control = room.hallDoors?.ribbit?.control;
+  if (!control) return;
+  const current = () => token === loadToken && preLevel1Session;
+  // The ordinary door remains operable after this encounter is complete.
+  control.interactable.enabled = () => current() && storyProgress.ribbitComplete;
+  if (room.hallDoors.ribbit.portal) {
+    room.hallDoors.ribbit.portal.enabled = () => storyProgress.ribbitComplete;
+  }
+  room.interactables.push({
+    objects: control.interactable.objects, anchor: control.interactable.anchor,
+    radius: control.interactable.radius,
+    enabled: () => current() && !storyProgress.ribbitComplete,
+    prompt: () => objectives.active?.id === 'find-ribbit' ? 'Knock on Ribbit’s door' : 'Ribbit’s room',
+    interact() {
+      if (!current()) return;
+      if (objectives.active?.id !== 'find-ribbit') {
+        showHint('Speak with Caine before checking on Ribbit.', 4000);
+        return;
+      }
+      runLevel1(missionApi, { hall: room, story: true, onComplete: points => storyProgress.finishRibbit(points) });
+    },
+  });
+}
+
+function playKaufmoHallway(token) {
+  overlay.classList.add('hidden');
+  const valid = () => token === loadToken && preLevel1Session;
+  playRoomDialogue('level2Hallway', {
+    onComplete() {
+      if (!valid()) return;
+      storyProgress.finishHallway();
+      showHint('Kaufmo went to his room, a few doors toward the entrance.', 6500);
+    },
+    onCancel() {
+      if (valid()) showHint('You can find Kaufmo in his room, a few doors toward the entrance.', 6500);
+    },
+  });
+}
+
+function talkToKaufmo(lookAt, token) {
+  if (token !== loadToken || currentRoomKey !== 'kaufmo' || dialogueUI.isActive) return false;
+  const valid = () => token === loadToken && currentRoomKey === 'kaufmo';
+  if (preLevel1Session && !storyProgress.ribbitComplete) {
+    showHint('Check on Ribbit first. Kaufmo can wait here.', 4500);
+    return false;
+  }
+  if (preLevel1Session && !storyProgress.kaufmoIntroduced) {
+    return playRoomDialogue('level2RoomOpening', {
+      lookAt,
+      onComplete() {
+        if (!valid() || !storyProgress.finishKaufmoIntro()) return;
+        if (itemState.heldCount()) showHint('You already have a photo. Talk to Kaufmo again to show him.', 6000);
+      },
+    });
+  }
+  const key = pickKaufmoScript(itemState);
+  storyProgress.presentedPhotos(itemState.totalPresented());
+  return playRoomDialogue(key === 'level2Opening' ? 'level2RoomOpening' : key, {
+    lookAt,
+    onComplete() {
+      if (!valid()) return;
+      if (key === 'level2Payoff' && preLevel1Session) objectives.complete('check-kaufmo');
+    },
+  });
 }
 
 /**
@@ -975,10 +933,12 @@ function turnPomniTowards(point, cameraOffset = 0) {
 const itemState = createLevel2Items({
   onCollect: (count) => showHint(`Picked up a photo. (${count}/3)`),
 });
+const storyProgress = createStoryProgress({ objectives, isStorySession: () => preLevel1Session });
 
 function updatePictureCounter() {
   // Only free exploration shows the HUD, including between room visits.
-  const visible = isLocked && readyToPlay && !paused && !dialogueUI.isActive
+  const visible = (!preLevel1Session || storyProgress.kaufmoIntroduced)
+    && isLocked && readyToPlay && !paused && !dialogueUI.isActive
     && !activeCutscene && !activeCinematic()?.active && !stageBusy() && !titleScreen.active
     && overlay.classList.contains('hidden') && controlsPanel.hidden
     && creditsPanel.classList.contains('hidden');
@@ -999,6 +959,7 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
   activeEntrance?.dispose(); activeEntrance = null;
   // Invalidate callbacks before cancelling a dialogue owned by the old room.
   const myToken = ++loadToken; // any older in-flight load becomes stale the instant this fires
+  cancelCutscene();
   if (dialogueUI.isActive) dialogueUI.cancel();
   activeOpening = null;
   cinematicSkip.hidden = true;
@@ -1040,7 +1001,7 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
   overlayTitle.textContent = 'Loading…';
   overlaySubtitle.textContent = 'Fetching room model (0%)';
 
-  Promise.all([
+  return Promise.all([
     loadRoom((ratio, stage) => {
       if (myToken !== loadToken) return; // a newer selectRoom()/returnToHome() superseded this one
       overlaySubtitle.textContent = `Fetching ${stage === 'opening' ? 'opening animation' : 'room model'} (${Math.round(ratio * 100)}%)`;
@@ -1049,6 +1010,14 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
         enabled: () => caineConversation.enabled,
         talk: lookAt => caineConversation.talk(lookAt,
           () => myToken === loadToken && currentRoomKey === 'dorm'),
+      },
+      ribbitStory: {
+        complete: () => storyProgress.ribbitComplete,
+        points: () => storyProgress.ribbitPoints,
+      },
+      kaufmoStory: {
+        introduced: () => !preLevel1Session || storyProgress.kaufmoIntroduced,
+        talk: lookAt => talkToKaufmo(lookAt, myToken),
       },
       openingMode: openingMode ?? (roomKey === 'pomni' && from && openingCompleted ? 'settled' : undefined) }),
     pomniReady,
@@ -1059,9 +1028,14 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
         // finished. Attaching it now would silently resurrect a room over
         // whatever the player actually asked for, so throw it away instead.
         disposeObject3D(result.group);
-        return;
+        return null;
       }
+      attachStoryInteractions(result, roomKey, myToken);
       applyLoadedRoom(result, onReady && (() => onReady(result)), roomKey, openingMode === 'play');
+      if (preLevel1Session && roomKey === 'dorm' && from === 'ribbit' && storyProgress.hallwayPending) {
+        playKaufmoHallway(myToken);
+      }
+      return result;
     })
     .catch((err) => {
       if (myToken !== loadToken) return; // superseded — the active room already shows its own state
@@ -1072,6 +1046,7 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
       dialoguePicker.hidden = false;
       btnTitle.hidden = false;
       overlay.classList.remove('loading');
+      return null;
     });
 }
 
@@ -1200,21 +1175,22 @@ function disposeObject3D(root) {
   root.userData.pomniOpening?.dispose();
   root.userData.bedroomLighting?.dispose();
   root.userData.dormHallPreview?.dispose(); // removes its exclusively owned meshes before generic disposal
+  const geometries = new Set(), materials = new Set(), textures = new Set(), skeletons = new Set();
   root.traverse((child) => {
+    child.shadow?.dispose();
     if (!child.isMesh) return;
     child.dispose?.(); // e.g. a mirror's Reflector frees its render target
-    if (child.geometry) {
-      disposeBoundsTree.call(child.geometry);
-      child.geometry.dispose();
-    }
-    const materials = Array.isArray(child.material) ? child.material : [child.material];
-    for (const material of materials) {
-      for (const key of Object.keys(material)) {
-        if (material[key]?.isTexture) material[key].dispose();
-      }
-      material.dispose();
-    }
+    if (child.skeleton) skeletons.add(child.skeleton);
+    if (child.geometry) geometries.add(child.geometry);
+    for (const material of Array.isArray(child.material) ? child.material : [child.material]) materials.add(material);
   });
+  for (const material of materials) {
+    for (const value of Object.values(material)) if (value?.isTexture) textures.add(value);
+    material.dispose();
+  }
+  for (const geometry of geometries) { disposeBoundsTree.call(geometry); geometry.dispose(); }
+  for (const skeleton of skeletons) skeleton.dispose();
+  releaseTextures(textures);
 }
 
 // --- Credits panel ---
@@ -1979,12 +1955,14 @@ const SIT_SHARPNESS = 6;
 let stageWalk = null;    // { points: Vector3[], index, speed, resolve }
 let stageGesture = null; // { name, time, taps, onTap, resolve }
 let stageSeatY = null;   // world height of the seat she's sitting on, or null
+let stageDelay = null;
+let stageCamera = null;
 let stageHold = false;   // a room asked to keep control frozen (between beats)
 let sitAmount = 0;       // 0 standing .. 1 seated, eased
 const stageHeading = new THREE.Vector3();
 
 function stageBusy() {
-  return stageHold || stageWalk !== null || stageGesture !== null || stageSeatY !== null;
+  return stageHold || stageWalk !== null || stageGesture !== null || stageSeatY !== null || stageDelay !== null;
 }
 
 /** Turns Pomni to face (x, z) and swings the camera round behind her. */
@@ -2005,7 +1983,7 @@ const stage = {
 
   /** Walks her through each point in turn (no collision); resolves on arrival. */
   walkTo(points, { speed = STAGE_WALK_SPEED } = {}) {
-    stageWalk?.resolve();
+    stageWalk?.resolve(false);
     return new Promise((resolve) => {
       stageWalk = { points: points.map((p) => new THREE.Vector3(p.x, 0, p.z)), index: 0, speed, resolve };
     });
@@ -2013,7 +1991,7 @@ const stage = {
 
   /** Plays a gesture on top of her idle. 'knock' calls onTap at each rap. */
   gesture(name, { onTap } = {}) {
-    stageGesture?.resolve();
+    stageGesture?.resolve(false);
     return new Promise((resolve) => {
       stageGesture = { name, time: 0, taps: 0, onTap, resolve };
     });
@@ -2028,6 +2006,17 @@ const stage = {
   stand() {
     stageSeatY = null;
   },
+
+  wait(seconds) {
+    stageDelay?.resolve(false);
+    return new Promise(resolve => { stageDelay = { remaining: seconds, resolve }; });
+  },
+
+  frame({ position, target }) {
+    stageCamera = { position: new THREE.Vector3(...position), target: new THREE.Vector3(...target) };
+  },
+
+  releaseCamera() { stageCamera = null; },
 
   /** Frames the shot: the follow camera's yaw (0 looks toward -Z) and pitch. */
   setCamera({ yaw, pitch = DEFAULT_PITCH }) {
@@ -2047,11 +2036,14 @@ const stage = {
 
 /** Cancels anything staged; on room change and when a room resets its scene. */
 function resetStage() {
-  stageWalk?.resolve();
-  stageGesture?.resolve();
+  stageWalk?.resolve(false);
+  stageGesture?.resolve(false);
+  stageDelay?.resolve(false);
   stageWalk = null;
   stageGesture = null;
   stageSeatY = null;
+  stageDelay = null;
+  stageCamera = null;
   stageHold = false;
   sitAmount = 0;
 }
@@ -2082,7 +2074,7 @@ function updateStageWalk(dt) {
 
   if (walk.index >= walk.points.length) {
     stageWalk = null;
-    walk.resolve();
+    walk.resolve(true);
   }
 }
 
@@ -2123,13 +2115,19 @@ function applyStagePose(dt) {
   }
   if (gesture.time >= KNOCK_DURATION) {
     stageGesture = null;
-    gesture.resolve();
+    gesture.resolve(true);
   }
 }
 
 // --- Third-person follow camera ---
 
 function updateCamera(dt) {
+  if (stageCamera) {
+    camera.position.copy(stageCamera.position);
+    camera.lookAt(stageCamera.target);
+    pomni.visible = true;
+    return;
+  }
   cameraTarget.set(player.position.x, player.position.y - CAMERA_TARGET_DROP, player.position.z);
   cameraOffset.set(
     Math.sin(cameraYaw) * Math.cos(cameraPitch),
@@ -2298,20 +2296,15 @@ function animate() {
     roomUpdate?.(delta, player.position);
     refreshDynamicColliders();
   }
-  if (pomni) {
-    // No walking while the next room loads, mid-conversation, or while a
-    // room is staging her (see `stage`): a scripted walk drives her instead.
-    if (stageWalk && !paused) updateStageWalk(delta);
-    else if (isLocked && readyToPlay && !dialogueUI.isActive && !stageBusy()) updateMovement(delta);
-    else updatePomniWalk(delta, 0); // settle the waddle while paused/talking
-    // Don't run the orbit camera while a cutscene owns it — the cutscene
-    // sets camera.position / lookAt itself, and running updateCamera on top
-    // would fight it every frame, causing a visible shake/jitter.
-    if (!activeCutscene) updateCamera(delta);
-    if (!activeOpening?.active) roomUpdate?.(delta);
-    refreshDynamicColliders();
+  if (!paused && stageDelay) {
+    stageDelay.remaining -= delta;
+    if (stageDelay.remaining <= 0) {
+      const delay = stageDelay;
+      stageDelay = null;
+      delay.resolve(true);
+    }
   }
-  if (pomni) {
+  if (pomni && !paused) {
     if (activeEntrance?.active) {
       if (!paused) {
         updatePomniWalk(delta, 0);
@@ -2338,7 +2331,7 @@ function animate() {
       if (stageWalk && !paused) updateStageWalk(delta);
       else if (isLocked && readyToPlay && !dialogueUI.isActive && !stageBusy() && !activeCutscene) updateMovement(delta);
       else updatePomniWalk(delta, 0); // settle the waddle while paused/talking
-      updateCamera(delta);
+      if (!activeCutscene) updateCamera(delta);
     }
   }
   minimap.update(player.position.x, player.position.z, cameraYaw);
@@ -2348,7 +2341,7 @@ function animate() {
   tutorialHUD.update(hudContext, focusedBedroomDoor());
   updatePictureCounter();
   if (activeCutscene) {
-    const finished = activeCutscene.update(delta);
+    const finished = activeCutscene.update(paused ? 0 : delta);
     if (finished) {
       const { onDone } = activeCutscene;
       activeCutscene = null;
@@ -2399,6 +2392,13 @@ export function getOpeningDiagnostics() {
   });
   return {
     room: currentRoomKey, phase: opening?.phase ?? null, time: opening?.time ?? null,
+    dialogueWaiting: dialogueUI.isWaiting,
+    stagedWalk: Boolean(stageWalk), stagedSeat: stageSeatY !== null,
+    stagedDelay: stageDelay?.remaining ?? null, stagedCamera: Boolean(stageCamera),
+    cutsceneActive: Boolean(activeCutscene),
+    ribbitComplete: storyProgress.ribbitComplete, ribbitPoints: storyProgress.ribbitPoints,
+    hallwayPending: storyProgress.hallwayPending, kaufmoIntroduced: storyProgress.kaufmoIntroduced,
+    picturesHeld: itemState.heldCount(), picturesPresented: itemState.totalPresented(),
     objective: objectives.active, objectiveVisible: !document.getElementById('objective-hud').hidden,
     tutorial: controlsTutorial.state, tutorialVisible: !document.getElementById('tutorial-hud').hidden,
     morningDialoguePending, preLevel1Session,
