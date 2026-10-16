@@ -780,7 +780,7 @@ function playDialoguePreview(key) {
               runCutscene(playJaxHallwayCutscene(renderer, cutsceneAssets), () => {
                 disposeCutsceneAssets();
                 dialogueUI.play(script, {
-                  startAt: 'afterJaxPassBy',
+                  startAt: 'afterJaxPassBy', onNode: roomDialogueCue,
                   onComplete: () => {
                     if (key === 'preLevel1') {
                       startPreLevel1Exploration();
@@ -789,7 +789,6 @@ function playDialoguePreview(key) {
                     }
                   },
                   onCancel: cancel,
-                  startAt: 'afterJaxPassBy', onNode: roomDialogueCue, onComplete: finish, onCancel: cancel,
                 });
               });
             },
@@ -797,6 +796,7 @@ function playDialoguePreview(key) {
           });
         } else {
           dialogueUI.play(script, {
+            onNode: withKaufmoHallwayCutscene(key, roomDialogueCue),
             onComplete: () => {
               if (key === 'preLevel1') {
                 startPreLevel1Exploration();
@@ -804,8 +804,6 @@ function playDialoguePreview(key) {
                 finish();
               }
             },
-            onNode: withKaufmoHallwayCutscene(key, roomDialogueCue),
-            onComplete: finish,
             onCancel: cancel,
           });
         }
@@ -859,6 +857,7 @@ function triggerCaineCutscene() {
     pomni,
     renderer,
     dialogueUI,
+    clearance: cameraCollisionDistance,
     onComplete: () => {
       stage.hold(false);
       showHint('Objective: Check on Ribbit down the hall (Level 1)', 6000);
@@ -976,7 +975,6 @@ const itemState = createLevel2Items({
   onCollect: (count) => showHint(`Picked up a photo. (${count}/3)`),
 });
 
-function selectRoom(roomKey, { onReady, from, preview } = {}) {
 function updatePictureCounter() {
   // Only free exploration shows the HUD, including between room visits.
   const visible = isLocked && readyToPlay && !paused && !dialogueUI.isActive
@@ -1044,8 +1042,6 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
   Promise.all([
     loadRoom((ratio, stage) => {
       if (myToken !== loadToken) return; // a newer selectRoom()/returnToHome() superseded this one
-      overlaySubtitle.textContent = `Fetching room model (${Math.round(ratio * 100)}%)`;
-    }, { from, playDialogue: playRoomDialogue, endLevel, stage, items: itemState, preview }),
       overlaySubtitle.textContent = `Fetching ${stage === 'opening' ? 'opening animation' : 'room model'} (${Math.round(ratio * 100)}%)`;
     }, { from, playDialogue: playRoomDialogue, preview, endLevel, stage, items: itemState, travel: travelTo,
       caineStory: {
@@ -1786,8 +1782,6 @@ function checkPortals() {
   if (portals.length === 0) return;
   // Her actual feet, not floorY: the dorm arch stands on a few steps.
   triggerProbe.set(player.position.x, player.position.y - PLAYER_HEIGHT + 0.5, player.position.z);
-  // A door portal only leads anywhere once it's open (see makeDoorOpenable).
-  const portal = portals.find((p) => !p.disabled && p.box.containsPoint(triggerProbe));
   // A door portal (see rooms/doors.js) only leads anywhere once it's open.
   const portal = portals.find((p) => p.box.containsPoint(triggerProbe) && !p.disabled && (p.enabled?.() ?? true));
   if (portal) travelTo(portal.to);
@@ -2300,20 +2294,7 @@ function animate() {
   // on a player who is sitting in the pause menu.
   if (!paused) {
     updateMovers(delta);
-    roomUpdate?.(delta, player.position);
-    refreshDynamicColliders();
-  }
-  if (pomni) {
-    // No walking while the next room loads, mid-conversation, or while a
-    // room is staging her (see `stage`): a scripted walk drives her instead.
-    if (stageWalk && !paused) updateStageWalk(delta);
-    else if (isLocked && readyToPlay && !dialogueUI.isActive && !stageBusy()) updateMovement(delta);
-    else updatePomniWalk(delta, 0); // settle the waddle while paused/talking
-    // Don't run the orbit camera while a cutscene owns it — the cutscene
-    // sets camera.position / lookAt itself, and running updateCamera on top
-    // would fight it every frame, causing a visible shake/jitter.
-    if (!activeCutscene) updateCamera(delta);
-    if (!activeOpening?.active) roomUpdate?.(delta);
+    if (!activeOpening?.active) roomUpdate?.(delta, player.position);
     refreshDynamicColliders();
   }
   if (pomni) {
@@ -2343,7 +2324,10 @@ function animate() {
       if (stageWalk && !paused) updateStageWalk(delta);
       else if (isLocked && readyToPlay && !dialogueUI.isActive && !stageBusy() && !activeCutscene) updateMovement(delta);
       else updatePomniWalk(delta, 0); // settle the waddle while paused/talking
-      updateCamera(delta);
+      // Don't run the orbit camera while a cutscene owns it — the cutscene
+      // sets camera.position / lookAt itself, and running updateCamera on top
+      // would fight it every frame, causing a visible shake/jitter.
+      if (!activeCutscene) updateCamera(delta);
     }
   }
   minimap.update(player.position.x, player.position.z, cameraYaw);

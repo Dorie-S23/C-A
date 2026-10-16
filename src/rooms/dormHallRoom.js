@@ -3,7 +3,6 @@ import { loadRoomModel } from './loadRoomModel.js';
 import { createCurtainPortal, createDoorPortal, createDoorConnection } from './portals.js';
 import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { attachRoomBehindDoor, sill } from './connectRooms.js';
-import { loadPomniRoom } from './pomniRoom.js';
 import { findWallSpot, findSpotNear, placeOfficePicture } from '../props/officePicture.js';
 import { ICONS } from '../ui/portraitIcons.js';
 import { loadCaine, createCaineIdle } from '../characters/caine.js';
@@ -47,10 +46,11 @@ const DIALOGUE_ICON_DOORS = ['Kaufmo', 'Ribbit'];
 
 // Rooms physically built onto the hall behind their door (see
 // connectRooms.js) instead of reached through a portal and a loading
-// screen: open the door and the room is right there.
-const CONNECTED_ROOMS = {
-  pomni: loadPomniRoom,
-};
+// screen: open the door and the room is right there. Each needs a loader
+// with an `embedded` mode that leaves its own door out and reports its
+// doorway. Pomni's door is parked for now: its bedroom connection and
+// doorway preview (createDoorConnection, dormHallPreview.js) own it.
+const CONNECTED_ROOMS = {};
 // How close (metres from the doorway) a connected room keeps its mirrors
 // reflecting and its shadows updating while Pomni's out in the hall with
 // the door open. Each of those re-renders the whole scene, hall and all,
@@ -69,16 +69,14 @@ const PICTURE_ANCHOR = 'Short_Photo002';
 const PICTURE_OFFSET = new THREE.Vector3(-0.3, 0, 0); // just off the wall, into the hall
 const PICTURE_LEAN = 0.2; // radians, top resting back against the wall
 
-export function loadDormHallRoom(onProgress, { from, items } = {}) {
+export function loadDormHallRoom(onProgress, { from, items, travel, caineStory } = {}) {
   const connected = Object.entries(CONNECTED_ROOMS).map(([key, load]) =>
     load(null, { items, embedded: true }).then((guest) => [key, guest]));
   return Promise.all([
     loadRoomModel(DORM_HALL_URL, onProgress, { spawnAt: SPAWN }),
     Promise.all(connected),
-  ]).then(([room, guests]) => {
+  ]).then(async ([room, guests]) => {
     const guestRooms = Object.fromEntries(guests);
-export function loadDormHallRoom(onProgress, { from, items, travel, caineStory } = {}) {
-  return loadRoomModel(DORM_HALL_URL, onProgress, { spawnAt: SPAWN }).then(async (room) => {
     // The door handles and light fittings are real metals.
     room.environment = true;
     useDialogueIcons(room.group);
@@ -174,9 +172,10 @@ export function loadDormHallRoom(onProgress, { from, items, travel, caineStory }
     });
     room.collisionMeshes.push({ mesh: collider, box: new THREE.Box3().setFromObject(collider) });
     const caineIdle = createCaineIdle(caine);
-    room.update = (deltaSeconds) => {
+    const hallUpdate = room.update; // doors, plus any connected rooms
+    room.update = (deltaSeconds, playerPosition) => {
       caineIdle(deltaSeconds);
-      for (const control of doorControls) control.update(deltaSeconds);
+      hallUpdate(deltaSeconds, playerPosition);
     };
     // Configure arrival only after Caine's placement, so entering from the
     // bedroom does not change his established position or orientation.
@@ -287,6 +286,8 @@ function onlyRenderWhenSeen(room, guest, control, roomBounds, doorway) {
     for (const child of culled) child.frustumCulled = true;
     show(false);
   };
+}
+
 /** Position from the exported Pomni door icon, not guessed world coordinates. */
 function cainePositionByPomniDoor({ group, collisionMeshes, spawn }) {
   const doorIcon = group.getObjectByName('Pomni');
