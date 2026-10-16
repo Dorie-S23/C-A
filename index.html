@@ -119,6 +119,25 @@
                 background: rgba(176, 22, 63, 0.45);
             }
 
+            #picture-counter {
+                position: fixed;
+                top: 1em;
+                left: 1em;
+                color: #fff;
+                background: rgba(10, 8, 14, 0.75);
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                border-radius: 8px;
+                padding: 0.6em 0.8em;
+                font-size: 0.9em;
+                pointer-events: none;
+                z-index: 5;
+            }
+            @media (max-width: 400px) {
+                #picture-counter {
+                    top: calc(180px + 2em);
+                }
+            }
+
             #hint {
                 position: fixed;
                 bottom: 3em;
@@ -337,6 +356,11 @@
                 gap: 0.4em;
                 text-align: left;
             }
+            .title-panel-box label.title-toggle {
+                flex-direction: row;
+                align-items: center;
+                cursor: pointer;
+            }
             .title-panel-box button {
                 font-size: 1em;
                 padding: 0.6em 1.2em;
@@ -531,6 +555,49 @@
                 outline: 2px solid #ffd27a;
                 outline-offset: 2px;
             }
+            #cinematic-skip { position: fixed; right: 24px; bottom: 24px; z-index: 12;
+                padding: 12px 20px; color: white; background: #242036dd;
+                border: 1px solid #c6bfda; border-radius: 6px; cursor: pointer; }
+            #cinematic-skip[hidden] { display: none; }
+            #objective-hud {
+                position: fixed;
+                top: 1rem;
+                right: 1rem;
+                width: min(270px, calc(100vw - 2rem));
+                box-sizing: border-box;
+                padding: 14px 18px 15px;
+                color: #fff8e9;
+                background: linear-gradient(135deg, rgba(34, 23, 49, .96), rgba(12, 10, 20, .94));
+                border: 1px solid rgba(255, 210, 122, .65);
+                border-top: 3px solid #ffd27a;
+                border-radius: 9px;
+                box-shadow: 0 5px 20px rgba(0, 0, 0, .35), inset 3px 0 #b73950, inset -3px 0 #374e95;
+                z-index: 6;
+                pointer-events: none;
+            }
+            #objective-hud[hidden] { display: none; }
+            #tutorial-hud {
+                position: fixed; left: 1rem; bottom: 1rem;
+                width: min(260px, calc(100vw - 2rem)); box-sizing: border-box;
+                padding: 12px 16px; color: #fff8e9;
+                background: linear-gradient(135deg, rgba(34, 23, 49, .96), rgba(12, 10, 20, .94));
+                border: 1px solid #ffd27a99; border-left: 3px solid #b73950;
+                border-right: 3px solid #374e95; border-radius: 9px;
+                box-shadow: 0 5px 20px #0005; z-index: 6; pointer-events: none;
+            }
+            #tutorial-hud[hidden] { display: none; }
+            #tutorial-hud p { margin: 7px 0; font-size: .9rem; line-height: 1.4; }
+            #tutorial-hud small { color: #c9bed8; font-size: .7rem; }
+            @media (max-width: 600px), (max-height: 480px) {
+                #tutorial-hud { bottom: 5.5rem; width: min(235px, calc(100vw - 2rem)); padding: 9px 12px; }
+            }
+            #objective-hud.objective-hud--with-minimap { right: calc(180px + 2rem); }
+            .objective-label { color: #ffd27a; font-size: .7rem; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+            #objective-title { margin: 7px 0 0; font-size: 1.15rem; font-weight: 700; line-height: 1.3; }
+            #objective-detail { margin: 5px 0 0; color: #d4ccdf; font-size: .8rem; line-height: 1.45; }
+            @media (max-width: 600px) {
+                #objective-hud.objective-hud--with-minimap { top: calc(180px + 2rem); right: 1rem; }
+            }
 
             /* --- Speaker distress (DialogueUI setDistress, levels 1-3) ---
        A line said by someone shaken: the box trembles and the name,
@@ -596,6 +663,7 @@
                 interact &mdash; Esc to release the mouse
             </p>
             <div id="room-picker">
+                <button id="btn-new-game">New Game</button>
                 <button data-room="pomni">Pomni's Room</button>
                 <button data-room="tadc">Circus Lobby</button>
                 <button data-room="dorm">Dorm Hall</button>
@@ -636,7 +704,12 @@
                         step="0.1"
                     />
                 </label>
+                <label class="title-toggle">
+                    <input id="dev-skip-intro" type="checkbox" />
+                    <span>Dev mode: open on room selection</span>
+                </label>
                 <button id="btn-replay-intro">&#9654; Replay intro</button>
+                <button id="btn-room-previews">Room previews</button>
                 <button id="btn-options-credits">Credits</button>
                 <button id="btn-options-back">Back</button>
             </div>
@@ -649,6 +722,18 @@
             </div>
         </div>
         <div id="crosshair" hidden></div>
+        <aside id="objective-hud" role="status" aria-live="polite" aria-atomic="true" hidden>
+            <div class="objective-label"><span aria-hidden="true">&#10022; </span>Current objective</div>
+            <p id="objective-title" data-objective-title></p>
+            <p id="objective-detail" data-objective-detail hidden></p>
+        </aside>
+        <button id="cinematic-skip" hidden>Skip opening</button>
+        <aside id="tutorial-hud" role="status" aria-live="polite" aria-atomic="true" hidden>
+            <div class="objective-label">First steps</div>
+            <div data-tutorial-lines></div>
+            <small>X &middot; Dismiss tips</small>
+        </aside>
+        <div id="picture-counter" role="status" hidden>Pictures found: 0/3</div>
         <div id="hint"></div>
         <div id="prompt" hidden></div>
         <button id="controls-btn">Controls</button>
@@ -669,6 +754,8 @@
                     <dd>Run</dd>
                     <dt><kbd>E</kbd></dt>
                     <dd>Interact</dd>
+                    <dt><kbd>T</kbd></dt>
+                    <dd>Retry an interrupted morning conversation in Pomni's room</dd>
                     <dt><kbd>Mouse</kbd></dt>
                     <dd>Look around</dd>
                     <dt><kbd>Esc</kbd></dt>

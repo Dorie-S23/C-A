@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { loadRoomModel } from './loadRoomModel.js';
-import { createCurtainPortal, createDoorPortal } from './portals.js';
+import { createCurtainPortal, createDoorPortal, createDoorConnection } from './portals.js';
 import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { attachRoomBehindDoor, sill } from './connectRooms.js';
 import { loadPomniRoom } from './pomniRoom.js';
 import { findWallSpot, findSpotNear, placeOfficePicture } from '../props/officePicture.js';
 import { ICONS } from '../ui/portraitIcons.js';
+import { loadCaine, createCaineIdle } from '../characters/caine.js';
 
 // Exported from "Dorm Hall V7.blend" by tools/blender/export_dorm_hall_v7.py,
 // which converts the materials the glTF exporter can't read — re-run it
@@ -76,6 +77,8 @@ export function loadDormHallRoom(onProgress, { from, items } = {}) {
     Promise.all(connected),
   ]).then(([room, guests]) => {
     const guestRooms = Object.fromEntries(guests);
+export function loadDormHallRoom(onProgress, { from, items, travel, caineStory } = {}) {
+  return loadRoomModel(DORM_HALL_URL, onProgress, { spawnAt: SPAWN }).then(async (room) => {
     // The door handles and light fittings are real metals.
     room.environment = true;
     useDialogueIcons(room.group);
@@ -104,6 +107,7 @@ export function loadDormHallRoom(onProgress, { from, items } = {}) {
     const joins = [];
     let arrival = null;
     for (const { frame, slab, icon, to } of ROOM_DOORS) {
+      if (to === 'pomni') continue; // Existing bedroom E connection owns this door.
       const frameObject = room.group.getObjectByName(frame);
       if (!frameObject) continue;
       const centre = new THREE.Box3().setFromObject(frameObject).getCenter(new THREE.Vector3());
@@ -155,6 +159,47 @@ export function loadDormHallRoom(onProgress, { from, items } = {}) {
         room.spawn = portalArrival.arrival.spawn;
         room.spawnFacing = portalArrival.arrival.facing;
       }
+    }
+
+    const position = cainePositionByPomniDoor({ ...room, spawn: defaultSpawn });
+    const { caine, collider } = await loadCaine();
+    caine.position.copy(position);
+    // Greet Pomni approaching from the hallway entrance.
+    caine.rotation.y = Math.atan2(defaultSpawn.x - position.x, defaultSpawn.z - position.z);
+    room.group.add(caine);
+    caine.updateMatrixWorld(true);
+    // main.js invokes mesh.dispose() on room teardown, including stale loads.
+    caine.traverse((child) => {
+      if (child.isSkinnedMesh) child.dispose = () => child.skeleton.dispose();
+    });
+    room.collisionMeshes.push({ mesh: collider, box: new THREE.Box3().setFromObject(collider) });
+    const caineIdle = createCaineIdle(caine);
+    room.update = (deltaSeconds) => {
+      caineIdle(deltaSeconds);
+      for (const control of doorControls) control.update(deltaSeconds);
+    };
+    // Configure arrival only after Caine's placement, so entering from the
+    // bedroom does not change his established position or orientation.
+    const bedroom = createDoorConnection(room, {
+      doorName: 'Plane_36', detailNames: ['Door_Frame068', 'Plane_37', 'Pomni'],
+      to: 'pomni', prompt: "Enter Pomni's Room", travel,
+    });
+    room.interactables = [bedroom.interactable, ...(room.interactables ?? [])];
+    if (caineStory) {
+      const objects = [];
+      // Include the existing invisible collider: it is a stable ray target
+      // and must also be ignored by this NPC's own line-of-sight check.
+      caine.traverse(child => { if (child.isMesh) objects.push(child); });
+      room.interactables.push({
+        objects, anchor: caine, radius: 2.5,
+        enabled: () => caineStory.enabled(),
+        prompt: () => 'Talk to Caine',
+        interact: () => caineStory.talk(caine.getWorldPosition(new THREE.Vector3())),
+      });
+    }
+    if (from === 'pomni') {
+      room.spawn = bedroom.arrival.spawn;
+      room.spawnFacing = bedroom.arrival.facing;
     }
     return room;
   });
@@ -242,4 +287,26 @@ function onlyRenderWhenSeen(room, guest, control, roomBounds, doorway) {
     for (const child of culled) child.frustumCulled = true;
     show(false);
   };
+/** Position from the exported Pomni door icon, not guessed world coordinates. */
+function cainePositionByPomniDoor({ group, collisionMeshes, spawn }) {
+  const doorIcon = group.getObjectByName('Pomni');
+  if (!doorIcon?.isMesh) throw new Error('Dorm Hall is missing Pomni\'s door icon');
+  group.updateMatrixWorld(true);
+  const position = new THREE.Box3().setFromObject(doorIcon).getCenter(new THREE.Vector3());
+  const intoHall = new THREE.Vector3()
+    .fromBufferAttribute(doorIcon.geometry.attributes.normal, 0)
+    .transformDirection(doorIcon.matrixWorld).setY(0).normalize();
+  const towardEntrance = new THREE.Vector3().subVectors(spawn, position).setY(0);
+  if (intoHall.dot(towardEntrance) < 0) intoHall.negate();
+  const alongWall = towardEntrance.addScaledVector(intoHall, -towardEntrance.dot(intoHall)).normalize();
+  // Clear the door opening and leave the middle of the ~7.2 m hall unobstructed.
+  position.addScaledVector(intoHall, 1.4).addScaledVector(alongWall, 1.7);
+
+  const floorRay = new THREE.Raycaster(
+    position.clone().add(new THREE.Vector3(0, 1, 0)), new THREE.Vector3(0, -1, 0), 0, 5,
+  );
+  const floorHit = floorRay.intersectObjects(collisionMeshes.map(({ mesh }) => mesh), false)[0];
+  if (!floorHit) throw new Error('No floor beside Pomni\'s Dorm Hall door');
+  position.y = floorHit.point.y;
+  return position;
 }

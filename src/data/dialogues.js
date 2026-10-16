@@ -18,12 +18,19 @@ export const SPEAKERS = {
 // before anyone says so directly") is a pure 3D/animation beat with no
 // dialogue box in the source script at all — played as an actual cutscene
 // (see jaxHallwayCutscene.js), not anything inline here. main.js plays
-// this script in two parts with stopAt/startAt both set to 'afterJaxPassBy'
+// this script in two parts with stopAt 'jaxPassByText' and startAt 'afterJaxPassBy'
 // below: part one ends right before that line, the cutscene plays between
 // the two Ragatha lines, then part two resumes from 'afterJaxPassBy'.
+//
+// `anim` cues the cast in Pomni's Room as each node comes up (see
+// pomniRoom.js): Ragatha walks up to Pomni, waves hello and chats, is
+// still watching where Jax went when the cutscene cuts back, then turns
+// worried. A cue holds until the next one.
 export const preLevel1Dialogue = [
   {
+    id: 'pomniMorningRemark',
     type: 'line',
+    anim: { ragatha: 'walkIn' },
     speaker: 'pomni',
     side: 'left',
     direction: 'internal, muttered to herself',
@@ -31,13 +38,16 @@ export const preLevel1Dialogue = [
     text: 'Another day trapped in a nightmare circus run by a sentient cartoon. Same as yesterday.',
   },
   {
+    id: 'ragathaMorningGreeting',
     type: 'line',
+    anim: { ragatha: 'wave' },
     speaker: 'ragatha',
     side: 'right',
     text: 'Morning, Pomni! Sleep okay? Well — "sleep." You know what I mean.',
   },
   {
     type: 'line',
+    anim: { ragatha: 'listen' },
     speaker: 'pomni',
     side: 'left',
     mood: 'neutral',
@@ -45,12 +55,14 @@ export const preLevel1Dialogue = [
   },
   {
     type: 'line',
+    anim: { ragatha: 'chatty' },
     speaker: 'ragatha',
     side: 'right',
     text: "Caine's got something planned today, I think. He was doing that thing where he mutters to himself and draws diagrams nobody asked for.",
   },
   {
     type: 'line',
+    anim: { ragatha: 'listen' },
     speaker: 'pomni',
     side: 'left',
     direction: 'deadpan',
@@ -58,8 +70,15 @@ export const preLevel1Dialogue = [
     text: 'Thrilling. Another one of his "brilliant" ideas.',
   },
   {
+    // Keep the live morning's text beat until its own cutscene is integrated.
+    id: 'jaxPassByText',
+    type: 'beat',
+    text: 'Jax storms past in the background — no dialogue, just animation/SFX.',
+  },
+  {
     id: 'afterJaxPassBy',
     type: 'line',
+    anim: { ragatha: 'watch' },
     speaker: 'ragatha',
     side: 'right',
     direction: 'watching him go, dropping the upbeat tone',
@@ -67,6 +86,7 @@ export const preLevel1Dialogue = [
   },
   {
     type: 'line',
+    anim: { ragatha: 'worried' },
     speaker: 'pomni',
     side: 'left',
     mood: 'neutral',
@@ -74,12 +94,14 @@ export const preLevel1Dialogue = [
   },
   {
     type: 'line',
+    anim: { ragatha: 'worried' },
     speaker: 'ragatha',
     side: 'right',
     text: 'Not like this. Not since the thing with Ribbit.',
   },
   {
     type: 'line',
+    anim: { ragatha: 'worried' },
     speaker: 'pomni',
     side: 'left',
     direction: 'pause, uneasy',
@@ -209,6 +231,7 @@ export const level2OpeningDialogue = [
     text: "Hallway outside Ribbit's room. Pomni steps out. Kaufmo hurries past without noticing her.",
   },
   {
+    id: 'kaufmoHurriesBy',
     type: 'line',
     speaker: 'kaufmo',
     side: 'right',

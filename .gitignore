@@ -4,3 +4,11 @@ dist/
 Mine.pptx
 Digital Circus - Storyline Outline.pdf
 Digital_Circus_-_Storyline_Outline.md
+
+_t01_tmp/
+
+# Local animation authoring, backups, and generated verification output.
+.local-update-backups/
+artifacts/
+assets-src/animation-development/
+assets-src/Pomni_Waking_Animation.blend*

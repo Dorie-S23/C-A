@@ -21,6 +21,12 @@ const LEG_SWING = THREE.MathUtils.degToRad(42);
 const KNEE_BEND = THREE.MathUtils.degToRad(55);
 const ARM_SWING = THREE.MathUtils.degToRad(36);
 const BOB_HEIGHT = 0.07;
+// A forward body lean reads as "running" on its own, independent of how
+// precisely any single joint swings — leaning in over the first few
+// frames (rather than snapping to it) sells the "taking off at a sprint"
+// moment instead of just gliding forward already at full lean.
+const LEAN_ANGLE = THREE.MathUtils.degToRad(14);
+const LEAN_IN_SECONDS = 0.25;
 
 // A light of his own, attached to his group so it travels with him and
 // doesn't depend on whatever a given room's own lighting happens to be —
@@ -106,6 +112,7 @@ export function loadJax() {
     function playPassBy(from, to, duration) {
       jax.position.copy(from);
       jax.rotation.y = Math.atan2(to.x - from.x, to.z - from.z);
+      jax.rotation.x = 0;
       jax.visible = true;
       walk = { from: from.clone(), to: to.clone(), duration, elapsed: 0 };
     }
@@ -126,6 +133,7 @@ export function loadJax() {
       poseLeg(bones.upperArmL, -Math.sin(phase) * ARM_SWING);
       poseLeg(bones.upperArmR, Math.sin(phase) * ARM_SWING);
       jax.position.y += Math.abs(Math.sin(phase)) * BOB_HEIGHT;
+      jax.rotation.x = LEAN_ANGLE * Math.min(walk.elapsed / LEAN_IN_SECONDS, 1);
 
       if (t >= 1) {
         jax.visible = false;

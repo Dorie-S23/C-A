@@ -3,12 +3,12 @@ import { loadRoomModel } from './loadRoomModel.js';
 import { loadCaine, createCaineIdle } from '../characters/caine.js';
 import { loadRagatha } from '../characters/ragatha.js';
 import { addMirrorReflections } from './mirrors.js';
-import { makeDoorOpenable, openHingedDoor } from './doors.js';
-import { createDoorPortal } from './portals.js';
 import { findWallSpot, findSpotNear, placeOfficePicture } from '../props/officePicture.js';
-
-const CAINE_DISTANCE = 3; // how far in front of the spawn point Caine stands
-const CAINE_WALL_GAP = 0.8; // keep him at least this far off any wall in the way
+import { createDoorConnection } from './portals.js';
+import { createBedroomLighting } from './bedroomLighting.js';
+import { loadPomniOpening } from '../cinematics/pomniOpening.js';
+import { loadRagatha } from '../characters/ragatha.js';
+import { loadDormHallPreview } from './dormHallPreview.js';
 
 const RAGATHA_TALK_DISTANCE = 2.2;
 const RAGATHA_MIN_DISTANCE = 1.4;
@@ -24,11 +24,6 @@ const PICTURE_HEIGHT = 1.4;
 const PICTURE_ANCHOR = 'Number_Cube';
 const PICTURE_OFFSET = new THREE.Vector3(-0.5, 0, 0.35);
 
-// The glTF export carries these as "Door Frame.024" / "Door Slab.024";
-// three.js's GLTFLoader sanitizes node names (spaces and the disambiguating
-// dot both go), so they come out as this at runtime.
-const DOOR_FRAME_NAME = 'Door_Frame024';
-const DOOR_SLAB_NAME = 'Door_Slab024';
 
 // Exported from "Pomnis Room V3.blend" by tools/blender/export_pomnis_room_v3.py,
 // which converts the materials the glTF exporter can't read — re-run it
@@ -53,6 +48,14 @@ export function loadPomniRoom(onProgress, { from, items, preview, embedded = fal
     room.reflectors = addMirrorReflections(room.group, room.spawn);
     // Caine always stands relative to the room's own default spawn, even
     // when `from` below moves the player's actual spawn to the doorway.
+export function loadPomniRoom(onProgress, { from, travel, openingMode, items,
+  hallPreview = typeof window !== 'undefined' } = {}) {
+  return loadRoomModel('./models/character%20rooms/pomnis-room-v3.glb', onProgress).then(async (room) => {
+    // Its metal trim needs something to reflect.
+    room.environment = true;
+    // The vanity and the standing mirror reflect the room for real.
+    addMirrorReflections(room.group, room.spawn);
+    // Keep item placement independent of door arrival.
     const defaultSpawn = room.spawn;
 
     if (items) {
@@ -233,4 +236,61 @@ function placeInFrontOfSpawn(caine, { group, spawn }) {
 
   caine.position.copy(position);
   caine.rotation.y = Math.atan2(spawn.x - position.x, spawn.z - position.z);
+}
+    room.lighting = createBedroomLighting(room);
+    room.group.userData.bedroomLighting = room.lighting;
+    room.update = room.lighting.update;
+    const exit = createDoorConnection(room, {
+      doorName: 'Plane_1', detailNames: ['Door_Frame024', 'Plane_2'],
+      to: 'dorm', prompt: 'Exit to Hallway', travel,
+    });
+    room.interactables = [exit.interactable, ...(room.interactables ?? [])];
+    const doorCenter = new THREE.Box3().setFromObject(exit.interactable.objects[0]).getCenter(new THREE.Vector3());
+    room.spawnFacing = Math.atan2(room.spawn.x - doorCenter.x, room.spawn.z - doorCenter.z);
+    if (from === 'dorm') {
+      room.spawn = exit.arrival.spawn;
+      room.spawnFacing = exit.arrival.facing;
+    }
+    // Preview loads stay unchanged. A new game plays R5; later bedroom visits
+    // restore only its settled cover, with no replay and the normal door spawn.
+    if (openingMode) {
+      try {
+        onProgress?.(0, 'opening');
+        room.opening = await loadPomniOpening(room, {
+          settled: openingMode === 'settled',
+          onProgress: (event) => onProgress?.(event.total ? event.loaded / event.total : 0, 'opening'),
+        });
+        room.group.userData.pomniOpening = room.opening;
+      } catch (error) {
+        console.warn('Pomni opening unavailable; continuing in the bedroom.', error);
+        room.openingError = true;
+        room.lighting.reset();
+      }
+    }
+    if (openingMode === 'play') {
+      try {
+        const cast = await loadRagatha();
+        cast.ragatha.visible = false;
+        room.group.add(cast.ragatha);
+        room.group.userData.ragathaCast = cast;
+      } catch (error) {
+        console.warn('Ragatha model unavailable; using the staged arrival fallback.', error);
+      }
+    }
+    // A static visual backdrop only: no hall NPCs, portals, colliders or lights.
+    // CPU-only Node room tests can explicitly opt in when testing this view.
+    // Explicit low-cost fallback also works on the static production build.
+    const disabled = new URLSearchParams(globalThis.location?.search).get('hallPreview') === '0';
+    if (hallPreview && !disabled) {
+      try {
+        const preview = await loadDormHallPreview();
+        room.group.add(preview.group);
+        room.group.userData.dormHallPreview = preview;
+      } catch (error) {
+        room.group.userData.dormHallPreviewError = String(error.message ?? error);
+        console.warn('Hall preview unavailable; retaining the temporary vestibule.', error);
+      }
+    }
+    return room;
+  });
 }
