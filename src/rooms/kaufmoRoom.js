@@ -39,7 +39,7 @@ const LEVEL2_COMPLETE_SUBTITLE = "Three photos, one real room — and a door tha
  * `playDialogue` hook main.js passes every room loader (see selectRoom()).
  */
 export function loadKaufmoRoom(onProgress, {
-  playDialogue, from, items, endLevel, objectives, showLevelComplete,
+  playDialogue, from, items, endLevel, objectives, showLevelComplete, playChime,
 } = {}) {
   return Promise.all([
     loadRoomModel('./models/character%20rooms/kaufmos-room.glb', onProgress),
@@ -101,6 +101,7 @@ export function loadKaufmoRoom(onProgress, {
                 endLevel?.(LEVEL2_COMPLETE_TITLE, LEVEL2_COMPLETE_SUBTITLE);
               }
               : undefined;
+          if (key.startsWith('level2HandIn')) playChime?.('handIn');
           playDialogue(key, onComplete ? { onComplete } : undefined);
         },
       }];

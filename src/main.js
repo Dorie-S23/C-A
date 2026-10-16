@@ -1031,7 +1031,10 @@ function turnPomniTowards(point, cameraOffset = 0) {
 // --- Level 2 item collection -------------------------------------------
 // One shared instance survives room changes and menu visits; PLAY resets it.
 const itemState = createLevel2Items({
-  onCollect: (count) => showHint(`Picked up a photo. (${count}/3)`),
+  onCollect: (count) => {
+    showHint(`Picked up a photo. (${count}/3)`);
+    openingAudio.playChime('pickup');
+  },
 });
 
 /**
@@ -1086,7 +1089,7 @@ function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
 function roomLoadOptions(roomKey, { from, preview, openingMode }) {
   return {
     from, playDialogue: playRoomDialogue, preview, endLevel, stage, items: itemState, travel: travelTo,
-    objectives, showLevelComplete,
+    objectives, showLevelComplete, playChime: openingAudio.playChime,
     openingMode: openingMode ?? (roomKey === 'pomni' && from && openingCompleted ? 'settled' : undefined),
   };
 }
@@ -1857,6 +1860,11 @@ function showLevelComplete(title, subtitle) {
   levelCompleteTitle.textContent = title;
   levelCompleteSubtitle.textContent = subtitle;
   levelCompletePanel.hidden = false;
+  levelCompletePanel.classList.remove('level-complete-pop');
+  // eslint-disable-next-line no-unused-expressions -- restart the CSS animation
+  void levelCompletePanel.offsetWidth;
+  levelCompletePanel.classList.add('level-complete-pop');
+  openingAudio.playChime('complete');
   return new Promise((resolve) => {
     function onContinue() {
       btnLevelCompleteContinue.removeEventListener('click', onContinue);
