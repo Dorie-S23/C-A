@@ -5,6 +5,12 @@ export const OBJECTIVES = Object.freeze({
   // Level 1 finishing activates this (see level1.js); Kaufmo's hallway
   // scene playing through completes it (see level2.js).
   'find-kaufmo': Object.freeze({ id: 'find-kaufmo', title: 'Find Kaufmo', detail: '' }),
+  // Handing in the 3rd photo activates this (the stall line plays once,
+  // then nothing signals there's more); talking to him again, hearing
+  // the actual payoff, completes it. See kaufmoRoom.js.
+  'kaufmo-theory': Object.freeze({
+    id: 'kaufmo-theory', title: "Hear Kaufmo's Theory", detail: 'Give him a minute, then go back.',
+  }),
 });
 
 /** Session state, independent of room loads, rendering and dialogue previews. */

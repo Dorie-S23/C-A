@@ -36,7 +36,7 @@ const LEVEL2_COMPLETE_SUBTITLE = "Three photos, one real room — and a door tha
  * Walking up and pressing E plays the Level 2 opening script, via the
  * `playDialogue` hook main.js passes every room loader (see selectRoom()).
  */
-export function loadKaufmoRoom(onProgress, { playDialogue, from, items, endLevel } = {}) {
+export function loadKaufmoRoom(onProgress, { playDialogue, from, items, endLevel, objectives } = {}) {
   return Promise.all([
     loadRoomModel('./models/character%20rooms/kaufmos-room.glb', onProgress),
     loadKaufmo(),
@@ -80,9 +80,21 @@ export function loadKaufmoRoom(onProgress, { playDialogue, from, items, endLevel
           // pickKaufmoScript below), so this fires every time it's shown,
           // not just once — fine, since replaying it should still end the
           // level rather than leave the player stuck mid-story.
-          playDialogue(key, key === 'level2Payoff' && endLevel ? {
-            onComplete: () => endLevel(LEVEL2_COMPLETE_TITLE, LEVEL2_COMPLETE_SUBTITLE),
-          } : undefined);
+          //
+          // The stall line (level2Complete) gives no sign a second visit
+          // unlocks the actual payoff — nothing else in the room changes,
+          // so a player has no reason to come back on their own. Raising
+          // an objective here, cleared once the payoff's actually heard,
+          // is that sign.
+          const onComplete = key === 'level2Complete'
+            ? () => objectives?.activate('kaufmo-theory')
+            : key === 'level2Payoff'
+              ? () => {
+                objectives?.complete('kaufmo-theory');
+                endLevel?.(LEVEL2_COMPLETE_TITLE, LEVEL2_COMPLETE_SUBTITLE);
+              }
+              : undefined;
+          playDialogue(key, onComplete ? { onComplete } : undefined);
         },
       }];
     }

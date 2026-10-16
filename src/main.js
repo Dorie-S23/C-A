@@ -1081,6 +1081,7 @@ function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
 function roomLoadOptions(roomKey, { from, preview, openingMode }) {
   return {
     from, playDialogue: playRoomDialogue, preview, endLevel, stage, items: itemState, travel: travelTo,
+    objectives,
     openingMode: openingMode ?? (roomKey === 'pomni' && from && openingCompleted ? 'settled' : undefined),
   };
 }
