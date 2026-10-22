@@ -161,16 +161,22 @@ try {
   check('Level 1 completion card continues into the story without a Pause overlay', () => assert.equal(completed.ribbitPoints, 4));
   await snapshot('ribbit-complete');
   await travel('dorm');
-  // Kaufmo's hallway pass-by is now a live cutscene staged in the real
-  // Dorm Hall (see src/cutscenes/kaufmoHallwayEncounter.js) rather than a
-  // cutaway to a separate backdrop — his mumbled line shows live while
-  // he's on screen. He then runs off toward his own room, same as before,
-  // and the real catch-up conversation plays once Pomni travels there.
+  // Kaufmo's hallway pass-by (a fake-backdrop cutaway, same technique as
+  // Jax's — see kaufmoHallwayCutscene.js — except the dialogue box stays
+  // up live instead of waiting until after) plays automatically here, then
+  // just ends: he's run off toward his own room, nothing more. No more
+  // auto-travel into his room or auto-played introduction — the player
+  // has to actually walk there and talk to him, same as any other real
+  // interaction, which is what the rest of this does.
   await until(async () => (await state()).dialogueActive); await progress();
-  await readyRoom('kaufmo');
-  await progress([0, 0]);
+  assert.equal((await state()).room, 'dorm');
+  const kaufmoRoom = await travel('kaufmo');
+  const kaufmoAnchor = kaufmoRoom.interactables.find(i => i.prompt === 'Talk to Kaufmo').anchor;
+  await place(kaufmoAnchor[0], kaufmoAnchor[2] + 1.8, { x: kaufmoAnchor[0], z: kaufmoAnchor[2] });
+  await until(async () => (await state()).focusedPrompt === 'Talk to Kaufmo');
+  await key('KeyE'); await progress([0, 0]);
   const introduced = await state();
-  check('Leaving Ribbit plays Kaufmo’s hallway encounter and moves into his room for the introduction', () => {
+  check('Leaving Ribbit plays Kaufmo’s hallway pass-by, then the real introduction once the player finds him', () => {
     assert.equal(report.errors.length, 0);
     assert.equal(introduced.kaufmoIntroduced, true);
     assert.equal(introduced.objective.id, 'collect-photos');

@@ -24,7 +24,7 @@ import { createStoryProgress } from './game/storyProgress.js';
 import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.js';
 import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT } from './state/level2Items.js';
 import { runLevel1 } from './levels/level1.js';
-import { createKaufmoHallwayEncounter } from './cutscenes/kaufmoHallwayEncounter.js';
+import { preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
 import { createMinimap } from './ui/minimap.js';
 import { createObjectiveController } from './game/objectives.js';
 import { createObjectiveHUD } from './ui/objectiveHUD.js';
@@ -1071,37 +1071,49 @@ function attachStoryInteractions(room, roomKey, token) {
   });
 }
 
+/**
+ * Just the pass-by: a fake-backdrop cutaway (see kaufmoHallwayCutscene.js)
+ * plays underneath the real dialogue box — triggered as a side effect the
+ * moment the mumbled line's node is shown, not awaited by it, so the text
+ * displays live instead of being hidden until the cutaway finishes. He
+ * runs off toward his own room and the script ends there; the real
+ * catch-up conversation (pacing, Choice 1, Choice 2) isn't part of this at
+ * all — it happens later, for real, whenever the player actually walks to
+ * his room and talks to him (see talkToKaufmo's own
+ * !storyProgress.kaufmoIntroduced branch, which already plays
+ * level2RoomOpening and calls finishKaufmoIntro() once that's done).
+ */
 function playKaufmoHallway() {
   const token = loadToken;
   overlay.classList.add('hidden');
-  // Counts as "started" the moment this actually runs, same as the old
-  // travel-based flow marked it on the first script's onComplete — once
-  // the cutscene is live there's no going back to a from-scratch retrigger.
+  // Counts as "started" the moment this actually runs — once the cutaway's
+  // live there's no going back to a from-scratch retrigger.
   storyProgress.finishHallway();
-  stage.hold(true);
-  resetMoveState();
-  const cutscene = createKaufmoHallwayEncounter({
-    scene, camera, player, pomni, renderer, dialogueUI,
-    clearance: cameraCollisionDistance,
-    onComplete: async () => {
-      stage.hold(false);
-      if (token !== loadToken) return;
-      // He ran off toward his own room; the real catch-up conversation
-      // (pacing, Choice 1, Choice 2) happens there, not in the hallway.
-      const room = await missionApi.travel('kaufmo');
-      if (!room || token !== loadToken) return;
-      playRoomDialogue('level2RoomOpening', {
-        onComplete: () => { if (token === loadToken) storyProgress.finishKaufmoIntro(); },
-        onCancel: () => { if (token === loadToken) showHint('Talk to Kaufmo to continue the conversation.', 6500); },
-      });
+
+  let triggered = false;
+  let cutsceneDone = Promise.resolve();
+
+  playRoomDialogue('level2Hallway', {
+    onNode: (node) => {
+      if (triggered || node.id !== 'kaufmoHurriesBy') return;
+      triggered = true;
+      cutsceneDone = preloadKaufmoHallwayCutscene().then((assets) => {
+        if (!assets) return;
+        if (token !== loadToken) { disposeObject3D(assets.scene); return; }
+        return new Promise((resolve) => {
+          const finish = () => { disposeObject3D(assets.scene); resolve(); };
+          runCutscene({ ...playKaufmoHallwayCutscene(renderer, assets), cancel: finish }, finish);
+        });
+      }).catch((error) => console.warn('Kaufmo hallway cutscene unavailable; continuing dialogue.', error));
     },
-    onCancel: () => {
-      stage.hold(false);
+    onComplete: async () => { await cutsceneDone; },
+    onCancel: async () => {
+      cancelCutscene();
+      await cutsceneDone;
       if (token !== loadToken) return;
       showHint('Find Kaufmo in his room to continue.', 6500);
     },
   });
-  runCutscene(cutscene, () => {});
 }
 
 function talkToKaufmo(lookAt, token) {
