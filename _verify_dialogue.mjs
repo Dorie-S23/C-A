@@ -8,6 +8,7 @@ import {
 } from './src/state/escapeThreshold.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
+  level2HallwayDialogue, ribbitFollowupDialogue,
   level2HandIn1Dialogue, level2HandIn2Dialogue, level2HandIn3Dialogue,
   level2IdleDialogue, level2CompleteDialogue, level2PayoffDialogue,
 } from './src/data/dialogues.js';
@@ -34,6 +35,7 @@ function runLinear(script) {
 // speakers that exist in the registry.
 for (const [name, script] of [
   ['preLevel1', preLevel1Dialogue], ['level1Open', level1OpenDialogue],
+  ['level2Hallway', level2HallwayDialogue], ['ribbitFollowup', ribbitFollowupDialogue],
   ['level2HandIn1', level2HandIn1Dialogue], ['level2HandIn2', level2HandIn2Dialogue],
   ['level2HandIn3', level2HandIn3Dialogue], ['level2Idle', level2IdleDialogue],
   ['level2Complete', level2CompleteDialogue], ['level2Payoff', level2PayoffDialogue],
@@ -298,11 +300,11 @@ function collectAllReachableNodes(script, maxPaths = 64) {
 }
 
 // Escape Threshold (KAN-32): per-level points that replace rather than
-// stack, a 7-point maximum, Gate 1 at the pass mark, and a clean reset.
+// stack, a 9-point maximum, Gate 1 at the pass mark, and a clean reset.
 {
   resetEscapeThreshold();
-  check('escape: max is 7 (Level 1: 4, Level 2: 3), pass mark 5',
-    ESCAPE_MAX === 7 && LEVEL_MAX_POINTS.level1 === 4 && LEVEL_MAX_POINTS.level2 === 3 && ESCAPE_PASS_MARK === 5);
+  check('escape: max is 9 (Level 1: 4, Level 2: 5), pass mark 6',
+    ESCAPE_MAX === 9 && LEVEL_MAX_POINTS.level1 === 4 && LEVEL_MAX_POINTS.level2 === 5 && ESCAPE_PASS_MARK === 6);
   check('escape: a fresh run starts at 0 and fails the gate', getEscapeTotal() === 0 && !passesEscapeGate());
 
   setLevelPoints('level1', 2);
@@ -310,9 +312,9 @@ function collectAllReachableNodes(script, maxPaths = 64) {
   check('escape: replaying a level replaces its points instead of adding', getLevelPoints('level1') === 3
     && getEscapeTotal() === 3);
   setLevelPoints('level2', 1);
-  check('escape: levels add up across the run; 4 < 5 fails the gate', getEscapeTotal() === 4 && !passesEscapeGate());
-  setLevelPoints('level2', 2);
-  check('escape: reaching the pass mark (5) clears the gate', getEscapeTotal() === 5 && passesEscapeGate());
+  check('escape: levels add up across the run; 4 < 6 fails the gate', getEscapeTotal() === 4 && !passesEscapeGate());
+  setLevelPoints('level2', 3);
+  check('escape: reaching the pass mark (6) clears the gate', getEscapeTotal() === 6 && passesEscapeGate());
 
   setLevelPoints('level1', 99);
   setLevelPoints('level2', -4);

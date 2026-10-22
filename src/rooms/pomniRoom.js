@@ -6,9 +6,9 @@ import { createBedroomLighting } from './bedroomLighting.js';
 import { loadPomniOpening } from '../cinematics/pomniOpening.js';
 import { loadRagatha } from '../characters/ragatha.js';
 import { loadDormHallPreview } from './dormHallPreview.js';
+import { loadJax } from '../characters/jax.js';
 import { createBedroomDoorHinge } from '../cinematics/bedroomDoor.js';
 import { createDoorwayAperture } from '../cinematics/doorwayAperture.js';
-import { loadJax } from '../characters/jax.js';
 
 // Exported from "Pomnis Room V3.blend" by tools/blender/export_pomnis_room_v3.py,
 // which converts the materials the glTF exporter can't read — re-run it

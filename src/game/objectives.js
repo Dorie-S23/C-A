@@ -1,16 +1,9 @@
 export const OBJECTIVES = Object.freeze({
   'find-caine': Object.freeze({ id: 'find-caine', title: 'Find Caine', detail: 'Look for him in the Dorm Hall.' }),
-  // Caine's completed warning activates this; it does not start Ribbit's encounter.
-  'find-ribbit': Object.freeze({ id: 'find-ribbit', title: 'Find Ribbit', detail: '' }),
-  // Level 1 finishing activates this (see level1.js); Kaufmo's hallway
-  // scene playing through completes it (see level2.js).
-  'find-kaufmo': Object.freeze({ id: 'find-kaufmo', title: 'Find Kaufmo', detail: '' }),
-  // Handing in the 3rd photo activates this (the stall line plays once,
-  // then nothing signals there's more); talking to him again, hearing
-  // the actual payoff, completes it. See kaufmoRoom.js.
-  'kaufmo-theory': Object.freeze({
-    id: 'kaufmo-theory', title: "Hear Kaufmo's Theory", detail: 'Give him a minute, then go back.',
-  }),
+  'find-ribbit': Object.freeze({ id: 'find-ribbit', title: 'Find Ribbit', detail: 'Knock on her door at the far end of the hall, on the left.' }),
+  'find-kaufmo': Object.freeze({ id: 'find-kaufmo', title: 'Find Kaufmo', detail: 'Leave Ribbit’s room and look for Kaufmo in the hall.' }),
+  'collect-photos': Object.freeze({ id: 'collect-photos', title: 'Find the office photos', detail: 'Search the circus for five office photos and bring them to Kaufmo.' }),
+  'check-kaufmo': Object.freeze({ id: 'check-kaufmo', title: 'Hear Kaufmo’s Theory', detail: 'Talk to him again about what the photos reveal.' }),
 });
 
 /** Session state, independent of room loads, rendering and dialogue previews. */

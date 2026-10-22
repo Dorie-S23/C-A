@@ -47,7 +47,9 @@ assert.ok(pass.diagnostics.from[2]>3.4);assert.equal(pass.diagnostics.from[1],pa
 assert.equal(room.collisionMeshes.length,collisionCount);
 assert.ok(cast.jax.children.filter(o=>o.isLight).every(o=>!o.visible));
 pass.update(.2);pass.setPaused(true);const frozen=pass.diagnostics;pass.update(2);assert.deepEqual(pass.diagnostics,frozen);pass.setPaused(false);
-const samples=[],contacts=[];
+const samples=[],contacts=[],handHeights=[];
+const hands=[];let hips;
+cast.jax.traverse(o=>{const name=o.name.toLowerCase().replace(/[^a-z]/g,'');if(o.isBone&&/^hand[lr]/.test(name))hands.push(o);if(o.isBone&&name.startsWith('hips'))hips=o});
 for(const mesh of preview.meshes)if(!mesh.geometry.boundsTree)computeBoundsTree.call(mesh.geometry);
 while(pass.active){
   pass.update(1/60);
@@ -56,6 +58,13 @@ while(pass.active){
   if(!cast.jax.visible)continue;
   cast.jax.updateMatrixWorld(true);cast.jax.traverse(o=>{if(o.isSkinnedMesh)o.computeBoundingBox()});
   const box=new THREE.Box3().setFromObject(cast.jax);
+  const hip=cast.jax.worldToLocal(hips.getWorldPosition(new THREE.Vector3())).multiplyScalar(pass.diagnostics.scale);
+  for(const hand of hands){
+    const p=cast.jax.worldToLocal(hand.getWorldPosition(new THREE.Vector3())).multiplyScalar(pass.diagnostics.scale);
+    assert.ok(Math.abs(p.x)<.24&&Math.abs(p.z)<.2,'Hands remain close to the overall pockets, without running arm swings');
+    handHeights.push(p.y-hip.y);assert.ok(p.y-hip.y>.06&&p.y-hip.y<.25);
+  }
+  assert.ok(cast.jax.rotation.x<0&&Math.abs(cast.jax.rotation.z)<.03,'Relaxed lean and restrained swagger');
   samples.push({t:pass.diagnostics.elapsed,min:box.min.toArray(),max:box.max.toArray()});
   // Test the swept body volume above shoe contact; floor contact is expected.
   const body=box.clone();body.min.y=Math.max(body.min.y,pass.diagnostics.floorY+.035);
@@ -66,10 +75,10 @@ while(pass.active){
 }
 assert.equal(complete,1);assert.equal(cast.jax.visible,false);assert.deepEqual(camera.position,cameraStart);assert.deepEqual(camera.quaternion.toArray(),rotationStart.toArray());
 assert.deepEqual(slab.matrixWorld,door);assert.equal(entrance.phase,'dialogue');assert.equal(room.collisionMeshes.length,collisionCount);
-assert.ok(cues.length>=8&&cues.length<=15);assert.deepEqual(contacts,[]);
+assert.equal(cues.length,7,'Footsteps match the 2.8 steps/second strut, not the previous sprint');assert.deepEqual(contacts,[]);
 cast.jax.traverse(mesh=>{if(mesh.isSkinnedMesh)assert.equal(mesh.skeleton.boneTexture,null)});
 assert.ok(samples.every(s=>s.min[1]>=pass.diagnostics.floorY-.001),'Evaluated shoes must not penetrate the floor');
-console.log('PASS Real rig runs parallel to real hall, audio cadence, stationary door/Ragatha, restored camera',{samples:samples.length,contacts:contacts.length,steps:cues.length,lowestShoe:Math.min(...samples.map(s=>s.min[1]))});
+console.log('PASS Sly pocket-height hands, restrained walk, matching footsteps, real hall clearance, fixed camera/door',{samples:samples.length,contacts:contacts.length,steps:cues.length,lowestShoe:Math.min(...samples.map(s=>s.min[1])),handHeightAboveHips:[Math.min(...handHeights),Math.max(...handHeights)]});
 pass.dispose();pass.dispose();assert.equal(complete,1);
 // A fresh cast is used for each session; exercise skip/disposal with it too.
 const cast2=await loadJax();room.group.add(cast2.jax);
@@ -79,4 +88,7 @@ const cast3=await loadJax();room.group.add(cast3.jax);
 pass=createJaxBedroomPass({room:room.group,camera,cast:cast3,onComplete:()=>complete++});pass.update(.6);pass.dispose();pass.update(5);assert.equal(complete,2);assert.equal(cast3.jax.visible,false);
 assert.deepEqual(camera.position,cameraStart);
 console.log('PASS Pause/resume, skip once, disposal without callback or duplicate actor activity');
+const normal=await loadJax();normal.playPassBy(new THREE.Vector3(),new THREE.Vector3(0,0,4),2);normal.update(.4);
+assert.ok(normal.jax.rotation.x>.2,'Default standalone cutscene still runs with its original forward lean');
+console.log('PASS Existing standalone Jax running style remains the default');
 fs.mkdirSync('artifacts/jax-bedroom-pass',{recursive:true});fs.writeFileSync('artifacts/jax-bedroom-pass/geometry.json',JSON.stringify({pass:true,samples,contacts,cues:cues.length},null,2));
