@@ -199,6 +199,7 @@ const levelCompleteSubtitle = document.getElementById('level-complete-subtitle')
 const btnLevelCompleteContinue = document.getElementById('btn-level-complete-continue');
 
 const pictureCounter = document.getElementById('picture-counter');
+const searchTimer = document.getElementById('search-timer');
 const dialogueUI = createDialogueUI({ speakers: SPEAKERS });
 const actionCaptions = createActionCaptions();
 const minimap = createMinimap();
@@ -1117,6 +1118,36 @@ const itemState = createLevel2Items({
 });
 const storyProgress = createStoryProgress({ objectives, isStorySession: () => preLevel1Session });
 
+// The photo search times out before all 3 are found and handed in: for now
+// that's a simple restart (new spots, same objective, back to Kaufmo's
+// door) rather than any "abstraction" fail effect — that's a later pass.
+// Armed/disarmed reactively off the objective itself, rather than at each
+// of the several places 'collect-photos' starts or ends, so it can't drift
+// out of sync with it.
+const SEARCH_TIMER_SECONDS = 90;
+let searchTimeLeft = null; // seconds left, or null while it isn't the active objective
+objectives.subscribe((active) => {
+  searchTimeLeft = active?.id === 'collect-photos' ? SEARCH_TIMER_SECONDS : null;
+});
+
+function updateSearchTimer(deltaSeconds) {
+  if (searchTimeLeft === null) return;
+  if (!isLocked || !readyToPlay || paused || dialogueUI.isActive || activeCutscene || stageBusy()) return;
+  searchTimeLeft -= deltaSeconds;
+  if (searchTimeLeft <= 0) {
+    searchTimeLeft = null;
+    restartPhotoSearch();
+  }
+}
+
+async function restartPhotoSearch() {
+  const token = loadToken;
+  itemState.reset();
+  showHint("Kaufmo's getting impatient — the photos have scattered again.", 6000);
+  await missionApi.travel('kaufmo');
+  if (token !== loadToken) return; // the player had already moved on by the time this landed
+}
+
 function updatePictureCounter() {
   // Only free exploration shows the HUD, including between room visits.
   const visible = (!preLevel1Session || storyProgress.kaufmoIntroduced)
@@ -1130,6 +1161,14 @@ function updatePictureCounter() {
   // when its text changes, rather than announcing it every animation frame.
   const text = `Pictures found: ${itemState.totalFound()}/3`;
   if (pictureCounter.textContent !== text) pictureCounter.textContent = text;
+
+  const timerVisible = visible && searchTimeLeft !== null;
+  if (searchTimer.hidden === timerVisible) searchTimer.hidden = !timerVisible;
+  if (timerVisible) {
+    const seconds = Math.max(0, Math.ceil(searchTimeLeft));
+    const timerText = `Time left: ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    if (searchTimer.textContent !== timerText) searchTimer.textContent = timerText;
+  }
 }
 
 function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
@@ -2822,6 +2861,7 @@ function animate() {
   // actual pause menu freezes them, so a patrolling hazard can't close in
   // on a player who is sitting in the pause menu.
   updateCaineArrival(delta);
+  updateSearchTimer(delta);
   fastForwardCutscenes();
   if (!paused) {
     updateMovers(delta);

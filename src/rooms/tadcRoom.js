@@ -3,6 +3,18 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { loadRoomModel } from './loadRoomModel.js';
 import { setupLobbyDoors } from './lobbyDoors.js';
 import { createCurtainPortal } from './portals.js';
+import { scatterPictures } from '../props/officePicture.js';
+
+// Level 2's three office photos, scattered round the lobby rather than
+// sitting in Kaufmo's own room — a real search, not a hand-in on arrival.
+// scatterPictures() picks different wall spots each time this room loads,
+// so a retry (the search timer running out, or just leaving and coming
+// back) doesn't put them back where they were.
+const PICTURES = [
+  { id: 'ca1', url: './models/objects/ca1.png' },
+  { id: 'ca2', url: './models/objects/ca2.png' },
+  { id: 'ca3', url: './models/objects/ca3.png' },
+];
 
 // The castle's brick walls (arched windows, battlements), taken from the
 // Sketchfab "The Digital Circus" model. The lobby's own export only has a
@@ -16,11 +28,15 @@ const CASTLE_WALL_SETBACK = 0.2;
 // toward +Z, into the lobby.
 const DORM_ARCH_CURTAIN = 'Plane081';
 
-export function loadTadcRoom(onProgress, { from } = {}) {
+export function loadTadcRoom(onProgress, { from, items } = {}) {
   return Promise.all([
     loadRoomModel('./models/world/Circus%20Lobby%20V10%20colored.glb', onProgress),
     new GLTFLoader().loadAsync(CASTLE_WALLS_URL),
   ]).then(([room, castleWalls]) => {
+    // Captured before the arrival override below can replace it — the
+    // search sweeps from the room's own default spawn regardless of which
+    // door the player actually walked in through.
+    const defaultSpawn = room.spawn;
     replaceCastleWalls(room, castleWalls.scene);
     fixExportedPlastics(room.group);
     const doors = setupLobbyDoors(room.group, room.spawn, room.collisionMeshes);
@@ -36,6 +52,9 @@ export function loadTadcRoom(onProgress, { from } = {}) {
         room.spawn = dormArch.arrival.spawn;
         room.spawnFacing = dormArch.arrival.facing;
       }
+    }
+    if (items) {
+      scatterPictures(room, items, PICTURES, defaultSpawn, [dormArch?.box.getCenter(new THREE.Vector3())]);
     }
     return room;
   });

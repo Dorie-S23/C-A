@@ -132,8 +132,22 @@
                 pointer-events: none;
                 z-index: 5;
             }
+            #search-timer {
+                position: fixed;
+                top: calc(1em + 2.6em);
+                left: 1em;
+                color: #fff;
+                background: rgba(10, 8, 14, 0.75);
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                border-radius: 8px;
+                padding: 0.6em 0.8em;
+                font-size: 0.9em;
+                pointer-events: none;
+                z-index: 5;
+            }
             @media (max-width: 400px) {
                 #picture-counter { top: calc(180px + 2em); }
+                #search-timer { top: calc(180px + 2em + 2.6em); }
             }
 
             #hint {
@@ -744,6 +758,7 @@
             <small>X &middot; Dismiss tips</small>
         </aside>
         <div id="picture-counter" role="status" hidden>Pictures found: 0/3</div>
+        <div id="search-timer" role="status" hidden>Time left: 1:30</div>
         <div id="hint"></div>
         <div id="prompt" hidden></div>
         <button id="controls-btn">Controls</button>

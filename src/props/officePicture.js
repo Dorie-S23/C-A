@@ -156,3 +156,40 @@ export function placeOfficePicture(room, items, itemId, imageUrl, position, rota
   };
   room.interactables = [...(room.interactables ?? []), pickup];
 }
+
+/**
+ * Hangs each not-yet-collected picture on a different wall, swept round
+ * from `spawn` at picture height — starting from a random angle every
+ * call, so a replay (the search timer running out, or just leaving and
+ * coming back) doesn't put them back exactly where they were. Spots too
+ * close to another picture or to anything in `keepClear` are passed over.
+ *
+ * @param {{ group: THREE.Group, interactables?: Array }} room
+ * @param {object} items shared item state (see src/state/level2Items.js)
+ * @param {{ id: string, url: string }[]} pictures
+ * @param {{ x: number, y: number, z: number }} spawn sweep origin (a point
+ *   inside the room, usually its own spawn)
+ * @param {Array<{ x: number, z: number } | null | undefined>} [keepClear]
+ *   points to stay clear of (doors, NPCs) — nullish entries are skipped
+ */
+export function scatterPictures(room, items, pictures, spawn, keepClear = [], {
+  height = 1.5, spacing = 2, keepClearRadius = 1.5, maxDistance = 10,
+} = {}) {
+  const origin = new THREE.Vector3(spawn.x, spawn.y + height, spawn.z);
+  const avoid = keepClear.filter(Boolean).map((point) => new THREE.Vector3(point.x, origin.y, point.z));
+  const startAngle = Math.random() * Math.PI * 2;
+  const spots = [];
+  for (let i = 0; i < 16 && spots.length < pictures.length; i++) {
+    const angle = startAngle + (i / 16) * Math.PI * 2;
+    const spot = findWallSpot(room.group, origin, new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle)), maxDistance);
+    if (!spot) continue;
+    const flat = new THREE.Vector3(spot.position.x, origin.y, spot.position.z);
+    if (avoid.some((point) => point.distanceTo(flat) < keepClearRadius)) continue;
+    if (spots.some((other) => other.position.distanceTo(spot.position) < spacing)) continue;
+    spots.push(spot);
+  }
+  pictures.forEach(({ id, url }, i) => {
+    const spot = spots[i];
+    if (spot) placeOfficePicture(room, items, id, url, spot.position, spot.rotationY);
+  });
+}
