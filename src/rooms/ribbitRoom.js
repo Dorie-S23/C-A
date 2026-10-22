@@ -25,8 +25,13 @@ const POINTS = {
   DOORWAY: { x: 0.6, z: -0.1 },       // just through the door, where Pomni arrives
   BEDSIDE: { x: 4.3, z: -1.0 },       // standing at the foot of the bed
   SEAT: { x: 4.75, z: -1.55 },        // the mattress edge beside Ribbit
-  SEAT_FACING: { x: 4.3, z: -0.3 },   // sat looking out into the room
   RIBBIT_ON_BED: { x: 5.6, z: -2.0 }, // her hips on the mattress, head to the pillows (-Z)
+};
+
+// Frame both characters from the open side of the bed, away from Pomni's hat.
+const SHOTS = {
+  bedside: { position: [7.4, 2.1, 0.9], target: [5.1, 1.0, -1.9] },
+  seated: { position: [7.1, 1.8, 0.4], target: [5.2, 1.0, -1.9] },
 };
 
 
@@ -36,6 +41,7 @@ const POINTS = {
 // cast shadows — the loader's pendant light already does, and every extra
 // shadow-casting point light renders the room six more times per frame.
 const ACCENT_LIGHTS = [
+  { color: 0xffead8, intensity: 8, distance: 9, position: [7.0, 2.4, 0.6] }, // soft conversation fill, no shadow pass
   { color: 0xffc42d, intensity: 6, distance: 9, position: [4.19, 2.67, -0.02] },  // star projector orb
   { color: 0xffc42d, intensity: 3, distance: 6, position: [10.57, 1.25, 0.14] },  // bedside projector
   { color: 0x29ff1f, intensity: 3, distance: 5, position: [0.72, 1.92, 3.7] },    // shelf lamps
@@ -51,7 +57,7 @@ const ACCENT_LIGHTS = [
  * travels here mid-mission and drives the scene through `room.ribbitScene`:
  * the door, Ribbit's poses and distress, and the spots Pomni moves between.
  */
-export function loadRibbitRoom(onProgress, { from } = {}) {
+export function loadRibbitRoom(onProgress, { from, ribbitStory, playDialogue } = {}) {
   return Promise.all([
     loadRoomModel(RIBBIT_ROOM_URL, onProgress, { spawnAt: SPAWN }),
     loadRibbit(),
@@ -77,7 +83,9 @@ export function loadRibbitRoom(onProgress, { from } = {}) {
     const mattressY = floorHeightAt(room.group, POINTS.RIBBIT_ON_BED.x, POINTS.RIBBIT_ON_BED.z) ?? 0.55;
     const seatY = floorHeightAt(room.group, POINTS.SEAT.x, POINTS.SEAT.z) ?? 0.45;
     ribbit.position.set(POINTS.RIBBIT_ON_BED.x, mattressY, POINTS.RIBBIT_ON_BED.z);
-    setPose('curled', { immediate: true });
+    const settled = ribbitStory?.complete() ?? false;
+    setPose(settled ? 'sitting' : 'curled', { immediate: true });
+    setDistress(settled && ribbitStory.points() >= 2 ? 0 : 1);
     room.group.add(ribbit);
     ribbit.updateMatrixWorld(true);
     room.collisionMeshes.push({ mesh: collider, box: new THREE.Box3().setFromObject(collider) });
@@ -89,7 +97,16 @@ export function loadRibbitRoom(onProgress, { from } = {}) {
       : { open() {}, close() {}, lock() {}, update() {}, interactable: null };
     if (door.interactable) room.interactables = [...(room.interactables ?? []), door.interactable];
 
-    room.ribbitScene = { door, setPose, setDistress, seatY, points: POINTS };
+    if (ribbitStory && playDialogue) {
+      room.interactables ??= [];
+      room.interactables.push({
+        objects: [collider], anchor: ribbit, radius: 2.8,
+        enabled: () => ribbitStory.complete(),
+        prompt: () => 'Talk to Ribbit',
+        interact: () => playDialogue('ribbitFollowup', { lookAt: POINTS.RIBBIT_ON_BED }),
+      });
+    }
+    room.ribbitScene = { door, setPose, setDistress, seatY, points: POINTS, shots: SHOTS };
     room.update = (deltaSeconds) => {
       update(deltaSeconds);
       door.update(deltaSeconds);

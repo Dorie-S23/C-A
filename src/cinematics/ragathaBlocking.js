@@ -13,7 +13,10 @@ export function createRagathaBlocking(room, inward, side) {
   // Leaving: out through the doorway, then right along the hall (as seen
   // from inside, where the exit shot's camera sits on that same side), so
   // the wall beside the door hides her before she's taken away.
-  const outside = at(-.9, -.1), away = at(-1.4, -3);
+  // The fallback vestibule is bounded: only the real hall has room to turn.
+  const hasHall = Boolean(room.group.userData.dormHallPreview);
+  const outside = hasHall ? at(-.9, -.1) : start.clone();
+  const away = hasHall ? at(-1.4, -3) : start.clone();
   const aperture = createDoorwayAperture(room, box);
   const backdrop = new THREE.Group(); backdrop.name = 'RagathaDoorVestibule';
   const width = box.getSize(new THREE.Vector3())[Math.abs(inward.z) > .5 ? 'x' : 'z'];

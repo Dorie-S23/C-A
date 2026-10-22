@@ -39,7 +39,7 @@ const LEVEL2_COMPLETE_SUBTITLE = "Three photos, one real room — and a door tha
  * `playDialogue` hook main.js passes every room loader (see selectRoom()).
  */
 export function loadKaufmoRoom(onProgress, {
-  playDialogue, from, items, endLevel, objectives, showLevelComplete, playChime,
+  playDialogue, from, items, endLevel, objectives, showLevelComplete, playChime, kaufmoStory,
 } = {}) {
   return Promise.all([
     loadRoomModel('./models/character%20rooms/kaufmos-room.glb', onProgress),
@@ -77,8 +77,10 @@ export function loadKaufmoRoom(onProgress, {
       });
       room.interactables = [...(room.interactables ?? []), {
         objects,
-        prompt: () => (items?.heldCount() > 0 ? 'Give photos to Kaufmo' : 'Talk to Kaufmo'),
+        anchor: kaufmo, radius: 2.8,
+        prompt: () => ((kaufmoStory?.introduced?.() ?? true) && items?.heldCount() > 0 ? 'Give photos to Kaufmo' : 'Talk to Kaufmo'),
         interact: () => {
+          if (kaufmoStory) return kaufmoStory.talk(kaufmo.getWorldPosition(new THREE.Vector3()));
           const key = pickKaufmoScript(items);
           // The payoff keeps playing on every revisit after the first (see
           // pickKaufmoScript below) — good, that's the lore staying
@@ -92,10 +94,10 @@ export function loadKaufmoRoom(onProgress, {
           // an objective here, cleared once the payoff's actually heard,
           // is that sign.
           const onComplete = key === 'level2Complete'
-            ? () => objectives?.activate('kaufmo-theory')
+            ? () => objectives?.activate('check-kaufmo')
             : key === 'level2Payoff' && !items?.isDone()
               ? async () => {
-                objectives?.complete('kaufmo-theory');
+                objectives?.complete('check-kaufmo');
                 items.markDone();
                 if (showLevelComplete) await showLevelComplete(LEVEL2_COMPLETE_TITLE, LEVEL2_COMPLETE_SUBTITLE);
                 endLevel?.(LEVEL2_COMPLETE_TITLE, LEVEL2_COMPLETE_SUBTITLE);

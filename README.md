@@ -68,3 +68,7 @@ GitHub Actions ([`.github/workflows/build.yml`](.github/workflows/build.yml)) ru
 ## Project tracker
 
 [Jira - KAN](https://tadccgv.atlassian.net/jira/software/projects/KAN/summary)
+
+## Story progression and verification
+
+See [docs/story-flow.md](docs/story-flow.md) for the Caine, Ribbit and Kaufmo sequence and browser checks.

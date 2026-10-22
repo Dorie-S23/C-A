@@ -109,12 +109,13 @@ export function loadJax() {
 
     let walk = null;
 
-    function playPassBy(from, to, duration) {
+    function playPassBy(from, to, duration, { style = 'run' } = {}) {
       jax.position.copy(from);
       jax.rotation.y = Math.atan2(to.x - from.x, to.z - from.z);
       jax.rotation.x = 0;
+      jax.rotation.z = 0;
       jax.visible = true;
-      walk = { from: from.clone(), to: to.clone(), duration, elapsed: 0 };
+      walk = { from: from.clone(), to: to.clone(), duration, elapsed: 0, style };
     }
 
     function update(deltaSeconds) {
@@ -123,17 +124,21 @@ export function loadJax() {
       const t = Math.min(walk.elapsed / walk.duration, 1);
       jax.position.lerpVectors(walk.from, walk.to, t);
 
-      const phase = walk.elapsed * STRIDE_HZ * Math.PI * 2;
-      poseLeg(bones.upperLegL, Math.sin(phase) * LEG_SWING);
-      poseLeg(bones.upperLegR, -Math.sin(phase) * LEG_SWING);
+      const sly = walk.style === 'sly';
+      const phase = walk.elapsed * (sly ? 1.4 : STRIDE_HZ) * Math.PI * 2;
+      const stride = sly ? THREE.MathUtils.degToRad(26) : LEG_SWING;
+      const knee = sly ? THREE.MathUtils.degToRad(28) : KNEE_BEND;
+      poseLeg(bones.upperLegL, Math.sin(phase) * stride);
+      poseLeg(bones.upperLegR, -Math.sin(phase) * stride);
       // One-sided (never negative) so a knee only ever bends, never
       // hyperextends backward — cheap insurance against a broken-looking pose.
-      poseLeg(bones.lowerLegL, Math.max(0, Math.sin(phase + Math.PI / 2)) * KNEE_BEND);
-      poseLeg(bones.lowerLegR, Math.max(0, Math.sin(phase + Math.PI / 2 + Math.PI)) * KNEE_BEND);
-      poseLeg(bones.upperArmL, -Math.sin(phase) * ARM_SWING);
-      poseLeg(bones.upperArmR, Math.sin(phase) * ARM_SWING);
-      jax.position.y += Math.abs(Math.sin(phase)) * BOB_HEIGHT;
-      jax.rotation.x = LEAN_ANGLE * Math.min(walk.elapsed / LEAN_IN_SECONDS, 1);
+      poseLeg(bones.lowerLegL, Math.max(0, Math.sin(phase + Math.PI / 2)) * knee);
+      poseLeg(bones.lowerLegR, Math.max(0, Math.sin(phase + Math.PI / 2 + Math.PI)) * knee);
+      poseLeg(bones.upperArmL, sly ? 0 : -Math.sin(phase) * ARM_SWING);
+      poseLeg(bones.upperArmR, sly ? 0 : Math.sin(phase) * ARM_SWING);
+      jax.position.y += Math.abs(Math.sin(phase)) * (sly ? .018 : BOB_HEIGHT);
+      jax.rotation.x = sly ? -.035 : LEAN_ANGLE * Math.min(walk.elapsed / LEAN_IN_SECONDS, 1);
+      jax.rotation.z = sly ? Math.sin(phase) * .025 : 0;
 
       if (t >= 1) {
         jax.visible = false;

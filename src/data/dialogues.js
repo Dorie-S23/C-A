@@ -16,11 +16,8 @@ export const SPEAKERS = {
 // --- Pre-Level 1: "Business as Usual" ---------------------------------
 // Jax's wordless pass-by (the design doc's "tell that something is wrong
 // before anyone says so directly") is a pure 3D/animation beat with no
-// dialogue box in the source script at all — played as an actual cutscene
-// (see jaxHallwayCutscene.js), not anything inline here. main.js plays
-// this script in two parts with stopAt 'jaxPassByText' and startAt 'afterJaxPassBy'
-// below: part one ends right before that line, the cutscene plays between
-// the two Ragatha lines, then part two resumes from 'afterJaxPassBy'.
+// dialogue box in the source script at all. main.js awaits the hallway
+// cutaway at 'jaxPassByText', then resumes Ragatha's worried response.
 //
 // `anim` cues the cast in Pomni's Room as each node comes up (see
 // pomniRoom.js): Ragatha walks up to Pomni, waves hello and chats, is
@@ -70,11 +67,10 @@ export const preLevel1Dialogue = [
     text: 'Thrilling. Another one of his "brilliant" ideas.',
   },
   {
-    // Only shown if the cutscene fails to preload (see playPastJaxCutscene
-    // in main.js) — the normal path never renders this node at all.
+    // The hallway cutaway plays before this brief narrative beat.
     id: 'jaxPassByText',
     type: 'beat',
-    text: 'Jax storms past in the background — no dialogue, just animation/SFX.',
+    text: 'Jax storms past.',
   },
   {
     id: 'afterJaxPassBy',
@@ -217,7 +213,7 @@ export const level1OpenDialogue = [
     side: 'right',
     direction: 'to the audience/camera, grin snapping back too fast',
     mood: 'happy',
-    text: 'She always says that! She never does!',
+    text: 'Her door is at the far end of the hall, on the left. I’ll check on everyone else. Just make sure she isn’t alone.',
     next: null,
   },
 ];
@@ -226,12 +222,7 @@ export const level1OpenDialogue = [
 // Two branch points (CHOICE 1 / CHOICE 2 in the source script) are flavor
 // only — every option reconverges on the same next line, same as the
 // source script never gates progress on which one is picked.
-//
-// Played in two parts (see level2.js): the hallway bit up to and including
-// "Objective: Go after Kaufmo", then — once Pomni's actually travelled into
-// Kaufmo's room, not just stood still while the text claims she caught up
-// to him — the rest resumes from 'l2_inside', where he's pacing.
-export const level2OpeningDialogue = [
+export const level2HallwayDialogue = [
   {
     type: 'beat',
     text: "Hallway outside Ribbit's room. Pomni steps out. Kaufmo hurries past without noticing her.",
@@ -255,12 +246,16 @@ export const level2OpeningDialogue = [
   },
   {
     type: 'beat',
-    text: 'Objective: Go after Kaufmo',
+    text: 'Kaufmo disappears into his room, a few doors before Ribbit’s.',
+    next: null,
   },
+];
+
+export const level2RoomOpeningDialogue = [
   {
     id: 'l2_inside',
     type: 'beat',
-    text: 'Pomni catches up. Kaufmo is pacing in a tight circle.',
+    text: 'In his room, Kaufmo turns toward Pomni, still lost in thought.',
   },
   {
     type: 'line',
@@ -595,16 +590,22 @@ export const level2OpeningDialogue = [
   },
 ];
 
+// The complete sequence remains available as a standalone dialogue preview.
+export const level2OpeningDialogue = [
+  ...level2HallwayDialogue.map(node => ({ ...node, next: undefined })),
+  ...level2RoomOpeningDialogue,
+];
+
 // --- Level 1: "Talk Her Down" (Ribbit) ---------------------------------
-// Script by Dorsa Shahrokh. Played when Pomni walks up to Ribbit in her
-// room and presses E. Four graded choices: the best answer earns 1 Escape
+// Script by Dorsa Shahrokh. Starts with E at her hallway door, then
+// continues inside. Four graded choices: the best answer earns 1 Escape
 // point (`points: 1`), the others 0 — they still advance, but change
 // Ribbit's reply and Pomni has to walk it back. Every option's branch
 // rejoins the main line, so all 81 paths visit all four choices and end
 // the same way: Ribbit is steadied regardless of score (the score feeds
 // the ending, not this level). Choice-checking lives in
-// src/dialogue/choiceTally.js; src/rooms/ribbitRoom.js keeps the tally.
-// `action` on a node names a stage direction ribbitRoom.js acts out in 3D
+// src/dialogue/choiceTally.js; src/levels/level1.js owns the encounter.
+// `action` on a node names a stage direction the mission acts out in 3D
 // when that node is shown (knock, enterRoom, sitBesideRibbit,
 // ribbitSitsUp) — the text stays exactly as written.
 export const level1RibbitDialogue = [
@@ -832,9 +833,9 @@ export const level1RibbitDialogue = [
     type: 'choice',
     speaker: 'pomni',
     options: [
-      { text: '“He’s not right. He’s hurting, and he aimed it at the closest person.”', next: 'l1_c3_a', points: 1 },
+      { text: '“What he said was cruel. It doesn’t make it true. You don’t owe him a conversation right now.”', next: 'l1_c3_a', points: 1 },
       { text: '“Well… you are pretty loud.”', next: 'l1_c3_b', points: 0 },
-      { text: '“Maybe you should stay away from him for a while.”', next: 'l1_c3_c', points: 0 },
+      { text: '“Just stop thinking about him. Problem solved.”', next: 'l1_c3_c', points: 0 },
     ],
   },
   {
@@ -842,14 +843,14 @@ export const level1RibbitDialogue = [
     type: 'line',
     speaker: 'ribbit',
     side: 'right',
-    text: '…That’s not fair either.',
+    text: '…I don’t know how to stop hearing it in my head.',
   },
   {
     type: 'line',
     speaker: 'pomni',
     side: 'left',
     mood: 'neutral',
-    text: 'No. It’s not. But it’s not the truth about you.',
+    text: 'You don’t have to figure it all out today. I can stay for a bit.',
     next: 'l1_best_friend',
   },
   {
@@ -872,14 +873,14 @@ export const level1RibbitDialogue = [
     type: 'line',
     speaker: 'ribbit',
     side: 'right',
-    text: 'So he wins? I lose my best friend and my hot chocolate?',
+    text: 'He’s my best friend. I can’t just switch that off.',
   },
   {
     type: 'line',
     speaker: 'pomni',
     side: 'left',
     mood: 'sad',
-    text: 'That’s not what I meant. Sorry.',
+    text: '…Right. Sorry. That was too easy for me to say.',
   },
   {
     id: 'l1_best_friend',
@@ -999,6 +1000,7 @@ export const level1RibbitDialogue = [
     text: 'Ribbit sits up slowly.',
   },
   {
+    id: 'l1_recovery',
     type: 'line',
     speaker: 'ribbit',
     side: 'right',
@@ -1015,7 +1017,7 @@ export const level1RibbitDialogue = [
     type: 'line',
     speaker: 'ribbit',
     side: 'right',
-    text: 'If you see Kaufmo, tell him I’m on his side. Even if he is a little crazy.',
+    text: 'If you see Kaufmo, tell him I’m on his side. Tell him I believe him.',
   },
   {
     type: 'line',
@@ -1031,6 +1033,10 @@ export const level1RibbitDialogue = [
     text: 'And Pomni? …If Jax ever wants to talk, tell him I’ll make the hot chocolate.',
     next: null,
   },
+];
+
+export const ribbitFollowupDialogue = [
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'I’m taking a minute. Thanks for checking on me. Kaufmo’s room is a few doors back toward the entrance.', next: null },
 ];
 
 // --- Level 2 hand-in: presenting pictures to Kaufmo ---------------------

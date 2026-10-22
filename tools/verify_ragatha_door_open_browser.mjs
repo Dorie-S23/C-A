@@ -44,7 +44,7 @@ try{
  return {Pomni:new T.Vector3(s.player[0],s.player[1]-.3,s.player[2]).project(c).toArray(),Ragatha:new T.Vector3(...s.ragatha.position).add(new T.Vector3(0,1.5,0)).project(c).toArray(),Door:new T.Vector3(1.4,1.5,3.32).project(c).toArray()};})()`);
  check('Conversation frames both characters and doorway above dialogue UI',()=>{for(const [name,p] of Object.entries(framing))assert.ok(Math.abs(p[0])<.9&&p[1]>-.2&&p[1]<.9,name)});
  report.framing=framing;
- for(let i=0;i<24&&(await state()).dialogueActive;i++){await key('Space');await sleep(80)}
+ for(let i=0;i<24;i++){const s=await state();if(s.jaxPass){await sleep(100);i--;continue}if(!s.dialogueActive)break;await key('Space');await sleep(80)}
  const released=await until(async()=>{const s=await state();return s.entrancePhase==='done'&&s.ready&&s});
  check('Door remains open after Ragatha leaves and Find Caine/gameplay are restored',()=>{assert.ok(Math.abs(released.doorAngle+Math.PI/2)<1e-8);assert.equal(released.ragatha.visible,false);assert.equal(released.objective.id,'find-caine')});
  await setLock(true);
