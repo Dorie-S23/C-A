@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { loadRoomModel } from './loadRoomModel.js';
-import { loadKaufmoRunExtra } from '../characters/kaufmoRunExtra.js';
+import { loadKaufmo } from '../characters/kaufmo.js';
 import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { createDoorPortal } from './portals.js';
 
@@ -18,9 +18,8 @@ export function loadKaufmoRoom(onProgress, {
 } = {}) {
   return Promise.all([
     loadRoomModel('./models/character%20rooms/kaufmos-room.glb', onProgress),
-    loadKaufmoRunExtra({ keyLight: false }), // the room already has real lighting of its own
-  ]).then(([room, kaufmoApi]) => {
-    const { kaufmo, collider } = kaufmoApi;
+    loadKaufmo(),
+  ]).then(([room, { kaufmo, collider }]) => {
     fixExportedMaterials(room.group);
     // Kaufmo always stands relative to the room's own default spawn, even
     // when `from` below moves the player's actual spawn to the doorway.
@@ -40,8 +39,7 @@ export function loadKaufmoRoom(onProgress, {
     }
 
     room.group.add(kaufmo);
-    const paceCenter = placeInMiddleOfRoom(kaufmo, { group: room.group, spawn: defaultSpawn });
-    kaufmoApi.pace(paceCenter); // anxious, pacing a tight circle — not just standing there
+    placeInMiddleOfRoom(kaufmo, { group: room.group, spawn: defaultSpawn });
     kaufmo.updateMatrixWorld(true);
     room.collisionMeshes.push({ mesh: collider, box: new THREE.Box3().setFromObject(collider) });
 
@@ -57,11 +55,10 @@ export function loadKaufmoRoom(onProgress, {
         interact: () => kaufmoStory.talk(kaufmo.getWorldPosition(new THREE.Vector3())),
       }];
     }
-    room.interactables = [...(room.interactables ?? []), ...(doorControl ? [doorControl.interactable] : [])];
-    room.update = (deltaSeconds, playerPosition) => {
-      kaufmoApi.update(deltaSeconds);
-      doorControl?.update?.(deltaSeconds, playerPosition);
-    };
+    if (doorControl) {
+      room.interactables = [...(room.interactables ?? []), doorControl.interactable];
+      room.update = doorControl.update;
+    }
 
     return room;
   });
@@ -73,9 +70,7 @@ export function loadKaufmoRoom(onProgress, {
  * in a corner near clutter) — floor height found the same way
  * officePicture.js's findSpotNear does, casting from well above and
  * taking the lowest hit so a ceiling fixture directly overhead can't be
- * mistaken for the floor. Needed room to actually see him pace without
- * the camera or furniture obscuring it.
- * @returns {THREE.Vector3} the point he paces around
+ * mistaken for the floor.
  */
 function placeInMiddleOfRoom(kaufmo, { group, spawn }) {
   group.updateMatrixWorld(true);
@@ -86,11 +81,10 @@ function placeInMiddleOfRoom(kaufmo, { group, spawn }) {
   raycaster.far = box.max.y - box.min.y + 2;
   const hits = raycaster.intersectObject(group, true);
   const floorHit = hits[hits.length - 1];
-  const paceCenter = new THREE.Vector3(center.x, floorHit ? floorHit.point.y : box.min.y, center.z);
+  const position = new THREE.Vector3(center.x, floorHit ? floorHit.point.y : box.min.y, center.z);
 
-  kaufmo.position.copy(paceCenter);
-  kaufmo.rotation.y = Math.atan2(spawn.x - paceCenter.x, spawn.z - paceCenter.z);
-  return paceCenter;
+  kaufmo.position.copy(position);
+  kaufmo.rotation.y = Math.atan2(spawn.x - position.x, spawn.z - position.z);
 }
 
 /**

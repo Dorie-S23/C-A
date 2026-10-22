@@ -23,12 +23,17 @@ import { loadKaufmoRunExtra } from '../characters/kaufmoRunExtra.js';
 // to see both in one sitting.
 const SPAWN_AT = { x: 0, z: -11 };
 
+// He used to stop (and pop out of existence) at -16 — right in the middle
+// of frame, close enough that playPassBy's instant visibility flip read
+// as a glitch rather than him leaving. Running him on to -22 instead means
+// he's already small and distant by the time that happens, so the cut
+// reads as "gone round the corner", not "disappeared".
 const RUN_FROM = new THREE.Vector3(-0.5, 0, -7);
-const RUN_TO = new THREE.Vector3(-0.5, 0, -16);
-const RUN_DURATION = 1.7;
+const RUN_TO = new THREE.Vector3(-0.5, 0, -22);
+const RUN_DURATION = 2.8;
 
 const CAMERA_POSITION = new THREE.Vector3(-1.9, 1.4, -6.2);
-const CAMERA_LOOK_AT = new THREE.Vector3(-0.8, 0.9, -14);
+const CAMERA_LOOK_AT = new THREE.Vector3(-0.7, 0.9, -19);
 
 const HOLD_AFTER = 0.35;
 
