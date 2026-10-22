@@ -26,6 +26,18 @@ export function createObjectiveController(definitions = OBJECTIVES) {
     reset() {
       active = null; completed.clear(); notify();
     },
+    /** For a save: plain ids only. */
+    snapshot() {
+      return { active: active?.id ?? null, completed: [...completed] };
+    },
+    /** From a save; unknown ids (an objective since removed) are dropped. */
+    restore({ active: activeId = null, completed: done = [] } = {}) {
+      completed.clear();
+      for (const id of done) if (Object.hasOwn(definitions, id)) completed.add(id);
+      active = activeId && Object.hasOwn(definitions, activeId) && !completed.has(activeId)
+        ? Object.freeze({ ...definitions[activeId], id: activeId }) : null;
+      notify();
+    },
     subscribe(listener) {
       listeners.add(listener); listener(active);
       return () => listeners.delete(listener);

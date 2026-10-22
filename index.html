@@ -91,6 +91,41 @@
             #btn-home {
                 background: rgba(200, 60, 60, 0.25);
             }
+            #btn-save,
+            #btn-pause-load {
+                background: rgba(26, 86, 232, 0.25);
+            }
+            #btn-save:hover,
+            #btn-pause-load:hover {
+                background: rgba(26, 86, 232, 0.45);
+            }
+            /* Over the pause menu, so a darker backdrop than other panels. */
+            #save-slots {
+                background: rgba(0, 0, 0, 0.85);
+            }
+            #save-slot-list {
+                display: flex;
+                flex-direction: column;
+                gap: 0.6em;
+            }
+            #save-slot-list button {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.2em;
+                text-align: left;
+            }
+            #save-slot-list button:disabled {
+                opacity: 0.45;
+                cursor: default;
+            }
+            .save-slot-name {
+                font-weight: 700;
+            }
+            .save-slot-detail {
+                font-size: 0.8em;
+                opacity: 0.75;
+            }
             #btn-home:hover {
                 background: rgba(200, 60, 60, 0.45);
             }
@@ -411,7 +446,7 @@
             #dialogue {
                 position: fixed;
                 inset: 0;
-                z-index: 15;
+                z-index: 15; /* paused, it hides (DialogueUI.setPaused) so the menus show */
                 pointer-events: none;
                 font-family: sans-serif;
             }
@@ -700,6 +735,8 @@
             <button id="btn-title">&larr; Title screen</button>
             <div id="pause-menu" hidden>
                 <button id="btn-resume">&#9654; Resume</button>
+                <button id="btn-save">&#128190; Save Game</button>
+                <button id="btn-pause-load">Load Game</button>
                 <button id="btn-home">&#8962; Back to Home</button>
             </div>
         </div>
@@ -732,10 +769,19 @@
                     <span>Dev mode: skip cutscenes and dialogue</span>
                 </label>
                 <button id="btn-new-game">New Game</button>
+                <button id="btn-load-game">Load Game</button>
                 <button id="btn-replay-intro">&#9654; Replay intro</button>
                 <button id="btn-room-previews">Room previews</button>
                 <button id="btn-options-credits">Credits</button>
                 <button id="btn-options-back">Back</button>
+            </div>
+        </div>
+        <div id="save-slots" class="title-panel" hidden>
+            <div class="title-panel-box">
+                <h2 id="save-slots-title">Save Game</h2>
+                <p id="save-slots-note"></p>
+                <div id="save-slot-list"></div>
+                <button id="btn-save-slots-back">Back</button>
             </div>
         </div>
         <div id="title-quit" class="title-panel" hidden>

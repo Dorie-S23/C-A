@@ -31,8 +31,8 @@ export const preLevel1Dialogue = [
     speaker: 'pomni',
     side: 'left',
     direction: 'internal, muttered to herself',
-    mood: 'annoyed',
-    text: 'Another day trapped in a nightmare circus run by a sentient cartoon. Same as yesterday.',
+    mood: 'neutral',
+    text: 'Another day trapped in a nightmare circus run by an AI being. Same as yesterday.',
   },
   {
     id: 'ragathaMorningGreeting',
@@ -55,7 +55,7 @@ export const preLevel1Dialogue = [
     anim: { ragatha: 'chatty' },
     speaker: 'ragatha',
     side: 'right',
-    text: "Caine's got something planned today, I think. He was doing that thing where he mutters to himself and draws diagrams nobody asked for.",
+    text: "Caine's got something planned today, I think. I saw him rushing all over the circus trying to plan our next adventure.",
   },
   {
     type: 'line',
@@ -64,7 +64,7 @@ export const preLevel1Dialogue = [
     side: 'left',
     direction: 'deadpan',
     mood: 'annoyed',
-    text: 'Thrilling. Another one of his "brilliant" ideas.',
+    text: 'Thrilling. Another one of his "brilliant" ideas for more adventures.',
   },
   {
     // The hallway cutaway plays before this brief narrative beat.
@@ -79,7 +79,7 @@ export const preLevel1Dialogue = [
     speaker: 'ragatha',
     side: 'right',
     direction: 'watching him go, dropping the upbeat tone',
-    text: "...He's been like that for days now.",
+    text: "...Does Jax seem off to you? He's been like that for days now.",
   },
   {
     type: 'line',
@@ -87,14 +87,14 @@ export const preLevel1Dialogue = [
     speaker: 'pomni',
     side: 'left',
     mood: 'neutral',
-    text: "He's always like that.",
+    text: 'Now that you mention it, he hasn’t been his usual insufferable self lately.',
   },
   {
     type: 'line',
     anim: { ragatha: 'worried' },
     speaker: 'ragatha',
     side: 'right',
-    text: 'Not like this. Not since the thing with Ribbit.',
+    text: 'I suspect something happened between Ribbit and him, they’ve been avoiding each other.',
   },
   {
     type: 'line',
@@ -103,7 +103,7 @@ export const preLevel1Dialogue = [
     side: 'left',
     direction: 'pause, uneasy',
     mood: 'worried',
-    text: "Guess I should go find out what Caine wants before it becomes my problem too.",
+    text: 'Strange… I should get going to see what Caine wants. He asked to see me after I woke up.',
     next: null,
   },
 ];
@@ -116,7 +116,7 @@ export const level1OpenDialogue = [
     side: 'right',
     direction: 'bursting in, too cheerful at first',
     mood: 'happy',
-    text: 'POMNI! Just the digital being I wanted to see!',
+    text: 'POMNI! Just the human I wanted to see!',
   },
   {
     type: 'line',
@@ -131,7 +131,7 @@ export const level1OpenDialogue = [
     speaker: 'caine',
     side: 'right',
     mood: 'happy',
-    text: "Rude, but fair. Listen — this is going to sound like a normal circus update, and then it's going to stop sounding like that.",
+    text: "Listen — this is going to sound like a normal circus update, and then it's going to stop sounding like that.",
   },
   {
     type: 'line',
@@ -139,14 +139,14 @@ export const level1OpenDialogue = [
     side: 'right',
     direction: 'his tone shifts, energy dims slightly',
     mood: 'worried',
-    text: "Jax and Ribbit had... words. Bad ones. And Jax has been Jax-ing harder than usual ever since. More bite, less bit, if you know what I mean.",
+    text: "Jax and Ribbit had... words. Bad ones. And Jax has been Jax-ing harder than usual ever since. More bite, less wit, if you know what I mean.",
   },
   {
     type: 'line',
     speaker: 'pomni',
     side: 'left',
     mood: 'annoyed',
-    text: "Jax is always a jerk, that's not exactly breaking news—",
+    text: "Jax is always a jerk. That's not exactly breaking news.",
   },
   {
     type: 'line',
@@ -175,7 +175,7 @@ export const level1OpenDialogue = [
     speaker: 'caine',
     side: 'right',
     mood: 'shocked',
-    text: "Abstraction! There it is! The A-word! The one I don't like saying out loud because saying it makes it feel closer!",
+    text: "Abstraction! There it is! The A-word! The one I don't like saying out loud because saying it makes it feel closer to happening!",
   },
   {
     type: 'line',
@@ -183,14 +183,14 @@ export const level1OpenDialogue = [
     side: 'right',
     direction: 'beat, quieter, almost pleading under the performance',
     mood: 'sad',
-    text: "If she tips over, she's not coming back as herself, Pomni. Whatever's left afterward — that's not Ribbit anymore. That's just... noise wearing her shape.",
+    text: "If she tips over, she's not coming back as herself, Pomni. Even I can't revert abstractions.",
   },
   {
     type: 'line',
     speaker: 'pomni',
     side: 'left',
     mood: 'annoyed',
-    text: "So what, you want me to fix a fight I wasn't even part of?",
+    text: "So you're asking me to get involved in their personal matters?",
   },
   {
     type: 'line',
@@ -213,7 +213,7 @@ export const level1OpenDialogue = [
     side: 'right',
     direction: 'to the audience/camera, grin snapping back too fast',
     mood: 'happy',
-    text: 'Her door is at the far end of the hall, on the left. I’ll check on everyone else. Just make sure she isn’t alone.',
+    text: 'She always says that! She never does!',
     next: null,
   },
 ];
@@ -795,19 +795,19 @@ export const level1RibbitDialogue = [
     type: 'line',
     speaker: 'ribbit',
     side: 'right',
-    text: 'Every night after the show, we’d hang out at the café. Hot chocolate, terrible jokes. It was the one normal thing in this whole place.',
+    text: 'After every adventure, we have a tradition where Jax, Kaufmo and I hang out at the café. Hot chocolate, terrible jokes. It was the one normal thing in this whole place.',
   },
   {
     type: 'line',
     speaker: 'ribbit',
     side: 'right',
-    text: 'He’s been getting worse lately. Snappier. So the other night I asked if he was okay. That’s it. That’s all I asked.',
+    text: 'He’s been getting so distant from us. We opened up to each other and after that he’s been acting horrible towards me. Snappier. So the other night I asked if he was okay. That’s it. That’s all I asked.',
   },
   {
     type: 'line',
     speaker: 'ribbit',
     side: 'right',
-    text: 'And he just exploded. Said he never wanted me tagging along. That I’m loud and clingy, and the only reason anyone puts up with me is because nobody can leave.',
+    text: 'And he just exploded. Said he can’t stand me anymore. That I’m loud and clingy, and the only reason anyone puts up with me is because nobody can leave.',
   },
   {
     type: 'line',
@@ -833,9 +833,9 @@ export const level1RibbitDialogue = [
     type: 'choice',
     speaker: 'pomni',
     options: [
-      { text: '“What he said was cruel. It doesn’t make it true. You don’t owe him a conversation right now.”', next: 'l1_c3_a', points: 1 },
+      { text: '“He’s not right. He’s hurting, and he aimed it at the closest person.”', next: 'l1_c3_a', points: 1 },
       { text: '“Well… you are pretty loud.”', next: 'l1_c3_b', points: 0 },
-      { text: '“Just stop thinking about him. Problem solved.”', next: 'l1_c3_c', points: 0 },
+      { text: '“Maybe you should stay away from him for a while.”', next: 'l1_c3_c', points: 0 },
     ],
   },
   {
@@ -843,14 +843,14 @@ export const level1RibbitDialogue = [
     type: 'line',
     speaker: 'ribbit',
     side: 'right',
-    text: '…I don’t know how to stop hearing it in my head.',
+    text: '…That’s not fair either.',
   },
   {
     type: 'line',
     speaker: 'pomni',
     side: 'left',
     mood: 'neutral',
-    text: 'You don’t have to figure it all out today. I can stay for a bit.',
+    text: 'No. It’s not. But it’s not the truth about you.',
     next: 'l1_best_friend',
   },
   {
@@ -873,14 +873,14 @@ export const level1RibbitDialogue = [
     type: 'line',
     speaker: 'ribbit',
     side: 'right',
-    text: 'He’s my best friend. I can’t just switch that off.',
+    text: 'So he wins? I lose my best friend and my hot chocolate?',
   },
   {
     type: 'line',
     speaker: 'pomni',
     side: 'left',
     mood: 'sad',
-    text: '…Right. Sorry. That was too easy for me to say.',
+    text: 'That’s not what I meant. Sorry.',
   },
   {
     id: 'l1_best_friend',
@@ -912,13 +912,13 @@ export const level1RibbitDialogue = [
     type: 'line',
     speaker: 'ribbit',
     side: 'right',
-    text: 'Jax laughed at him. Called him crazy.',
+    text: 'Jax laughed at him. Called him crazy. Keeps ridiculing and dismissing him.',
   },
   {
     type: 'line',
     speaker: 'ribbit',
     side: 'right',
-    text: 'Kaufmo laughed too, but… I know that laugh. It’s the one I do.',
+    text: 'At first Kaufmo thought Jax was just being Jax, but he got more tense with his insults and it started getting to him.',
   },
   {
     type: 'line',
@@ -1017,7 +1017,7 @@ export const level1RibbitDialogue = [
     type: 'line',
     speaker: 'ribbit',
     side: 'right',
-    text: 'If you see Kaufmo, tell him I’m on his side. Tell him I believe him.',
+    text: 'If you see Kaufmo, tell him I’m on his side. Even if he’s acting a little crazy.',
   },
   {
     type: 'line',
