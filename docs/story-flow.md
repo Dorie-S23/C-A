@@ -28,11 +28,18 @@ The playable sequence is:
 6. Leaving for Dorm Hall plays Kaufmo's hallway encounter. Its completion is
    remembered, then Pomni travels into his room for the introduction. If
    interrupted, E on Kaufmo retries the room conversation.
-7. Completing the introduction enables **Find the office photos** and the
-   photo counter. All three photos are in Kaufmo’s room. Early pickups are
-   retained, but do not bypass his introduction. E then presents held photos. Three presented
-   photos enable **Hear Kaufmo’s Theory**; his stall/payoff conversations
-   resolve that objective and show **Level 2 Complete** once per run.
+7. Completing the introduction enables **Find the office photos**, the photo
+   counter, and a 3-minute search timer (visible countdown, stops the moment
+   all 5 are picked up — not when they're handed in). Pomni auto-travels to
+   the Dorm Hall so the search starts there rather than inside his room.
+   All 5 photos (`PHOTO_COUNT` in `level2Items.js`) are scattered round the
+   Circus Lobby, each with a soft pulsing glow, not sitting in Kaufmo's room.
+   Early pickups are retained, but do not bypass his introduction. E then
+   presents held photos. All 5 presented photos enable **Hear Kaufmo’s
+   Theory**; his stall/payoff conversations resolve that objective and show
+   **Level 2 Complete** once per run. Running out of time before all 5 are
+   found shows a **LEVEL 2 FAILED** card and restarts the search (new photo
+   spots, same objective) — not yet the real "abstraction" fail effect.
 
 `src/game/storyProgress.js` owns the post-Caine milestones. Objectives and
 milestones survive room changes. Ribbit's completed pose and an unscored

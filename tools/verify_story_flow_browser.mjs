@@ -185,13 +185,18 @@ try {
   await until(async () => (await state()).focusedPrompt === 'Give photos to Kaufmo');
   await key('KeyE'); await progress();
   assert.equal((await state()).picturesPresented, 1);
-  await page.evaluate(() => { window.__storyReview.itemState.collect('ca2'); window.__storyReview.itemState.collect('ca3'); });
+  await page.evaluate(() => {
+    window.__storyReview.itemState.collect('ca2');
+    window.__storyReview.itemState.collect('ca3');
+    window.__storyReview.itemState.collect('ca4');
+    window.__storyReview.itemState.collect('ca5');
+  });
   await until(async () => (await state()).focusedPrompt === 'Give photos to Kaufmo');
   await key('KeyE'); await progress();
   const presented = await state();
   check('Handing over the remaining photos advances the next objective', () => {
     assert.equal(report.errors.length, 0); assert.equal(presented.objective.id, 'check-kaufmo');
-    assert.equal(presented.picturesPresented, 3);
+    assert.equal(presented.picturesPresented, 5);
   });
   // Stall, payoff and the completion card must occur once across revisits.
   await until(async () => (await state()).focusedPrompt === 'Talk to Kaufmo');
@@ -199,7 +204,7 @@ try {
   await until(async () => (await state()).focusedPrompt === 'Talk to Kaufmo');
   await key('KeyE'); await progress();
   await until(async () => (await state()).completionCardVisible);
-  check('Kaufmo payoff completes Level 2 after all three hand-ins', () => assert.equal((presented.picturesPresented), 3));
+  check('Kaufmo payoff completes Level 2 after all five hand-ins', () => assert.equal((presented.picturesPresented), 5));
   await page.evaluate(() => window.__storyReview.returnToHome());
   assert.equal((await state()).completionCardVisible, false);
   await page.evaluate(() => window.__storyReview.startNewGame());

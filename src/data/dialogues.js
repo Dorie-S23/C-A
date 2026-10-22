@@ -1106,12 +1106,72 @@ export const level2HandIn2Dialogue = [
     speaker: 'kaufmo',
     side: 'right',
     mood: 'worried',
-    text: "Right! Exactly! So close. There was a third — I know there was. Find the third and it stops being a theory.",
+    text: "Right! Exactly! That's two confirmed. There are more out there — I remember there being more. Keep looking.",
     next: null,
   },
 ];
 
 export const level2HandIn3Dialogue = [
+  {
+    type: 'beat',
+    text: 'Pomni holds out a third photo.',
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'shocked',
+    text: "Three now. More than half, Pomni. This isn't nothing anymore.",
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'neutral',
+    text: "You keep saying that at every one.",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    direction: 'half-laugh, half not',
+    mood: 'worried',
+    text: "I mean it more each time. Two left. I can feel it getting clearer.",
+    next: null,
+  },
+];
+
+export const level2HandIn4Dialogue = [
+  {
+    type: 'beat',
+    text: 'Pomni holds out a fourth photo. Kaufmo nearly drops it grabbing for it.',
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'shocked',
+    text: "Four. Four, Pomni. One left. Just one.",
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'worried',
+    text: "You okay? You look like you're about to vibrate out of your shoes.",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    direction: 'not okay, clearly',
+    mood: 'worried',
+    text: "I'm fine. I'm fine. Find the last one and I'm fine.",
+    next: null,
+  },
+];
+
+export const level2HandIn5Dialogue = [
   {
     type: 'beat',
     text: 'Pomni holds out the last photo. Kaufmo goes very still.',
@@ -1121,7 +1181,7 @@ export const level2HandIn3Dialogue = [
     speaker: 'kaufmo',
     side: 'right',
     mood: 'shocked',
-    text: 'Three.',
+    text: 'Five.',
   },
   {
     type: 'line',
@@ -1129,7 +1189,7 @@ export const level2HandIn3Dialogue = [
     side: 'right',
     direction: 'quiet, almost to himself',
     mood: 'happy',
-    text: "Three. These were it. These were the missing pieces, Pomni — I wasn't imagining it, I wasn't crazy, I just didn't have the whole picture. Now I do.",
+    text: "Five. These were it. These were the missing pieces, Pomni — I wasn't imagining it, I wasn't crazy, I just didn't have the whole picture. Now I do.",
   },
   {
     type: 'line',

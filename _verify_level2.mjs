@@ -2,12 +2,12 @@
 // game, without starting WebGL or loading rooms. Run: node --test _verify_level2.mjs
 import assert from 'node:assert/strict';
 import { beforeEach, test } from 'node:test';
-import { createLevel2Items, pickKaufmoScript } from './src/state/level2Items.js';
+import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT } from './src/state/level2Items.js';
 import {
   getEscapeTotal, getLevelPoints, resetEscapeThreshold, setLevelPoints,
 } from './src/state/escapeThreshold.js';
 
-const PICTURES = ['ca1', 'ca2', 'ca3'];
+const PICTURES = Array.from({ length: PHOTO_COUNT }, (_, i) => `ca${i + 1}`);
 
 beforeEach(() => resetEscapeThreshold());
 
@@ -35,13 +35,13 @@ test('pickups count each picture once and earn no points before hand-in', () => 
     assert.equal(getLevelPoints('level2'), 0);
     assert.equal(getEscapeTotal(), 4);
   }
-  assert.equal(items.heldCount(), 3);
+  assert.equal(items.heldCount(), PHOTO_COUNT);
   assert.equal(items.totalPresented(), 0);
-  assert.equal(items.totalFound(), 3);
-  assert.deepEqual(hints, [1, 2, 3]);
+  assert.equal(items.totalFound(), PHOTO_COUNT);
+  assert.deepEqual(hints, PICTURES.map((_, i) => i + 1));
 });
 
-for (const count of [1, 2, 3]) {
+for (let count = 1; count <= PHOTO_COUNT; count++) {
   test(`handing in ${count} picture(s) scores exactly ${count}; revisits add nothing`, () => {
     const items = createLevel2Items();
     setLevelPoints('level1', 3);
@@ -56,7 +56,7 @@ for (const count of [1, 2, 3]) {
     assert.equal(getLevelPoints('level2'), count);
     assert.equal(getEscapeTotal(), 3 + count);
 
-    const revisits = count === 3
+    const revisits = count === PHOTO_COUNT
       ? ['level2Complete', 'level2Payoff', 'level2Payoff']
       : ['level2Idle', 'level2Idle', 'level2Idle'];
     for (const script of revisits) {
@@ -90,19 +90,38 @@ test('a handed-in picture cannot be collected or scored again', () => {
 });
 
 test('all pickup orders and hand-in batch sizes score the cumulative total', () => {
-  const orders = [
-    ['ca1', 'ca2', 'ca3'], ['ca1', 'ca3', 'ca2'],
-    ['ca2', 'ca1', 'ca3'], ['ca2', 'ca3', 'ca1'],
-    ['ca3', 'ca1', 'ca2'], ['ca3', 'ca2', 'ca1'],
+  // Exhaustively enumerating every order (PHOTO_COUNT! of them) stopped
+  // being practical once this went from 3 pictures to 5 — a representative
+  // spread (forward, reversed, a couple of shuffles) exercises the same
+  // property (order doesn't matter, only running count does) without a
+  // combinatorial blow-up.
+  const reversed = [...PICTURES].reverse();
+  const shuffled = (seed) => {
+    const arr = [...PICTURES];
+    let s = seed;
+    const rand = () => { s = (1664525 * s + 1013904223) >>> 0; return s / 2 ** 32; };
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  };
+  const orders = [PICTURES, reversed, shuffled(7), shuffled(99)];
+  const batches = [
+    [PHOTO_COUNT],
+    [1, PHOTO_COUNT - 1],
+    [PHOTO_COUNT - 1, 1],
+    PICTURES.map(() => 1),
+    [2, PHOTO_COUNT - 2],
   ];
   for (const order of orders) {
-    for (const batches of [[3], [1, 2], [2, 1], [1, 1, 1]]) {
+    for (const batchSizes of batches) {
       resetEscapeThreshold();
       setLevelPoints('level1', 2);
       const items = createLevel2Items();
       let presented = 0;
-      for (const size of batches) {
-        const context = `${order.join(',')}; batches ${batches.join('+')}; presented ${presented}`;
+      for (const size of batchSizes) {
+        const context = `${order.join(',')}; batches ${batchSizes.join('+')}; presented ${presented}`;
         for (const id of order.slice(presented, presented + size)) items.collect(id);
         assert.equal(getLevelPoints('level2'), presented, context);
         assert.equal(items.totalFound(), presented + size, context);
@@ -150,10 +169,10 @@ test('a fresh run restores the completion-then-payoff dialogue sequence', () => 
   const items = createLevel2Items();
   for (let run = 0; run < 2; run++) {
     for (const id of PICTURES) items.collect(id);
-    assert.equal(pickKaufmoScript(items), 'level2HandIn3');
+    assert.equal(pickKaufmoScript(items), `level2HandIn${PHOTO_COUNT}`);
     assert.equal(pickKaufmoScript(items), 'level2Complete');
     assert.equal(pickKaufmoScript(items), 'level2Payoff');
-    assert.equal(getLevelPoints('level2'), 3);
+    assert.equal(getLevelPoints('level2'), PHOTO_COUNT);
     resetEscapeThreshold();
     items.reset();
     assert.equal(items.totalFound(), 0);

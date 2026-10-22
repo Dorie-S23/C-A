@@ -1,5 +1,8 @@
 import { setLevelPoints } from './escapeThreshold.js';
 
+/** How many office photos Level 2's search is actually looking for. */
+export const PHOTO_COUNT = 5;
+
 /**
  * One run's Level 2 pictures, shared by every room. Held and handed-in
  * pictures both stay found, but only handed-in pictures earn Escape points.
@@ -67,7 +70,7 @@ export function pickKaufmoScript(items) {
     const total = items.presentHeld();
     return `level2HandIn${total}`;
   }
-  if (items.totalPresented() >= 3) return items.pickPostHandInScript();
+  if (items.totalPresented() >= PHOTO_COUNT) return items.pickPostHandInScript();
   if (items.totalPresented() > 0) return 'level2Idle';
   return 'level2Opening';
 }

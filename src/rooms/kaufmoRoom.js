@@ -3,22 +3,12 @@ import { loadRoomModel } from './loadRoomModel.js';
 import { loadKaufmo } from '../characters/kaufmo.js';
 import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { createDoorPortal } from './portals.js';
-import { pickKaufmoScript } from '../state/level2Items.js';
 
 const KAUFMO_DISTANCE = 2.2; // how far in front of spawn he stands, pulled in by furniture
 const KAUFMO_WALL_GAP = 0.6;
 
 const DOOR_FRAME_NAME = 'Door_Frame';
 const DOOR_SLAB_NAME = 'Door_Slab';
-
-// Shown once the payoff (level2Payoff) has actually played through, not
-// just been triggered — same card Level 1 pauses on between missions
-// (game.showLevelComplete), just driven locally here since Level 2 isn't
-// staged as its own mission yet. There's nowhere to continue into yet
-// (Level 3 isn't linked up), so it says so rather than implying there is.
-const LEVEL2_COMPLETE_TITLE = 'Level 2 Complete';
-const LEVEL2_COMPLETE_SUBTITLE = "Three photos, one real room — and a door that isn't what it says it is. "
-  + "Kaufmo's not finished. Neither is she. More coming soon — thanks for playing!";
 
 /**
  * Loads Kaufmo's Room, exported from "Kaufmos Room V4.blend" via
@@ -27,7 +17,7 @@ const LEVEL2_COMPLETE_SUBTITLE = "Three photos, one real room — and a door tha
  * `playDialogue` hook main.js passes every room loader (see selectRoom()).
  */
 export function loadKaufmoRoom(onProgress, {
-  playDialogue, from, items, endLevel, objectives, showLevelComplete, playChime, kaufmoStory,
+  playDialogue, from, items, kaufmoStory,
 } = {}) {
   return Promise.all([
     loadRoomModel('./models/character%20rooms/kaufmos-room.glb', onProgress),
@@ -65,33 +55,7 @@ export function loadKaufmoRoom(onProgress, {
         objects,
         anchor: kaufmo, radius: 2.8,
         prompt: () => ((kaufmoStory?.introduced?.() ?? true) && items?.heldCount() > 0 ? 'Give photos to Kaufmo' : 'Talk to Kaufmo'),
-        interact: () => {
-          if (kaufmoStory) return kaufmoStory.talk(kaufmo.getWorldPosition(new THREE.Vector3()));
-          const key = pickKaufmoScript(items);
-          // The payoff keeps playing on every revisit after the first (see
-          // pickKaufmoScript below) — good, that's the lore staying
-          // readable — but it should only actually end the level once.
-          // items.isDone() tracks that across room reloads, not just this
-          // interactable's own closure.
-          //
-          // The stall line (level2Complete) gives no sign a second visit
-          // unlocks the actual payoff — nothing else in the room changes,
-          // so a player has no reason to come back on their own. Raising
-          // an objective here, cleared once the payoff's actually heard,
-          // is that sign.
-          const onComplete = key === 'level2Complete'
-            ? () => objectives?.activate('check-kaufmo')
-            : key === 'level2Payoff' && !items?.isDone()
-              ? async () => {
-                objectives?.complete('check-kaufmo');
-                items.markDone();
-                if (showLevelComplete) await showLevelComplete(LEVEL2_COMPLETE_TITLE, LEVEL2_COMPLETE_SUBTITLE);
-                endLevel?.(LEVEL2_COMPLETE_TITLE, LEVEL2_COMPLETE_SUBTITLE);
-              }
-              : undefined;
-          if (key.startsWith('level2HandIn')) playChime?.('handIn');
-          playDialogue(key, onComplete ? { onComplete } : undefined);
-        },
+        interact: () => kaufmoStory.talk(kaufmo.getWorldPosition(new THREE.Vector3())),
       }];
     }
     if (doorControl) {

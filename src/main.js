@@ -23,7 +23,7 @@ import { createTitleScreen } from './ui/titleScreen.js';
 import { resetEscapeThreshold } from './state/escapeThreshold.js';
 import { createStoryProgress } from './game/storyProgress.js';
 import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.js';
-import { createLevel2Items, pickKaufmoScript } from './state/level2Items.js';
+import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT } from './state/level2Items.js';
 import { runLevel1 } from './levels/level1.js';
 import { runLevel2 } from './levels/level2.js';
 import { createMinimap } from './ui/minimap.js';
@@ -36,7 +36,7 @@ import { createActionCaptions } from './ui/actionCaptions.js';
 import { createCaineConversation } from './game/caineConversation.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
-  level2HandIn1Dialogue, level2HandIn2Dialogue, level2HandIn3Dialogue,
+  level2HandIn1Dialogue, level2HandIn2Dialogue, level2HandIn3Dialogue, level2HandIn4Dialogue, level2HandIn5Dialogue,
   level2IdleDialogue, level2CompleteDialogue, level2PayoffDialogue,
   level2HallwayDialogue, level2RoomOpeningDialogue, ribbitFollowupDialogue,
 } from './data/dialogues.js';
@@ -62,6 +62,8 @@ const DIALOGUE_SCRIPTS = {
   level2HandIn1: { script: level2HandIn1Dialogue, room: 'kaufmo' },
   level2HandIn2: { script: level2HandIn2Dialogue, room: 'kaufmo' },
   level2HandIn3: { script: level2HandIn3Dialogue, room: 'kaufmo' },
+  level2HandIn4: { script: level2HandIn4Dialogue, room: 'kaufmo' },
+  level2HandIn5: { script: level2HandIn5Dialogue, room: 'kaufmo' },
   level2Idle: { script: level2IdleDialogue, room: 'kaufmo' },
   level2Complete: { script: level2CompleteDialogue, room: 'kaufmo' },
   level2Payoff: { script: level2PayoffDialogue, room: 'kaufmo' },
@@ -1113,7 +1115,7 @@ function talkToKaufmo(lookAt, token) {
 
 async function finishKaufmoLevel(token) {
   const title = 'Level 2 Complete';
-  const subtitle = "Three photos, one real room — and a door that isn't what it says it is. More coming soon — thanks for playing!";
+  const subtitle = "Five photos, one real room — and a door that isn't what it says it is. More coming soon — thanks for playing!";
   if (!await showLevelComplete(title, subtitle, { resume: false }) || token !== loadToken) return;
   endLevel(title, subtitle);
 }
@@ -1134,10 +1136,10 @@ function turnPomniTowards(point, cameraOffset = 0) {
 // One shared instance survives room changes and menu visits; PLAY resets it.
 const itemState = createLevel2Items({
   onCollect: (count) => {
-    showHint(`Picked up a photo. (${count}/3)`);
+    showHint(`Picked up a photo. (${count}/${PHOTO_COUNT})`);
     // The clock is for finding them, not for the walk back to hand them
-    // in — once all 3 are actually in hand, stop it right there.
-    if (count >= 3) searchTimeLeft = null;
+    // in — once all of them are actually in hand, stop it right there.
+    if (count >= PHOTO_COUNT) searchTimeLeft = null;
   },
 });
 const storyProgress = createStoryProgress({ objectives, isStorySession: () => preLevel1Session });
@@ -1187,7 +1189,7 @@ function updatePictureCounter() {
 
   // Handed-in pictures still count as found. Only update the live region
   // when its text changes, rather than announcing it every animation frame.
-  const text = `Pictures found: ${itemState.totalFound()}/3`;
+  const text = `Pictures found: ${itemState.totalFound()}/${PHOTO_COUNT}`;
   if (pictureCounter.textContent !== text) pictureCounter.textContent = text;
 
   const timerVisible = visible && searchTimeLeft !== null;

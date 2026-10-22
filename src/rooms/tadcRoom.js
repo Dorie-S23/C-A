@@ -5,15 +5,18 @@ import { setupLobbyDoors } from './lobbyDoors.js';
 import { createCurtainPortal } from './portals.js';
 import { scatterPictures } from '../props/officePicture.js';
 
-// Level 2's three office photos, scattered round the lobby rather than
-// sitting in Kaufmo's own room — a real search, not a hand-in on arrival.
-// scatterPictures() picks different wall spots each time this room loads,
-// so a retry (the search timer running out, or just leaving and coming
-// back) doesn't put them back where they were.
+// Level 2's five office photos (see PHOTO_COUNT in level2Items.js),
+// scattered round the lobby rather than sitting in Kaufmo's own room — a
+// real search, not a hand-in on arrival. scatterPictures() picks different
+// wall spots each time this room loads, so a retry (the search timer
+// running out, or just leaving and coming back) doesn't put them back
+// where they were. ca6.png exists alongside these but isn't used.
 const PICTURES = [
   { id: 'ca1', url: './models/objects/ca1.png' },
   { id: 'ca2', url: './models/objects/ca2.png' },
   { id: 'ca3', url: './models/objects/ca3.png' },
+  { id: 'ca4', url: './models/objects/ca4.png' },
+  { id: 'ca5', url: './models/objects/ca5.png' },
 ];
 
 // The castle's brick walls (arched windows, battlements), taken from the
