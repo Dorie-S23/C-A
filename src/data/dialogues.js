@@ -601,10 +601,13 @@ export const level2OpeningDialogue = [
 // continues inside. Four graded choices: the best answer earns 1 Escape
 // point (`points: 1`), the others 0 — they still advance, but change
 // Ribbit's reply and Pomni has to walk it back. Every option's branch
-// rejoins the main line, so all 81 paths visit all four choices and end
-// the same way: Ribbit is steadied regardless of score (the score feeds
-// the ending, not this level). Choice-checking lives in
-// src/dialogue/choiceTally.js; src/levels/level1.js owns the encounter.
+// rejoins the main line. Win/lose: each pick also moves Ribbit's distress
+// (src/dialogue/distressMeter.js). Finish the talk before it peaks and
+// Ribbit is steadied (the win, ending on the hot chocolate line); let it
+// peak and, right after her reply to that pick, level1.js jumps to
+// 'l1_shut_out' — she throws Pomni out and the level is lost.
+// Choice-checking lives in src/dialogue/choiceTally.js;
+// src/levels/level1.js owns the encounter.
 // `action` on a node names a stage direction the mission acts out in 3D
 // when that node is shown (knock, enterRoom, sitBesideRibbit,
 // ribbitSitsUp) — the text stays exactly as written.
@@ -1031,6 +1034,32 @@ export const level1RibbitDialogue = [
     speaker: 'ribbit',
     side: 'right',
     text: 'And Pomni? …If Jax ever wants to talk, tell him I’ll make the hot chocolate.',
+    next: null,
+  },
+  // LOSE: only reached by level1.js's jump once Ribbit's distress peaks.
+  {
+    id: 'l1_shut_out',
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'You know what? Forget it. I don’t need someone else telling me what’s wrong with me.',
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'worried',
+    text: 'Ribbit, wait, I didn’t—',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'Just go, Pomni. Please.',
+  },
+  {
+    type: 'beat',
+    text: 'Ribbit turns to the wall and pulls the blanket over her head. She isn’t listening anymore.',
     next: null,
   },
 ];

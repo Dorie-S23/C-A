@@ -18,9 +18,15 @@ The playable sequence is:
    plays through the closed door; consent moves the scene into her room.
 4. Pomni approaches the bed before dialogue resumes. Choosing to sit waits
    for her approach and seating pose. Fixed conversation shots frame both
-   characters. The four choices score at most four Escape points; poor
-   choices still advance. Ribbit steadies on every path, with a more guarded
-   recovery line and pose after poor support.
+   characters. The four choices score at most four Escape points. Each pick
+   also moves Ribbit's distress (starts at 1, good −1, poor +1, max 3; see
+   `src/dialogue/distressMeter.js`).
+   - **Win:** finish the conversation before distress hits 3 — Ribbit
+     steadies (step 5).
+   - **Lose:** distress hits 3 (two poor picks from the start, or three in
+     all) — after her reply she throws Pomni out (`l1_shut_out`), a
+     **LEVEL 1 FAILED** card shows, the attempt's points are dropped, and
+     Pomni is back in the hall to knock again (same objective).
 5. Finishing completes **Find Ribbit** and enables **Find Kaufmo**. Pomni stands,
    the conversation camera releases, and the exit opens. There is no scene
    picker in this handoff. A **Level 1 Complete** card pauses for Continue

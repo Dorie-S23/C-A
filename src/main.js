@@ -960,18 +960,18 @@ function triggerCaineArrival() {
  * straight through to DialogueUI: onComplete for a finished conversation,
  * onCancel for one abandoned with Escape, onChoice for each option picked,
  * distressFor to shake/tint a line by how upset its speaker is (0-3),
- * onNode for each node as it's shown (to act out its `action`), and
- * startAt/stopAt to play only part of the script (see createDialogueEngine).
+ * onNode for each node as it's shown (to act out its `action`), nextFor
+ * to send the script somewhere it wouldn't route itself, and startAt/stopAt to play only part of the script (see createDialogueEngine).
  *
  * @param {string} key a DIALOGUE_SCRIPTS key
  * @param {{ lookAt?: THREE.Vector3, onChoice?: (option, nextNode) => void,
  *   onComplete?: () => void, onCancel?: () => void,
  *   distressFor?: (lineNode) => number, onNode?: (node) => void,
- *   startAt?: string, stopAt?: string }} [options]
+ *   nextFor?: (node) => string | undefined, startAt?: string, stopAt?: string }} [options]
  */
 let dialogueGeneration = 0;
 function playRoomDialogue(key, {
-  lookAt, onChoice, onComplete, onCancel, distressFor, lineFor, onNode, startAt, stopAt,
+  lookAt, onChoice, onComplete, onCancel, distressFor, lineFor, nextFor, onNode, startAt, stopAt,
 } = {}) {
   const entry = DIALOGUE_SCRIPTS[key];
   if (!entry || dialogueUI.isActive) return false;
@@ -986,7 +986,7 @@ function playRoomDialogue(key, {
   resetMoveState();
   if (lookAt) turnPomniTowards(lookAt);
   dialogueUI.play(entry.script, {
-    onChoice, onComplete: finish(onComplete), onCancel: finish(onCancel), distressFor, lineFor, startAt, stopAt,
+    onChoice, onComplete: finish(onComplete), onCancel: finish(onCancel), distressFor, lineFor, nextFor, startAt, stopAt,
     onNode: withHallwayCutscene(key, onNode),
   });
   return true;

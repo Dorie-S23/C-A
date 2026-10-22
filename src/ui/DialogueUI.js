@@ -41,6 +41,7 @@ export function createDialogueUI({ speakers }) {
   let distressFor = null;
   let onNode = null;
   let lineFor = null;
+  let nextFor = null;
   let leftSpeaker = null;
   let rightSpeaker = null;
   let leftMood = 'neutral';
@@ -241,8 +242,15 @@ export function createDialogueUI({ speakers }) {
       textEl.textContent = fullText;
       return;
     }
-    engine.advance();
+    stepPast(node);
     renderNode();
+  }
+
+  /** Moves on from a line/beat: to wherever nextFor redirects it, else its own `next`. */
+  function stepPast(node) {
+    const target = nextFor?.(node);
+    if (target) engine.jump(target);
+    else engine.advance();
   }
 
   /**
@@ -268,6 +276,7 @@ export function createDialogueUI({ speakers }) {
     distressFor = null;
     onNode = null;
     lineFor = null;
+    nextFor = null;
     setDistress(0);
     if (callback) callback();
   }
@@ -293,6 +302,7 @@ export function createDialogueUI({ speakers }) {
     distressFor = null;
     onNode = null;
     lineFor = null;
+    nextFor = null;
     setDistress(0);
     if (callback) callback();
   }
@@ -369,18 +379,20 @@ export function createDialogueUI({ speakers }) {
      * @param {Array} script - see src/data/dialogues.js for node shapes
      * @param {{ onComplete?: () => void, onChoice?: (option, nextNode) => void, onCancel?: () => void,
      *   onNode?: (node) => void, distressFor?: (lineNode) => number,
+     *   nextFor?: (node) => string | undefined,
      *   startAt?: string, stopAt?: string }} [handlers] onNode fires for every node as it
      *   becomes current — including 'cue' nodes, which otherwise never render anything, so a
      *   caller can sync scene-level side effects (e.g. cueing a background animation, or
      *   acting out a node's `action` stage direction) to a specific point in the script
      *   without the player seeing a dialogue line for it. distressFor: 0-3 per line as it's
      *   shown (see setDistress), for reactions that depend on the player's earlier picks
-     *   rather than on the script itself. startAt/stopAt play just part of the script (see
+     *   rather than on the script itself. nextFor: a node id to go to after a line/beat
+     *   instead of its own `next` (nothing keeps the script's route). startAt/stopAt play just part of the script (see
      *   createDialogueEngine).
      */
     play(script, {
       onComplete: complete, onChoice: choice, onCancel: cancel, distressFor: distress, onNode: node, lineFor: transform,
-      startAt, stopAt,
+      nextFor: redirect, startAt, stopAt,
     } = {}) {
       nodeGeneration++; awaitingNode = false;
       paused = false; root.style.visibility = '';
@@ -391,6 +403,7 @@ export function createDialogueUI({ speakers }) {
       distressFor = distress ?? null;
       onNode = node ?? null;
       lineFor = transform ?? null;
+      nextFor = redirect ?? null;
       leftSpeaker = null;
       rightSpeaker = null;
       leftMood = 'neutral';
@@ -420,7 +433,7 @@ export function createDialogueUI({ speakers }) {
           const option = engine.choose(best);
           if (option && onChoice) onChoice(option, engine.current);
         } else {
-          engine.advance();
+          stepPast(node);
         }
         if (engine !== running) return;
         renderNode(); // Runs each new cue once and honours awaited scene actions.
