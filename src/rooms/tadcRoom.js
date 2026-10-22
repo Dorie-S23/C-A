@@ -3,7 +3,21 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { loadRoomModel } from './loadRoomModel.js';
 import { setupLobbyDoors } from './lobbyDoors.js';
 import { createCurtainPortal } from './portals.js';
-import { findWallSpot, findSpotNear, placeOfficePicture } from '../props/officePicture.js';
+import { scatterPictures } from '../props/officePicture.js';
+
+// Level 2's five office photos (see PHOTO_COUNT in level2Items.js),
+// scattered round the lobby rather than sitting in Kaufmo's own room — a
+// real search, not a hand-in on arrival. scatterPictures() picks different
+// wall spots each time this room loads, so a retry (the search timer
+// running out, or just leaving and coming back) doesn't put them back
+// where they were. ca6.png exists alongside these but isn't used.
+const PICTURES = [
+  { id: 'ca1', url: './models/objects/ca1.png' },
+  { id: 'ca2', url: './models/objects/ca2.png' },
+  { id: 'ca3', url: './models/objects/ca3.png' },
+  { id: 'ca4', url: './models/objects/ca4.png' },
+  { id: 'ca5', url: './models/objects/ca5.png' },
+];
 
 // The castle's brick walls (arched windows, battlements), taken from the
 // Sketchfab "The Digital Circus" model. The lobby's own export only has a
@@ -17,23 +31,15 @@ const CASTLE_WALL_SETBACK = 0.2;
 // toward +Z, into the lobby.
 const DORM_ARCH_CURTAIN = 'Plane081';
 
-const PICTURE_ID = 'ca2';
-const PICTURE_URL = './models/objects/ca2.png';
-const PICTURE_HEIGHT = 1.5;
-const PICTURE_DIRECTIONS = Array.from({ length: 8 }, (_, i) => {
-  const angle = (i / 8) * Math.PI * 2;
-  return new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle));
-});
-// Wedged beside a couch in the hangout area, a stroll from spawn — the
-// lobby's too big for findWallSpot's nearby-wall sweep to be "hidden".
-const PICTURE_ANCHOR = 'Hangout_Area_Couch_Purple';
-const PICTURE_OFFSET = new THREE.Vector3(1.1, 0, 0);
-
 export function loadTadcRoom(onProgress, { from, items } = {}) {
   return Promise.all([
     loadRoomModel('./models/world/Circus%20Lobby%20V10%20colored.glb', onProgress),
     new GLTFLoader().loadAsync(CASTLE_WALLS_URL),
   ]).then(([room, castleWalls]) => {
+    // Captured before the arrival override below can replace it — the
+    // search sweeps from the room's own default spawn regardless of which
+    // door the player actually walked in through.
+    const defaultSpawn = room.spawn;
     replaceCastleWalls(room, castleWalls.scene);
     fixExportedPlastics(room.group);
     const doors = setupLobbyDoors(room.group, room.spawn, room.collisionMeshes);
@@ -42,18 +48,6 @@ export function loadTadcRoom(onProgress, { from, items } = {}) {
     // The lobby's real metals (railings, stage trim) need something to reflect.
     room.environment = true;
 
-    if (items) {
-      let spot = findSpotNear(room.group, PICTURE_ANCHOR, PICTURE_OFFSET);
-      if (!spot) {
-        const origin = new THREE.Vector3(room.spawn.x, room.spawn.y + PICTURE_HEIGHT, room.spawn.z);
-        for (const direction of PICTURE_DIRECTIONS) {
-          spot = findWallSpot(room.group, origin, direction, 20);
-          if (spot) break;
-        }
-      }
-      if (spot) placeOfficePicture(room, items, PICTURE_ID, PICTURE_URL, spot.position, spot.rotationY);
-    }
-
     const dormArch = createCurtainPortal(room.group, DORM_ARCH_CURTAIN, 1, 'dorm');
     if (dormArch) {
       room.portals = [dormArch];
@@ -61,6 +55,14 @@ export function loadTadcRoom(onProgress, { from, items } = {}) {
         room.spawn = dormArch.arrival.spawn;
         room.spawnFacing = dormArch.arrival.facing;
       }
+    }
+    if (items) {
+      const pictures = scatterPictures(room, items, PICTURES, defaultSpawn, [dormArch?.box.getCenter(new THREE.Vector3())]);
+      const doorsUpdate = room.update;
+      room.update = (deltaSeconds, playerPosition) => {
+        doorsUpdate(deltaSeconds, playerPosition);
+        pictures.update(deltaSeconds);
+      };
     }
     return room;
   });

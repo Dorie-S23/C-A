@@ -9,6 +9,17 @@ const FRAME_HEIGHT = 0.42;
 const FRAME_DEPTH = 0.035;
 const FRAME_BORDER = 0.045;
 
+// A found-but-not-yet-collected picture glows softly — a point light plus
+// a bit of emissive warmth on the photo itself, pulsing slowly so it reads
+// as "something's here" from across a big room without looking like a
+// blinking alarm. See pulseGlow(), driven from the owning room's update().
+const GLOW_COLOR = 0xfff2c0;
+const GLOW_LIGHT_INTENSITY = 1.6;
+const GLOW_LIGHT_RANGE = 3.5;
+const GLOW_PULSE_HZ = 0.6;
+const GLOW_EMISSIVE_BASE = 0.35;
+const GLOW_EMISSIVE_SWING = 0.25;
+
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map();
 
@@ -24,7 +35,8 @@ function getTexture(url) {
 
 /**
  * @param {string} imageUrl one of the ca1-ca6.png reference photos
- * @returns {THREE.Group} a small wall-hangable framed picture
+ * @returns {THREE.Group} a small wall-hangable framed picture, glowing
+ *   until it's picked up (see pulseGlow)
  */
 export function createOfficePicture(imageUrl) {
   const group = new THREE.Group();
@@ -39,15 +51,42 @@ export function createOfficePicture(imageUrl) {
   frame.receiveShadow = true;
   group.add(frame);
 
+  const photoMaterial = new THREE.MeshStandardMaterial({
+    map: getTexture(imageUrl), roughness: 0.85,
+    emissive: new THREE.Color(GLOW_COLOR), emissiveIntensity: GLOW_EMISSIVE_BASE,
+  });
   const photo = new THREE.Mesh(
     new THREE.PlaneGeometry(FRAME_WIDTH - FRAME_BORDER * 2, FRAME_HEIGHT - FRAME_BORDER * 2),
-    new THREE.MeshStandardMaterial({ map: getTexture(imageUrl), roughness: 0.85 }),
+    photoMaterial,
   );
   photo.name = 'OfficePicturePhoto';
   photo.position.z = FRAME_DEPTH / 2 + 0.002;
   group.add(photo);
 
+  // Stood out a little further than the photo itself, so the light spills
+  // onto the wall and floor around it rather than just the frame's face.
+  const glow = new THREE.PointLight(GLOW_COLOR, GLOW_LIGHT_INTENSITY, GLOW_LIGHT_RANGE, 2);
+  glow.position.z = FRAME_DEPTH / 2 + 0.3;
+  group.add(glow);
+
+  group.userData.glow = { light: glow, material: photoMaterial };
   return group;
+}
+
+/**
+ * Advances every still-placed picture's glow by one frame. Pictures that
+ * have been picked up (removed from the scene — `picture.parent` is null)
+ * are skipped rather than filtered out up front, since the caller's list
+ * doesn't get told about pickups as they happen.
+ */
+export function pulseGlow(pictures, elapsedSeconds) {
+  const wave = 0.5 + 0.5 * Math.sin(elapsedSeconds * GLOW_PULSE_HZ * Math.PI * 2);
+  for (const picture of pictures) {
+    if (!picture.parent) continue;
+    const { light, material } = picture.userData.glow;
+    light.intensity = GLOW_LIGHT_INTENSITY * (0.6 + 0.4 * wave);
+    material.emissiveIntensity = GLOW_EMISSIVE_BASE + GLOW_EMISSIVE_SWING * wave;
+  }
 }
 
 const wallRaycaster = new THREE.Raycaster();
@@ -122,9 +161,11 @@ export function findSpotNear(group, anchorName, offset) {
  * @param {number} rotationY
  * @param {{ tiltBack?: number }} [options] tiltBack: radians to lean the
  *   top back, e.g. a picture propped against a wall rather than standing
+ * @returns {THREE.Group | null} the placed picture (for pulseGlow), or
+ *   null if it was already collected and nothing was placed
  */
 export function placeOfficePicture(room, items, itemId, imageUrl, position, rotationY, { tiltBack = 0 } = {}) {
-  if (items.hasCollected(itemId)) return;
+  if (items.hasCollected(itemId)) return null;
 
   const picture = createOfficePicture(imageUrl);
   picture.position.copy(position);
@@ -155,4 +196,54 @@ export function placeOfficePicture(room, items, itemId, imageUrl, position, rota
     },
   };
   room.interactables = [...(room.interactables ?? []), pickup];
+  return picture;
+}
+
+/**
+ * Hangs each not-yet-collected picture on a different wall, swept round
+ * from `spawn` at picture height — starting from a random angle every
+ * call, so a replay (the search timer running out, or just leaving and
+ * coming back) doesn't put them back exactly where they were. Spots too
+ * close to another picture or to anything in `keepClear` are passed over.
+ *
+ * @param {{ group: THREE.Group, interactables?: Array }} room
+ * @param {object} items shared item state (see src/state/level2Items.js)
+ * @param {{ id: string, url: string }[]} pictures
+ * @param {{ x: number, y: number, z: number }} spawn sweep origin (a point
+ *   inside the room, usually its own spawn)
+ * @param {Array<{ x: number, z: number } | null | undefined>} [keepClear]
+ *   points to stay clear of (doors, NPCs) — nullish entries are skipped
+ * @returns {{ update: (deltaSeconds: number) => void }} advances the
+ *   placed pictures' glow (see pulseGlow) — call every frame the room's
+ *   loaded, same as any other room.update
+ */
+export function scatterPictures(room, items, pictures, spawn, keepClear = [], {
+  height = 1.5, spacing = 2, keepClearRadius = 1.5, maxDistance = 10,
+} = {}) {
+  const origin = new THREE.Vector3(spawn.x, spawn.y + height, spawn.z);
+  const avoid = keepClear.filter(Boolean).map((point) => new THREE.Vector3(point.x, origin.y, point.z));
+  const startAngle = Math.random() * Math.PI * 2;
+  const spots = [];
+  for (let i = 0; i < 16 && spots.length < pictures.length; i++) {
+    const angle = startAngle + (i / 16) * Math.PI * 2;
+    const spot = findWallSpot(room.group, origin, new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle)), maxDistance);
+    if (!spot) continue;
+    const flat = new THREE.Vector3(spot.position.x, origin.y, spot.position.z);
+    if (avoid.some((point) => point.distanceTo(flat) < keepClearRadius)) continue;
+    if (spots.some((other) => other.position.distanceTo(spot.position) < spacing)) continue;
+    spots.push(spot);
+  }
+  const placed = [];
+  pictures.forEach(({ id, url }, i) => {
+    const spot = spots[i];
+    const picture = spot && placeOfficePicture(room, items, id, url, spot.position, spot.rotationY);
+    if (picture) placed.push(picture);
+  });
+  let elapsed = 0;
+  return {
+    update(deltaSeconds) {
+      elapsed += deltaSeconds;
+      pulseGlow(placed, elapsed);
+    },
+  };
 }

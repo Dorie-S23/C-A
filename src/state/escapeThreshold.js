@@ -1,7 +1,8 @@
 /**
  * The Escape Threshold: a hidden score carried across the whole run that
  * decides, at the end of the game, whether the party escapes (Gate 1).
- * Level 1's graded dialogue earns up to 4 points, Level 2's items up to 3.
+ * Level 1's graded dialogue earns up to 4 points, Level 2's items up to 5
+ * (one per photo — there are 5 now, not the original 3).
  *
  * Hidden on purpose — nothing on screen shows it; the story hints at how
  * well things are going instead. Module-level state, so it survives room
@@ -14,13 +15,15 @@
  */
 export const LEVEL_MAX_POINTS = {
   level1: 4, // one per graded choice in Ribbit's conversation
-  level2: 3, // one per C&A office picture presented to Kaufmo
+  level2: 5, // one per C&A office picture presented to Kaufmo
 };
 export const ESCAPE_MAX = Object.values(LEVEL_MAX_POINTS).reduce((sum, p) => sum + p, 0);
 
 // Gate 1 pass mark: mostly-good play across both levels clears it (e.g.
-// 3/4 with Ribbit and 2/3 pictures), careless play doesn't.
-export const ESCAPE_PASS_MARK = 5;
+// 3/4 with Ribbit and 3/5 pictures), careless play doesn't. Keeps roughly
+// the same pass ratio (~71%) the original 5-of-7 mark used before Level 2
+// went from 3 photos to 5.
+export const ESCAPE_PASS_MARK = 6;
 
 const levelPoints = new Map();
 

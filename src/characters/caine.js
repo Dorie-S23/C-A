@@ -9,10 +9,7 @@ const CAINE_URL = './models/characters/caine-the-amazing-digital-circus/source/C
 // player (PLAYER_HEIGHT in main.js is 1.7).
 const CAINE_HEIGHT = 2.6;
 
-// Invisible cylinder the player collides with. The real meshes are a poor
-// collider: the wall probe runs at shin height, where his legs are thin
-// enough to slip between, and the skinned meshes move while he animates.
-// The radius also keeps the player's camera clear of his overhanging head.
+// Invisible cylinder the player collides with.
 const COLLIDER_RADIUS = 0.45;
 
 /**
@@ -21,7 +18,11 @@ const COLLIDER_RADIUS = 0.45;
  * so it's rescaled to CAINE_HEIGHT and recentred. Callers then only need
  * to set position (a floor point) and rotation.y.
  *
- * @returns {Promise<{ caine: THREE.Group, collider: THREE.Mesh }>}
+ * @returns {Promise<{ caine: THREE.Group, collider: THREE.Mesh, animator: object,
+ *   update: (deltaSeconds: number) => void, setPose: (pose: string) => void,
+ *   setSpeaking: (speaking: boolean) => void,
+ *   flyTo: (target: THREE.Vector3, duration?: number, onArrive?: () => void) => void,
+ *   faceTowards: (target: THREE.Vector3) => void }>}
  */
 export function loadCaine() {
   const loader = new GLTFLoader();
@@ -62,7 +63,18 @@ export function loadCaine() {
         collider.visible = false;
         caine.add(collider);
 
-        resolve({ caine, collider });
+        const animator = createCaineAnimator(caine);
+
+        resolve({
+          caine,
+          collider,
+          animator,
+          update: animator.update,
+          setPose: animator.setPose,
+          setSpeaking: animator.setSpeaking,
+          flyTo: animator.flyTo,
+          faceTowards: animator.faceTowards,
+        });
       },
       undefined,
       reject,
@@ -70,10 +82,6 @@ export function loadCaine() {
   });
 }
 
-/**
- * Skinned meshes only fill their bone matrices on the first render, but
- * the bounding box above reads them before that — so refresh them by hand.
- */
 function updateSkeletons(root) {
   root.updateMatrixWorld(true);
   root.traverse((child) => {
@@ -81,18 +89,11 @@ function updateSkeletons(root) {
   });
 }
 
-// --- Idle "thinking" animation ---
-//
-// The model ships with no animation clips, so the idle is posed bone by
-// bone. Bone axes in this (Source-engine-style) rig point every which way,
-// so every pose below is written in Caine's own frame instead — +X is his
-// left, +Y up, +Z the way he faces — and converted per bone. Arms are
-// placed with two-bone IK, so the fist lands under his jaw no matter how
-// the bones are oriented.
-
 const BONE_NAMES = {
   spine: 'Spine2',
-  head: 'Caine_Head_V3',
+  head: 'Caine Head V3',
+  mouthTop: 'mouthTopControl',
+  mouthBot: 'mouthBotControl',
   leftEye: 'Bone41',
   rightEye: 'Bone82',
   lUpperArm: 'L_UpperArm',
@@ -105,42 +106,27 @@ const BONE_NAMES = {
   rForearm: 'R_Forearm',
   rHand: 'R_Hand',
   rKnuckle: 'R_Finger1_',
+  lThigh: 'L_Thigh',
+  lCalf: 'L_Calf',
+  rThigh: 'R_Thigh',
+  rCalf: 'R_Calf',
 };
 
-// At rest his arms hang with the palms facing his body.
 const L_PALM_REST = new THREE.Vector3(-1, 0, 0);
 const R_PALM_REST = new THREE.Vector3(1, 0, 0);
-// Bending a hanging left finger about this axis curls it into the palm.
 const L_CURL_AXIS = new THREE.Vector3(0, 0, -1);
+const X_AXIS = new THREE.Vector3(1, 0, 0);
 
-// Cycle: look ahead, drift into thought, ponder, snap back out of it.
-const LOOK_SECONDS = 3;
-const ENTER_SECONDS = 1.1;
-const PONDER_SECONDS = 5.5;
-const EXIT_SECONDS = 0.8;
-const CYCLE_SECONDS = LOOK_SECONDS + ENTER_SECONDS + PONDER_SECONDS + EXIT_SECONDS;
-
-// Pondering pose, in Caine's frame (radians / metres). His head is one big
-// set of jaws hinged at the back, so tipping it up much reads as a shout —
-// the eyes do most of the looking up instead.
-const HEAD_YAW = 0.42; // turn toward his left
-const HEAD_PITCH = 0.12; // tip up
-const HEAD_ROLL = 0.14; // tilt toward his left shoulder
-const EYE_YAW = 0.35; // on top of the head turn
-const EYE_PITCH = 0.55;
-
-// Left fist props up his jaw. CHIN is the underside of the lower jaw at
-// rest; it's carried along with the head turn so the fist stays under it.
+// Chin position and prop arm constants for the pondering pose
 const CHIN = new THREE.Vector3(0.01, 1.23, 0.33);
-const FIST_HEIGHT = 0.25; // wrist to top of the curled fingers
-const FIST_DIR = new THREE.Vector3(-0.1, 1, 0.1).normalize(); // wrist → knuckles
-const FIST_PALM = new THREE.Vector3(-0.3, 0, -1).normalize(); // back of hand faces out
+const FIST_HEIGHT = 0.25;
+const FIST_DIR = new THREE.Vector3(-0.1, 1, 0.1).normalize();
+const FIST_PALM = new THREE.Vector3(-0.3, 0, -1).normalize();
 const FIST_ELBOW_POLE = new THREE.Vector3(0.7, -1, -0.1);
-const FINGER_CURL = 0.75; // per joint
-const INDEX_CURL = 0.45; // index stays looser so it can tap
+const FINGER_CURL = 0.75;
+const INDEX_CURL = 0.45;
 const INDEX_TAP = 0.35;
 
-// Right hand cups the left elbow, palm up.
 const PROP_WRIST = new THREE.Vector3(0.02, 0.86, 0.17);
 const PROP_DIR = new THREE.Vector3(1, 0.05, 0.1).normalize();
 const PROP_PALM = new THREE.Vector3(0, 1, 0);
@@ -149,138 +135,328 @@ const PROP_ELBOW_POLE = new THREE.Vector3(-0.8, -1, -0.2);
 const IDENTITY = new THREE.Quaternion();
 
 /**
- * Builds Caine's idle animation. Call the returned function every frame
- * with the frame's delta in seconds.
- *
- * @param {THREE.Group} caine the group from loadCaine(), already placed
- * @returns {(deltaSeconds: number) => void}
+ * Procedural animation system for Caine:
+ * Controls his ringmaster poses (happy/showman, worried, shocked, sad, ponder),
+ * speech jaw chatter, eye tracking/wander, theatrical gestures, and hovering flight.
  */
-export function createCaineIdle(caine) {
+export function createCaineAnimator(caine) {
   caine.updateMatrixWorld(true);
   const rig = buildRig(caine);
   const lArm = armChain(rig.lUpperArm, rig.lForearm, rig.lHand, rig.lKnuckle, L_PALM_REST);
   const rArm = armChain(rig.rUpperArm, rig.rForearm, rig.rHand, rig.rKnuckle, R_PALM_REST);
-  const headPivot = rig.head.restPosition;
+  // rig.head may be null on malformed exports — fall back to a sensible mid-head position.
+  const headPivot = rig.head?.restPosition ?? new THREE.Vector3(0, 1.2 * (CAINE_HEIGHT / 2.6), 0.05);
 
+  // Pre-calculate arm IK target poses
+  const ponderLWrist = CHIN.clone().sub(headPivot).addScaledVector(FIST_DIR, -FIST_HEIGHT);
+  const armTargets = {
+    ponder: {
+      l: { wrist: ponderLWrist, pole: FIST_ELBOW_POLE, dir: FIST_DIR, palm: FIST_PALM },
+      r: { wrist: PROP_WRIST, pole: PROP_ELBOW_POLE, dir: PROP_DIR, palm: PROP_PALM },
+      fingerCurl: FINGER_CURL,
+      indexCurl: INDEX_CURL,
+    },
+    happy: {
+      l: { wrist: new THREE.Vector3(0.48, 1.05, 0.35), pole: new THREE.Vector3(0.9, -0.4, -0.3), dir: new THREE.Vector3(0.2, 0.7, 0.4).normalize(), palm: new THREE.Vector3(0, 0.7, 0.7).normalize() },
+      r: { wrist: new THREE.Vector3(-0.48, 1.15, 0.35), pole: new THREE.Vector3(-0.9, -0.4, -0.3), dir: new THREE.Vector3(-0.2, 0.7, 0.4).normalize(), palm: new THREE.Vector3(0, 0.7, 0.7).normalize() },
+      fingerCurl: 0.15,
+      indexCurl: 0.1,
+    },
+    worried: {
+      l: { wrist: new THREE.Vector3(0.25, 0.8, 0.25), pole: new THREE.Vector3(0.7, -0.8, -0.2), dir: new THREE.Vector3(0.1, 0.9, 0.3).normalize(), palm: new THREE.Vector3(-0.5, 0.8, 0).normalize() },
+      r: { wrist: new THREE.Vector3(-0.12, 1.08, 0.28), pole: new THREE.Vector3(-0.6, -1.0, 0), dir: new THREE.Vector3(-0.1, 0.9, 0.3).normalize(), palm: new THREE.Vector3(0.5, 0.8, 0.2).normalize() },
+      fingerCurl: 0.4,
+      indexCurl: 0.3,
+    },
+    shocked: {
+      l: { wrist: new THREE.Vector3(0.55, 1.48, 0.15), pole: new THREE.Vector3(1.0, 0.3, -0.4), dir: new THREE.Vector3(0.3, 0.9, 0.2).normalize(), palm: new THREE.Vector3(0.3, 0.5, 0.8).normalize() },
+      r: { wrist: new THREE.Vector3(-0.55, 1.48, 0.15), pole: new THREE.Vector3(-1.0, 0.3, -0.4), dir: new THREE.Vector3(-0.3, 0.9, 0.2).normalize(), palm: new THREE.Vector3(-0.3, 0.5, 0.8).normalize() },
+      fingerCurl: 0.05,
+      indexCurl: 0.0,
+    },
+    sad: {
+      l: { wrist: new THREE.Vector3(0.22, 0.65, 0.18), pole: new THREE.Vector3(0.7, -0.9, -0.3), dir: new THREE.Vector3(0.1, -0.8, 0.5).normalize(), palm: new THREE.Vector3(-0.5, 0.7, 0.5).normalize() },
+      r: { wrist: new THREE.Vector3(-0.22, 0.65, 0.18), pole: new THREE.Vector3(-0.7, -0.9, -0.3), dir: new THREE.Vector3(-0.1, -0.8, 0.5).normalize(), palm: new THREE.Vector3(0.5, 0.7, 0.5).normalize() },
+      fingerCurl: 0.3,
+      indexCurl: 0.25,
+    },
+  };
+
+  const solvedPoses = {};
+  for (const [key, tgt] of Object.entries(armTargets)) {
+    const lPose = { upper: new THREE.Quaternion(), fore: new THREE.Quaternion(), hand: new THREE.Quaternion() };
+    const rPose = { upper: new THREE.Quaternion(), fore: new THREE.Quaternion(), hand: new THREE.Quaternion() };
+    solveArm(lArm, tgt.l.wrist, tgt.l.pole, tgt.l.dir, tgt.l.palm, lPose);
+    solveArm(rArm, tgt.r.wrist, tgt.r.pole, tgt.r.dir, tgt.r.palm, rPose);
+    solvedPoses[key] = { l: lPose, r: rPose, fingerCurl: tgt.fingerCurl, indexCurl: tgt.indexCurl };
+  }
+
+  const HEAD_POSES = {
+    ponder: { pitch: 0.12, yaw: 0.42, roll: 0.14, eyePitch: 0.55, eyeYaw: 0.35 },
+    happy: { pitch: -0.06, yaw: 0.0, roll: -0.04, eyePitch: 0.08, eyeYaw: 0.0 },
+    worried: { pitch: 0.06, yaw: 0.18, roll: -0.12, eyePitch: 0.05, eyeYaw: 0.14 },
+    shocked: { pitch: -0.25, yaw: 0.0, roll: 0.0, eyePitch: -0.18, eyeYaw: 0.0 },
+    sad: { pitch: 0.2, yaw: -0.1, roll: 0.08, eyePitch: 0.22, eyeYaw: -0.06 },
+  };
+
+  // State
+  let currentMood = 'happy';
+  let targetMood = 'happy';
+  let isSpeaking = false;
+  let time = 0;
+  let jawOpen = 0;
+  let floatHeight = 0;
+
+  // Flight state
+  let flight = null;
+
+  // Working quaternions & vectors
   const headQ = new THREE.Quaternion();
   const eyeQ = new THREE.Quaternion();
-  const breathQ = new THREE.Quaternion();
+  const spineQ = new THREE.Quaternion();
+  const topJawQ = new THREE.Quaternion();
+  const botJawQ = new THREE.Quaternion();
+  const lThighQ = new THREE.Quaternion();
+  const rThighQ = new THREE.Quaternion();
   const curlQ = new THREE.Quaternion();
   const euler = new THREE.Euler(0, 0, 0, 'YXZ');
-  const wrist = new THREE.Vector3();
-  const lPose = { upper: new THREE.Quaternion(), fore: new THREE.Quaternion(), hand: new THREE.Quaternion() };
-  const rPose = { upper: new THREE.Quaternion(), fore: new THREE.Quaternion(), hand: new THREE.Quaternion() };
-  const blended = new THREE.Quaternion();
 
-  // The prop arm never changes, so it's solved once.
-  solveArm(rArm, PROP_WRIST, PROP_ELBOW_POLE, PROP_DIR, PROP_PALM, rPose);
-
-  let time = 0;
-
-  const pose = (entry, target, weight) => {
-    blended.slerpQuaternions(IDENTITY, target, weight);
-    applyCharacterRotation(entry, blended);
+  // Interpolated pose state
+  const currentPose = {
+    l: { upper: solvedPoses.happy.l.upper.clone(), fore: solvedPoses.happy.l.fore.clone(), hand: solvedPoses.happy.l.hand.clone() },
+    r: { upper: solvedPoses.happy.r.upper.clone(), fore: solvedPoses.happy.r.fore.clone(), hand: solvedPoses.happy.r.hand.clone() },
+    head: { pitch: HEAD_POSES.happy.pitch, yaw: HEAD_POSES.happy.yaw, roll: HEAD_POSES.happy.roll, eyePitch: HEAD_POSES.happy.eyePitch, eyeYaw: HEAD_POSES.happy.eyeYaw },
+    fingerCurl: solvedPoses.happy.fingerCurl,
+    indexCurl: solvedPoses.happy.indexCurl,
   };
+
   const curl = (entries, angle) => {
     curlQ.setFromAxisAngle(L_CURL_AXIS, angle);
     for (const entry of entries) applyCharacterRotation(entry, curlQ);
   };
 
-  return function update(deltaSeconds) {
+  function setPose(mood) {
+    if (mood === 'idle') mood = 'ponder';
+    if (!solvedPoses[mood]) mood = 'happy';
+    targetMood = mood;
+  }
+
+  function setSpeaking(speaking) {
+    isSpeaking = Boolean(speaking);
+  }
+
+  function flyTo(targetWorldPos, duration = 2.0, onArrive = null) {
+    flight = {
+      from: caine.position.clone(),
+      to: targetWorldPos.clone(),
+      startRotation: caine.rotation.y,
+      targetRotation: Math.atan2(targetWorldPos.x - caine.position.x, targetWorldPos.z - caine.position.z),
+      duration,
+      elapsed: 0,
+      onArrive,
+    };
+  }
+
+  function faceTowards(worldPoint) {
+    caine.rotation.y = Math.atan2(worldPoint.x - caine.position.x, worldPoint.z - caine.position.z);
+  }
+
+  function update(deltaSeconds) {
     time += deltaSeconds;
-    const weight = thinkWeight(time % CYCLE_SECONDS);
-    // Slow wander layered on the pondering pose so it never freezes.
+
+    // Handle flight path if active
+    if (flight) {
+      flight.elapsed += deltaSeconds;
+      const t = Math.min(1, flight.elapsed / flight.duration);
+      // Smootherstep easing
+      const eased = t * t * t * (t * (t * 6 - 15) + 10);
+      caine.position.lerpVectors(flight.from, flight.to, eased);
+      // Banking and yaw turn
+      caine.rotation.y = THREE.MathUtils.lerp(flight.startRotation, flight.targetRotation, eased);
+
+      if (t >= 1) {
+        const cb = flight.onArrive;
+        flight = null;
+        cb?.();
+      }
+    }
+
+    // Ease pose toward target pose
+    const POSE_EASE = Math.min(1, deltaSeconds * 6);
+    const targetPoseData = solvedPoses[targetMood] || solvedPoses.happy;
+    const targetHeadData = HEAD_POSES[targetMood] || HEAD_POSES.happy;
+
+    currentPose.l.upper.slerp(targetPoseData.l.upper, POSE_EASE);
+    currentPose.l.fore.slerp(targetPoseData.l.fore, POSE_EASE);
+    currentPose.l.hand.slerp(targetPoseData.l.hand, POSE_EASE);
+
+    currentPose.r.upper.slerp(targetPoseData.r.upper, POSE_EASE);
+    currentPose.r.fore.slerp(targetPoseData.r.fore, POSE_EASE);
+    currentPose.r.hand.slerp(targetPoseData.r.hand, POSE_EASE);
+
+    currentPose.fingerCurl = THREE.MathUtils.lerp(currentPose.fingerCurl, targetPoseData.fingerCurl, POSE_EASE);
+    currentPose.indexCurl = THREE.MathUtils.lerp(currentPose.indexCurl, targetPoseData.indexCurl, POSE_EASE);
+
+    currentPose.head.pitch = THREE.MathUtils.lerp(currentPose.head.pitch, targetHeadData.pitch, POSE_EASE);
+    currentPose.head.yaw = THREE.MathUtils.lerp(currentPose.head.yaw, targetHeadData.yaw, POSE_EASE);
+    currentPose.head.roll = THREE.MathUtils.lerp(currentPose.head.roll, targetHeadData.roll, POSE_EASE);
+    currentPose.head.eyePitch = THREE.MathUtils.lerp(currentPose.head.eyePitch, targetHeadData.eyePitch, POSE_EASE);
+    currentPose.head.eyeYaw = THREE.MathUtils.lerp(currentPose.head.eyeYaw, targetHeadData.eyeYaw, POSE_EASE);
+
+    // Floating hover bob and spine sway
+    const hoverOffset = Math.sin(time * 2.8) * 0.06;
+    floatHeight = hoverOffset;
     const wander = time * 0.9;
 
-    breathQ.setFromEuler(euler.set(Math.sin(time * 1.6) * 0.02, Math.sin(time * 0.7) * 0.015, 0));
-    applyCharacterRotation(rig.spine, breathQ);
+    // Spine breathing + theatrical lean
+    const spinePitch = Math.sin(time * 1.6) * 0.02 + (targetMood === 'worried' ? 0.05 : targetMood === 'shocked' ? -0.06 : 0.01);
+    const spineYaw = Math.sin(time * 0.7) * 0.015;
+    spineQ.setFromEuler(euler.set(spinePitch, spineYaw, 0));
+    applyCharacterRotation(rig.spine, spineQ);
 
+    // Head rotation + speaking nodding
+    // Halved so the nod doesn't beat against jaw chatter and amplify the visual shake.
+    const speechNod = isSpeaking ? Math.sin(time * 9.5) * 0.018 : 0;
     headQ.setFromEuler(euler.set(
-      -HEAD_PITCH + Math.sin(wander * 1.3) * 0.04,
-      HEAD_YAW + Math.sin(wander * 0.8) * 0.07,
-      -HEAD_ROLL + Math.sin(wander * 0.6) * 0.06,
+      -currentPose.head.pitch + Math.sin(wander * 1.3) * 0.03 + speechNod,
+      currentPose.head.yaw + Math.sin(wander * 0.8) * 0.05,
+      -currentPose.head.roll + Math.sin(wander * 0.6) * 0.04,
     ));
-    pose(rig.head, headQ, weight);
+    applyCharacterRotation(rig.head, headQ);
 
+    // Eyes wander and react
+    const eyeDart = Math.sin(time * 3.2) * 0.08;
     eyeQ.setFromEuler(euler.set(
-      -EYE_PITCH + Math.sin(wander * 2.1) * 0.05,
-      EYE_YAW + Math.sin(wander * 1.7) * 0.08,
+      -currentPose.head.eyePitch + Math.sin(wander * 2.1) * 0.04,
+      currentPose.head.eyeYaw + eyeDart,
       0,
     ));
-    pose(rig.leftEye, eyeQ, weight);
-    pose(rig.rightEye, eyeQ, weight);
+    applyCharacterRotation(rig.leftEye, eyeQ);
+    applyCharacterRotation(rig.rightEye, eyeQ);
 
-    wrist.copy(CHIN).sub(headPivot).applyQuaternion(headQ).add(headPivot)
-      .addScaledVector(FIST_DIR, -FIST_HEIGHT);
-    solveArm(lArm, wrist, FIST_ELBOW_POLE, FIST_DIR, FIST_PALM, lPose);
-    pose(rig.lUpperArm, lPose.upper, weight);
-    pose(rig.lForearm, lPose.fore, weight);
-    pose(rig.lHand, lPose.hand, weight);
+    // Jaws / Teeth speech chatter.
+    // Keep rotation angles small to avoid the mesh interpenetration (clipping)
+    // that happens when the lower jaw drops too far or the upper jaw tilts back
+    // too far, exposing the hollow inside of the mouth.
+    let targetJaw = 0;
+    if (isSpeaking) {
+      const chatter = Math.max(0, Math.sin(time * 15.0) * 0.65 + Math.sin(time * 22.0) * 0.35);
+      // Reduced: 0.38 → 0.22 for speech, 0.55 → 0.32 for shocked-speech
+      targetJaw = targetMood === 'shocked' ? 0.32 : chatter * 0.22;
+    } else if (targetMood === 'shocked') {
+      // Reduced: 0.5 → 0.28 for idle-shocked
+      targetJaw = 0.28;
+    }
+    jawOpen = THREE.MathUtils.lerp(jawOpen, targetJaw, Math.min(1, deltaSeconds * 16));
 
-    pose(rig.rUpperArm, rPose.upper, weight);
-    pose(rig.rForearm, rPose.fore, weight);
-    pose(rig.rHand, rPose.hand, weight);
+    if (rig.mouthBot) {
+      botJawQ.setFromAxisAngle(X_AXIS, jawOpen);
+      applyCharacterRotation(rig.mouthBot, botJawQ);
+    }
+    if (rig.mouthTop) {
+      // Top jaw multiplier reduced 0.35 → 0.08: the upper half of Caine's head
+      // IS the top jaw bone, so over-rotating it tilts the entire top of his
+      // head backward, revealing the hollow interior of the mouth.
+      topJawQ.setFromAxisAngle(X_AXIS, -jawOpen * 0.08);
+      applyCharacterRotation(rig.mouthTop, topJawQ);
+    }
 
-    // "Hmm...": the index finger drums twice against the jaw, then rests.
-    const drumming = Math.sin(time * 1.4) > 0.3 ? Math.max(0, Math.sin(time * 9)) : 0;
-    curl(rig.lFingers, FINGER_CURL * weight);
-    curl(rig.lIndex, (INDEX_CURL + INDEX_TAP * drumming) * weight);
+    // Arms
+    applyCharacterRotation(rig.lUpperArm, currentPose.l.upper);
+    applyCharacterRotation(rig.lForearm, currentPose.l.fore);
+    applyCharacterRotation(rig.lHand, currentPose.l.hand);
+
+    applyCharacterRotation(rig.rUpperArm, currentPose.r.upper);
+    applyCharacterRotation(rig.rForearm, currentPose.r.fore);
+    applyCharacterRotation(rig.rHand, currentPose.r.hand);
+
+    // Finger drumming if in ponder pose, otherwise relaxed/spread
+    const drumming = targetMood === 'ponder' && Math.sin(time * 1.4) > 0.3 ? Math.max(0, Math.sin(time * 9)) : 0;
+    curl(rig.lFingers, currentPose.fingerCurl);
+    curl(rig.lIndex, currentPose.indexCurl + INDEX_TAP * drumming);
+
+    // Floating legs dangle
+    if (rig.lThigh && rig.rThigh) {
+      lThighQ.setFromAxisAngle(X_AXIS, Math.sin(time * 2.8) * 0.08);
+      rThighQ.setFromAxisAngle(X_AXIS, Math.sin(time * 2.8 + Math.PI) * 0.08);
+      applyCharacterRotation(rig.lThigh, lThighQ);
+      applyCharacterRotation(rig.rThigh, rThighQ);
+    }
+    if (rig.lCalf && rig.rCalf) {
+      lThighQ.setFromAxisAngle(X_AXIS, Math.max(0, Math.sin(time * 2.8)) * 0.12);
+      rThighQ.setFromAxisAngle(X_AXIS, Math.max(0, Math.sin(time * 2.8 + Math.PI)) * 0.12);
+      applyCharacterRotation(rig.lCalf, lThighQ);
+      applyCharacterRotation(rig.rCalf, rThighQ);
+    }
+  }
+
+  return {
+    update,
+    setPose,
+    setSpeaking,
+    flyTo,
+    faceTowards,
+    getMood: () => currentMood,
   };
-}
-
-/** 0 while looking ahead, eased up to 1 while pondering, and back. */
-function thinkWeight(t) {
-  if (t < LOOK_SECONDS) return 0;
-  t -= LOOK_SECONDS;
-  if (t < ENTER_SECONDS) return smootherstep(t / ENTER_SECONDS);
-  t -= ENTER_SECONDS;
-  if (t < PONDER_SECONDS) return 1;
-  t -= PONDER_SECONDS;
-  return 1 - smootherstep(t / EXIT_SECONDS);
-}
-
-function smootherstep(x) {
-  return x * x * x * (x * (x * 6 - 15) + 10);
 }
 
 /**
- * Records, for each animated bone, its rest local rotation, its parent's
- * rest rotation and its own rest position, both in Caine's frame — what
- * applyCharacterRotation needs to turn a Caine-frame rotation into a
- * bone-local one.
+ * Builds Caine's idle animation (retained for backward compatibility).
  */
+export function createCaineIdle(caine) {
+  const animator = createCaineAnimator(caine);
+  animator.setPose('ponder');
+  return (deltaSeconds) => animator.update(deltaSeconds);
+}
+
 function buildRig(caine) {
+  // Primary collection: proper Bone nodes (as set by GLTFLoader for skin joints).
   const bones = [];
+  // Fallback collection: all named nodes, for models where some joints are
+  // plain Object3Ds rather than THREE.Bone instances.
+  const allNodes = [];
   caine.traverse((child) => {
     if (child.isBone) bones.push(child);
+    if (child.name) allNodes.push(child);
   });
   const find = (name) => {
-    const bone = bones.find((b) => b.name.includes(name));
-    if (!bone) throw new Error(`Caine rig is missing bone "${name}"`);
-    return bone;
+    // First try proper Bone nodes.
+    let node = bones.find((b) => b.name.includes(name));
+    // If not found as a Bone, try any named node (handles some GLTF exporters
+    // that mark joints as plain Object3D instead of Bone).
+    if (!node) node = allNodes.find((n) => n.name.includes(name)) ?? null;
+    if (!node) {
+      if (import.meta.env?.DEV) console.warn(`[Caine rig] bone not found: "${name}"`);
+      return null;
+    }
+    return node;
   };
 
   const caineQ = caine.getWorldQuaternion(new THREE.Quaternion()).invert();
-  const entry = (bone) => ({
-    bone,
-    restLocal: bone.quaternion.clone(),
-    parentRest: caineQ.clone().multiply(bone.parent.getWorldQuaternion(new THREE.Quaternion())),
-    restPosition: caine.worldToLocal(bone.getWorldPosition(new THREE.Vector3())),
-  });
+  const entry = (bone) => {
+    if (!bone) return null;
+    return {
+      bone,
+      restLocal: bone.quaternion.clone(),
+      parentRest: bone.parent ? caineQ.clone().multiply(bone.parent.getWorldQuaternion(new THREE.Quaternion())) : new THREE.Quaternion(),
+      restPosition: caine.worldToLocal(bone.getWorldPosition(new THREE.Vector3())),
+    };
+  };
 
   const rig = {};
   for (const [key, name] of Object.entries(BONE_NAMES)) {
-    rig[key] = Array.isArray(name) ? name.map((n) => entry(find(n))) : entry(find(name));
+    if (Array.isArray(name)) {
+      rig[key] = name.map((n) => entry(find(n))).filter(Boolean);
+    } else {
+      rig[key] = entry(find(name));
+    }
   }
   return rig;
 }
 
-/**
- * Sets a bone so that, relative to its rest pose, it is rotated by `rotation`
- * expressed in Caine's frame. Children inherit it, so chained rotations
- * compose as parent * child, each about the bone's own rest pivot.
- */
-function applyCharacterRotation({ bone, restLocal, parentRest }, rotation) {
+function applyCharacterRotation(entry, rotation) {
+  if (!entry || !entry.bone) return;
+  const { bone, restLocal, parentRest } = entry;
   bone.quaternion
     .copy(parentRest)
     .invert()
@@ -290,6 +466,16 @@ function applyCharacterRotation({ bone, restLocal, parentRest }, rotation) {
 }
 
 function armChain(upper, fore, hand, knuckle, palmRest) {
+  if (!upper || !fore || !hand || !knuckle) {
+    return {
+      shoulder: new THREE.Vector3(),
+      upperLength: 0.35,
+      foreLength: 0.35,
+      upperRestDir: new THREE.Vector3(0, -1, 0),
+      foreRestDir: new THREE.Vector3(0, -1, 0),
+      handRestInverse: new THREE.Matrix4(),
+    };
+  }
   const shoulder = upper.restPosition;
   const elbow = fore.restPosition;
   const wrist = hand.restPosition;
@@ -299,12 +485,10 @@ function armChain(upper, fore, hand, knuckle, palmRest) {
     foreLength: elbow.distanceTo(wrist),
     upperRestDir: elbow.clone().sub(shoulder).normalize(),
     foreRestDir: wrist.clone().sub(elbow).normalize(),
-    // Rotation bases are orthonormal, so the transpose is the inverse.
     handRestInverse: handBasis(knuckle.restPosition.clone().sub(wrist), palmRest, new THREE.Matrix4()).transpose(),
   };
 }
 
-/** Rotation basis for a hand: columns are knuckle dir, palm normal, and their cross. */
 function handBasis(knuckleDir, palmDir, out) {
   const x = ik.basisX.copy(knuckleDir).normalize();
   const y = ik.basisY.copy(palmDir).addScaledVector(x, -palmDir.dot(x)).normalize();
@@ -324,13 +508,6 @@ const ik = {
   handBasis: new THREE.Matrix4(),
 };
 
-/**
- * Two-bone IK in Caine's frame: puts the wrist on `wristTarget` with the
- * elbow bending toward `pole`, then orients the hand so its knuckles point
- * along `handDir` with the palm facing `palmDir`. Writes the upper arm /
- * forearm / hand rotations into `out`, already in the chained form
- * applyCharacterRotation expects.
- */
 function solveArm(chain, wristTarget, pole, handDir, palmDir, out) {
   const { shoulder, upperLength: a, foreLength: b } = chain;
 
@@ -338,7 +515,6 @@ function solveArm(chain, wristTarget, pole, handDir, palmDir, out) {
   const reach = THREE.MathUtils.clamp(ik.toTarget.length(), Math.abs(a - b) + 1e-3, a + b - 1e-3);
   ik.toTarget.normalize();
 
-  // Elbow lies `along` the shoulder→wrist line, `offset` off it toward the pole.
   const along = (a * a - b * b + reach * reach) / (2 * reach);
   const offset = Math.sqrt(Math.max(a * a - along * along, 0));
   ik.pole.copy(pole).addScaledVector(ik.toTarget, -pole.dot(ik.toTarget)).normalize();
@@ -351,8 +527,6 @@ function solveArm(chain, wristTarget, pole, handDir, palmDir, out) {
   ik.inverse.copy(out.upper).invert();
   out.fore.setFromUnitVectors(chain.foreRestDir, ik.dir.applyQuaternion(ik.inverse));
 
-  // Whole-hand rotation (target basis * rest basis⁻¹), minus what the arm
-  // above it already contributes.
   handBasis(handDir, palmDir, ik.handBasis).multiply(chain.handRestInverse);
   out.hand.setFromRotationMatrix(ik.handBasis);
   ik.inverse.copy(out.upper).multiply(out.fore).invert();

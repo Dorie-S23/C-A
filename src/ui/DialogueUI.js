@@ -34,11 +34,13 @@ export function createDialogueUI({ speakers }) {
   const continueEl = document.getElementById('dialogue-continue');
 
   let engine = null;
+  let paused = false;
   let onComplete = null;
   let onChoice = null;
   let onCancel = null;
   let distressFor = null;
   let onNode = null;
+  let lineFor = null;
   let leftSpeaker = null;
   let rightSpeaker = null;
   let leftMood = 'neutral';
@@ -49,6 +51,8 @@ export function createDialogueUI({ speakers }) {
   let optionButtons = [];
   let highlightedIndex = 0;
   let pointerTravel = 0;
+  let awaitingNode = false;
+  let nodeGeneration = 0;
 
   /**
    * Fills a portrait slot with whichever speaker last occupied that side.
@@ -101,6 +105,7 @@ export function createDialogueUI({ speakers }) {
     typing = true;
     let i = 0;
     typeTimer = setInterval(() => {
+      if (paused) return;
       i++;
       textEl.textContent = fullText.slice(0, i);
       if (i >= fullText.length) stopTyping();
@@ -140,7 +145,30 @@ export function createDialogueUI({ speakers }) {
       finish();
       return;
     }
-    onNode?.(node);
+    const generation = ++nodeGeneration;
+    const pending = onNode?.(node);
+    if (pending && typeof pending.then === 'function') {
+      // Scene actions own this beat until they arrive. Escape still cancels.
+      awaitingNode = true;
+      stopTyping();
+      root.style.visibility = 'hidden';
+      Promise.resolve(pending).then(() => {
+        if (!engine || generation !== nodeGeneration) return;
+        awaitingNode = false;
+        root.style.visibility = paused ? 'hidden' : '';
+        displayNode(node);
+      }).catch(error => {
+        if (!engine || generation !== nodeGeneration) return;
+        console.error('Dialogue scene action failed', error);
+        cancelDialogue();
+      });
+      return;
+    }
+    displayNode(node);
+  }
+
+  function displayNode(node) {
+    node = lineFor?.(node) ?? node;
 
     // A silent sync point for the scene behind the dialogue (e.g. cueing a
     // background animation) rather than anything the player reads — skip
@@ -198,13 +226,14 @@ export function createDialogueUI({ speakers }) {
   }
 
   function selectOption(i) {
+    if (!engine || paused || awaitingNode) return;
     const option = engine.choose(i);
     if (option && onChoice) onChoice(option, engine.current);
     renderNode();
   }
 
   function advance() {
-    if (!engine) return;
+    if (!engine || paused || awaitingNode) return;
     const node = engine.current;
     if (!node || node.type === 'choice') return;
     if (typing) {
@@ -227,6 +256,8 @@ export function createDialogueUI({ speakers }) {
   }
 
   function finish() {
+    nodeGeneration++; awaitingNode = false;
+    paused = false; root.style.visibility = '';
     root.classList.add('hidden');
     stopTyping();
     const callback = onComplete;
@@ -236,6 +267,7 @@ export function createDialogueUI({ speakers }) {
     onCancel = null;
     distressFor = null;
     onNode = null;
+    lineFor = null;
     setDistress(0);
     if (callback) callback();
   }
@@ -249,6 +281,8 @@ export function createDialogueUI({ speakers }) {
    */
   function cancelDialogue() {
     if (!engine) return;
+    nodeGeneration++; awaitingNode = false;
+    paused = false; root.style.visibility = '';
     root.classList.add('hidden');
     stopTyping();
     const callback = onCancel;
@@ -258,18 +292,20 @@ export function createDialogueUI({ speakers }) {
     onCancel = null;
     distressFor = null;
     onNode = null;
+    lineFor = null;
     setDistress(0);
     if (callback) callback();
   }
 
   function handleKeydown(event) {
-    if (root.classList.contains('hidden')) return;
+    if (paused || root.classList.contains('hidden')) return;
 
     if (event.code === 'Escape') {
       event.preventDefault();
       cancelDialogue();
       return;
     }
+    if (awaitingNode) { event.preventDefault(); return; }
 
     const choosing = engine?.current?.type === 'choice';
     if (choosing) {
@@ -308,7 +344,7 @@ export function createDialogueUI({ speakers }) {
   // option buttons. Handle them here instead: moving the mouse steps the
   // highlight, and a click anywhere picks it or continues.
   document.addEventListener('mousemove', (event) => {
-    if (!document.pointerLockElement || engine?.current?.type !== 'choice') return;
+    if (paused || awaitingNode || !document.pointerLockElement || engine?.current?.type !== 'choice') return;
     pointerTravel += event.movementY;
     const steps = Math.trunc(pointerTravel / OPTION_STEP_PX);
     if (steps === 0) return;
@@ -343,15 +379,18 @@ export function createDialogueUI({ speakers }) {
      *   createDialogueEngine).
      */
     play(script, {
-      onComplete: complete, onChoice: choice, onCancel: cancel, distressFor: distress, onNode: node,
+      onComplete: complete, onChoice: choice, onCancel: cancel, distressFor: distress, onNode: node, lineFor: transform,
       startAt, stopAt,
     } = {}) {
+      nodeGeneration++; awaitingNode = false;
+      paused = false; root.style.visibility = '';
       engine = createDialogueEngine(script, { startAt, stopAt });
       onComplete = complete ?? null;
       onChoice = choice ?? null;
       onCancel = cancel ?? null;
       distressFor = distress ?? null;
       onNode = node ?? null;
+      lineFor = transform ?? null;
       leftSpeaker = null;
       rightSpeaker = null;
       leftMood = 'neutral';
@@ -362,8 +401,42 @@ export function createDialogueUI({ speakers }) {
     // Lets a caller bail out of a conversation it started (e.g. the room
     // unloading from under it) without faking a normal completion.
     cancel: cancelDialogue,
+    /**
+     * Runs the rest of the script at once, as if played through: every node
+     * still reaches onNode (so the scene's cues and actions happen), each
+     * choice takes its best (highest-points) answer through onChoice, and it
+     * ends in onComplete — unlike cancel(), it counts as finished.
+     */
+    skipToEnd() {
+      if (!engine || paused || awaitingNode) return;
+      const running = engine;
+      stopTyping();
+      for (let guard = 0; engine === running && engine.current && guard < 1000; guard++) {
+        if (awaitingNode) return;
+        const node = engine.current;
+        if (node.type === 'choice') {
+          const best = node.options.reduce((top, option, i) =>
+            ((option.points ?? 0) > (node.options[top].points ?? 0) ? i : top), 0);
+          const option = engine.choose(best);
+          if (option && onChoice) onChoice(option, engine.current);
+        } else {
+          engine.advance();
+        }
+        if (engine !== running) return;
+        renderNode(); // Runs each new cue once and honours awaited scene actions.
+        stopTyping();
+      }
+    },
+    setPaused(value) {
+      paused = value;
+      root.style.visibility = value || awaitingNode ? 'hidden' : '';
+    },
     get isActive() {
       return engine !== null;
     },
+    get currentSpeaker() {
+      return engine?.current?.type === 'line' ? engine.current.speaker ?? null : null;
+    },
+    get isWaiting() { return awaitingNode; },
   };
 }

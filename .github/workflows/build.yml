@@ -1,0 +1,58 @@
+# Checks every push and pull request to main, and builds the upload for the
+# department LAMP server.
+#
+# - npm test: the dialogue and collision self-checks (_verify_*.mjs).
+# - npm run package: builds the game and packages only the files it loads,
+#   failing on a missing file or a filename-case mismatch (this runs on
+#   Linux, case-sensitive like the LAMP server).
+# - The result is attached to the run as the "cgv-game-deploy" artifact:
+#   download it from the run's Summary page — the downloaded zip is the
+#   deploy zip (index.html at the top). Upload it in the File Manager, click
+#   it, and choose UnZip (not "UnZip to folder").
+#
+# Uploading to the server stays manual: it needs the group's File Manager
+# login, which we don't store in CI.
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: # "Run workflow" button on the Actions tab
+
+# A newer push to the same branch/PR replaces an older run still in progress.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22 # package.json requires >= 22.12
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Self-checks
+        run: npm test
+
+      - name: Build and package
+        run: npm run package
+
+      - name: Upload the deploy package
+        uses: actions/upload-artifact@v4
+        with:
+          name: cgv-game-deploy
+          path: release/site/
+          # Artifacts count against the repo's storage quota; old ones can
+          # be rebuilt any time with "Run workflow".
+          retention-days: 7
+          if-no-files-found: error
