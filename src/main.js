@@ -295,7 +295,7 @@ document.getElementById('btn-dev-level2-search').addEventListener('click', (even
   objectives.activate('find-ribbit');
   storyProgress.finishRibbit(4);
   storyProgress.finishKaufmoIntro();
-  selectRoom('tadc');
+  selectRoom('dorm');
 });
 
 btnResume.addEventListener('click', (event) => {
@@ -1500,6 +1500,10 @@ window.addEventListener('keydown', (e) => {
     if (shouldShowObjective(gameplayHUDContext()) && focusedBedroomDoor()) controlsTutorial.interact();
     focusedInteractable.interact(interactionContext);
   }
+  if (e.code === 'KeyV' && !e.repeat && isLocked && readyToPlay && !paused && !dialogueUI.isActive
+    && !activeCutscene && !stageBusy()) {
+    firstPerson = !firstPerson;
+  }
 });
 window.addEventListener('keyup', (e) => setMove(e.code, false));
 
@@ -1602,6 +1606,8 @@ const DEFAULT_PITCH = 0.25;
 let isLocked = false;
 let cameraYaw = 0; // 0 = looking toward -Z, the spawn facing
 let cameraPitch = DEFAULT_PITCH;
+let firstPerson = false; // toggled with V (see updateCamera and the keydown handler)
+let lastLookInputMs = -Infinity; // performance.now() of the last mouse-look, for the auto-correct below
 
 // Third-person follow camera (see updateCamera).
 const CAMERA_DISTANCE = 3.2;        // how far behind Pomni
@@ -1609,6 +1615,10 @@ const CAMERA_TARGET_DROP = 0.3;     // aim at her shoulders, a bit below PLAYER_
 const CAMERA_COLLISION_PAD = 0.25;  // stay this far in front of any wall
 const CAMERA_RETURN_SHARPNESS = 6;  // how fast it eases back out after a wall
 const MIN_VISIBLE_DISTANCE = 0.7;   // hide Pomni if the camera is inside her
+// Walking in a new direction (not actively mouse-looking) eases the camera
+// back in behind her, even if a scroll/drag had swung it off to one side.
+const LOOK_IDLE_MS = 500;           // how long since the last mouse-look counts as "not looking around"
+const CAMERA_AUTO_CORRECT_SHARPNESS = 2; // gentler than TURN_SHARPNESS — this is the camera settling, not her body turning
 const cameraTarget = new THREE.Vector3();
 const cameraOffset = new THREE.Vector3();
 const cameraHitPoint = new THREE.Vector3();
@@ -1680,6 +1690,7 @@ document.addEventListener('mousemove', (e) => {
   cameraPitch = THREE.MathUtils.clamp(
     cameraPitch + e.movementY * sensitivity, PITCH_MIN, PITCH_MAX,
   );
+  lastLookInputMs = performance.now(); // see the third-person auto-correct in updateCamera
   if (shouldShowObjective(gameplayHUDContext())) {
     controlsTutorial.look(Math.hypot(cameraYaw - oldYaw, cameraPitch - oldPitch));
   }
@@ -2719,6 +2730,28 @@ function updateCamera(dt) {
     pomni.visible = true;
     return;
   }
+  if (firstPerson) {
+    camera.position.copy(player.position);
+    cameraOffset.set(
+      -Math.sin(cameraYaw) * Math.cos(cameraPitch),
+      -Math.sin(cameraPitch),
+      -Math.cos(cameraYaw) * Math.cos(cameraPitch),
+    ); // unit vector pointing where she's looking (the third-person offset, reversed)
+    camera.lookAt(cameraTarget.copy(player.position).add(cameraOffset));
+    currentCameraDistance = 0;
+    pomni.visible = false;
+    return;
+  }
+
+  // Walking in a direction, without actively mouse-looking right now,
+  // gradually turns the camera itself in behind wherever that leaves her
+  // facing — so swinging the view out to one side and then just walking is
+  // what brings it back, not a separate button.
+  const steering = move.forward || move.back || move.left || move.right;
+  if (steering && performance.now() - lastLookInputMs > LOOK_IDLE_MS) {
+    cameraYaw = dampAngle(cameraYaw, pomni.rotation.y + Math.PI, CAMERA_AUTO_CORRECT_SHARPNESS, dt);
+  }
+
   cameraTarget.set(player.position.x, player.position.y - CAMERA_TARGET_DROP, player.position.z);
   cameraOffset.set(
     Math.sin(cameraYaw) * Math.cos(cameraPitch),
