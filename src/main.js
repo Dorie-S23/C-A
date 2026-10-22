@@ -17,7 +17,6 @@ import { POMNI_INVITATION, POMNI_SEATED_DIALOGUE, RAGATHA_ENTRANCE_EVENT } from 
 import { bendBone, SIDEWAYS } from './characters/bendBone.js';
 import { preloadJaxHallwayCutscene, playJaxHallwayCutscene } from './cutscenes/jaxHallwayCutscene.js';
 import { createCaineApproachCutscene } from './cutscenes/caineApproachCutscene.js';
-import { preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
 import { createTitleScreen } from './ui/titleScreen.js';
 import { resetEscapeThreshold } from './state/escapeThreshold.js';
@@ -25,7 +24,7 @@ import { createStoryProgress } from './game/storyProgress.js';
 import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.js';
 import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT } from './state/level2Items.js';
 import { runLevel1 } from './levels/level1.js';
-import { runLevel2 } from './levels/level2.js';
+import { createKaufmoHallwayEncounter } from './cutscenes/kaufmoHallwayEncounter.js';
 import { createMinimap } from './ui/minimap.js';
 import { createObjectiveController } from './game/objectives.js';
 import { createObjectiveHUD } from './ui/objectiveHUD.js';
@@ -803,22 +802,26 @@ function cancelCutscene() {
   previous?.cancel?.();
 }
 
-/** An awaited hallway cutaway, cancelled with its owning dialogue or room. */
+/**
+ * An awaited hallway cutaway, cancelled with its owning dialogue or room.
+ * Jax's silent pre-Level-1 pass-by only — Kaufmo's equivalent beat now
+ * plays as its own live, in-scene cutscene (see kaufmoHallwayEncounter.js
+ * and playKaufmoHallway), not a cutaway to a separate backdrop.
+ */
 function withHallwayCutscene(key, baseOnNode) {
-  const jax = key === 'preLevel1';
-  if (!jax && key !== 'level2Opening' && key !== 'level2Hallway') return baseOnNode;
+  if (key !== 'preLevel1') return baseOnNode;
   const token = loadToken;
   let triggered = false;
   return (node) => {
     const base = baseOnNode?.(node);
     if (skippingCutscenes()) return base;
-    if (triggered || node.id !== (jax ? 'jaxPassByText' : 'kaufmoHurriesBy')) return base;
+    if (triggered || node.id !== 'jaxPassByText') return base;
     triggered = true;
     const dialogue = dialogueGeneration;
     return (async () => {
       await base;
       let assets;
-      try { assets = await (jax ? preloadJaxHallwayCutscene() : preloadKaufmoHallwayCutscene()); }
+      try { assets = await preloadJaxHallwayCutscene(); }
       catch (error) { console.warn('Hallway scene unavailable; continuing dialogue.', error); return; }
       if (!assets) return;
       if (token !== loadToken || dialogue !== dialogueGeneration || !dialogueUI.isActive) {
@@ -826,7 +829,7 @@ function withHallwayCutscene(key, baseOnNode) {
       }
       await new Promise(resolve => {
         const finish = () => { disposeObject3D(assets.scene); resolve(); };
-        const cutscene = jax ? playJaxHallwayCutscene(renderer, assets) : playKaufmoHallwayCutscene(renderer, assets);
+        const cutscene = playJaxHallwayCutscene(renderer, assets);
         runCutscene({ ...cutscene, cancel: finish }, finish);
       });
     })();
@@ -996,7 +999,6 @@ function playRoomDialogue(key, {
 
 const MISSIONS = {
   level1: runLevel1,
-  level2: runLevel2,
 };
 
 const missionApi = {
@@ -1070,11 +1072,29 @@ function attachStoryInteractions(room, roomKey, token) {
 }
 
 function playKaufmoHallway() {
+  const token = loadToken;
   overlay.classList.add('hidden');
-  runLevel2(missionApi, {
-    onHallway: () => storyProgress.finishHallway(),
-    onIntroduced: () => storyProgress.finishKaufmoIntro(),
+  // Counts as "started" the moment this actually runs, same as the old
+  // travel-based flow marked it on the first script's onComplete — once
+  // the cutscene is live there's no going back to a from-scratch retrigger.
+  storyProgress.finishHallway();
+  stage.hold(true);
+  resetMoveState();
+  const cutscene = createKaufmoHallwayEncounter({
+    scene, camera, player, pomni, renderer, dialogueUI,
+    clearance: cameraCollisionDistance,
+    onComplete: () => {
+      stage.hold(false);
+      if (token !== loadToken) return;
+      storyProgress.finishKaufmoIntro();
+    },
+    onCancel: () => {
+      stage.hold(false);
+      if (token !== loadToken) return;
+      showHint('Find Kaufmo in his room to pick the conversation back up.', 6500);
+    },
   });
+  runCutscene(cutscene, () => {});
 }
 
 function talkToKaufmo(lookAt, token) {

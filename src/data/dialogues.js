@@ -246,7 +246,7 @@ export const level2HallwayDialogue = [
   },
   {
     type: 'beat',
-    text: 'Kaufmo disappears into his room, a few doors before Ribbit’s.',
+    text: 'Kaufmo stops a short way down the hall and starts pacing in a tight circle.',
     next: null,
   },
 ];
@@ -255,7 +255,7 @@ export const level2RoomOpeningDialogue = [
   {
     id: 'l2_inside',
     type: 'beat',
-    text: 'In his room, Kaufmo turns toward Pomni, still lost in thought.',
+    text: 'Pomni catches up. Kaufmo turns toward her, still lost in thought.',
   },
   {
     type: 'line',

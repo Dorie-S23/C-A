@@ -161,12 +161,17 @@ try {
   check('Level 1 completion card continues into the story without a Pause overlay', () => assert.equal(completed.ribbitPoints, 4));
   await snapshot('ribbit-complete');
   await travel('dorm');
-  await until(async () => (await state()).dialogueActive); await progress();
-  await readyRoom('kaufmo');
+  // Kaufmo's hallway encounter is now a live cutscene staged entirely in
+  // the Dorm Hall (see src/cutscenes/kaufmoHallwayEncounter.js) — no
+  // second room, no travel; the dialogue box just comes up over it, runs
+  // straight through both halves of the conversation, and releases
+  // gameplay back in the same room it started in.
+  await until(async () => (await state()).dialogueActive);
   await progress([0, 0]);
-  const introduced = await state();
-  check('Leaving Ribbit plays Kaufmo’s hallway encounter and moves into his room for the introduction', () => {
+  const introduced = await until(async () => { const s = await state(); return s.kaufmoIntroduced && s; });
+  check('Leaving Ribbit plays Kaufmo’s hallway encounter entirely in the Dorm Hall', () => {
     assert.equal(report.errors.length, 0);
+    assert.equal(introduced.room, 'dorm');
     assert.equal(introduced.kaufmoIntroduced, true);
     assert.equal(introduced.objective.id, 'collect-photos');
   });
