@@ -1086,9 +1086,13 @@ function talkToKaufmo(lookAt, token) {
   if (preLevel1Session && !storyProgress.kaufmoIntroduced) {
     return playRoomDialogue('level2RoomOpening', {
       lookAt,
-      onComplete() {
+      async onComplete() {
         if (!valid() || !storyProgress.finishKaufmoIntro()) return;
         if (itemState.heldCount()) showHint('You already have a photo. Talk to Kaufmo again to show him.', 6000);
+        // The search starts in the Dorm Hall, not wherever Kaufmo's room
+        // door happens to leave her — missionApi.travel already shows the
+        // normal "Loading…" overlay while the room comes in.
+        await missionApi.travel('dorm');
       },
     });
   }
