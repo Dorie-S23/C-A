@@ -69,20 +69,27 @@ function findBone(root, needle) {
  * bendBone sidesteps that by working in the character's own frame
  * (SIDEWAYS/UP/FORWARD) rather than each bone's.
  *
- * @returns {Promise<{ kaufmo: THREE.Group,
+ * @param {{ keyLight?: boolean }} [options] keyLight: false skips his own
+ *   point light — meant for the hallway cutscene's empty backdrop; his own
+ *   room already has real lighting, so adding this on top there would
+ *   overexpose him the same way it did before Jax's own light got moved
+ *   off-body earlier this project.
+ * @returns {Promise<{ kaufmo: THREE.Group, collider: THREE.Mesh,
  *   update: (deltaSeconds: number) => void,
  *   playPassBy: (from: THREE.Vector3, to: THREE.Vector3, duration: number) => void,
  *   pace: (center: THREE.Vector3) => void,
  *   stopPacing: () => void }>}
  */
-export function loadKaufmoRunExtra() {
+export function loadKaufmoRunExtra({ keyLight = true } = {}) {
   return loadKaufmo().then(({ kaufmo, collider }) => {
     collider.visible = false;
     kaufmo.visible = false;
 
-    const keyLight = new THREE.PointLight(KEY_LIGHT_COLOR, KEY_LIGHT_INTENSITY, KEY_LIGHT_RANGE, 2);
-    keyLight.position.copy(KEY_LIGHT_OFFSET);
-    kaufmo.add(keyLight);
+    if (keyLight) {
+      const light = new THREE.PointLight(KEY_LIGHT_COLOR, KEY_LIGHT_INTENSITY, KEY_LIGHT_RANGE, 2);
+      light.position.copy(KEY_LIGHT_OFFSET);
+      kaufmo.add(light);
+    }
 
     const bones = {
       thighL: findBone(kaufmo, 'lthigh'),
@@ -165,6 +172,6 @@ export function loadKaufmoRunExtra() {
       }
     }
 
-    return { kaufmo, update, playPassBy, pace, stopPacing };
+    return { kaufmo, collider, update, playPassBy, pace, stopPacing };
   });
 }

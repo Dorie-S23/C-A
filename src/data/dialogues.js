@@ -246,7 +246,7 @@ export const level2HallwayDialogue = [
   },
   {
     type: 'beat',
-    text: 'Kaufmo stops a short way down the hall and starts pacing in a tight circle.',
+    text: 'Kaufmo hurries on and disappears into his room, a few doors before Ribbit’s.',
     next: null,
   },
 ];

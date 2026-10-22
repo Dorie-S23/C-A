@@ -1083,15 +1083,22 @@ function playKaufmoHallway() {
   const cutscene = createKaufmoHallwayEncounter({
     scene, camera, player, pomni, renderer, dialogueUI,
     clearance: cameraCollisionDistance,
-    onComplete: () => {
+    onComplete: async () => {
       stage.hold(false);
       if (token !== loadToken) return;
-      storyProgress.finishKaufmoIntro();
+      // He ran off toward his own room; the real catch-up conversation
+      // (pacing, Choice 1, Choice 2) happens there, not in the hallway.
+      const room = await missionApi.travel('kaufmo');
+      if (!room || token !== loadToken) return;
+      playRoomDialogue('level2RoomOpening', {
+        onComplete: () => { if (token === loadToken) storyProgress.finishKaufmoIntro(); },
+        onCancel: () => { if (token === loadToken) showHint('Talk to Kaufmo to continue the conversation.', 6500); },
+      });
     },
     onCancel: () => {
       stage.hold(false);
       if (token !== loadToken) return;
-      showHint('Find Kaufmo in his room to pick the conversation back up.', 6500);
+      showHint('Find Kaufmo in his room to continue.', 6500);
     },
   });
   runCutscene(cutscene, () => {});

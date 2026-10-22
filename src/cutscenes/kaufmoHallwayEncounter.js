@@ -1,28 +1,25 @@
 import * as THREE from 'three';
 import { loadKaufmoRunExtra } from '../characters/kaufmoRunExtra.js';
-import { level2HallwayDialogue, level2RoomOpeningDialogue } from '../data/dialogues.js';
+import { level2HallwayDialogue } from '../data/dialogues.js';
 
 /**
- * Level 2's opening, staged entirely in the real Dorm Hall — the same
- * "stay in the live scene, reframe the camera, keep the dialogue box up"
- * technique caineApproachCutscene.js uses, not a cutaway to a separate
- * backdrop copy of the hall (see jaxHallwayCutscene.js for that older
- * approach, still used for Jax's silent pass-by, which has no reason to
- * change).
+ * Pre-Level 1's Jax moment plays as a cutaway to a separate backdrop copy
+ * of the Dorm Hall (see jaxHallwayCutscene.js); this is the live-scene
+ * version instead, same "stay in the real scene, reframe the camera, keep
+ * the dialogue box up" technique caineApproachCutscene.js uses — Kaufmo
+ * runs past Pomni for real, in the room she's actually standing in, with
+ * his mumbled line showing live in the dialogue box while he's on screen,
+ * not after a cutaway like the old approach left it.
  *
- * Kaufmo runs past (mumbling, live, dialogue box up the whole time — his
- * line is the point, not a silent beat), then settles into pacing a tight
- * circle a short way down the hall. The run is a fixed-duration animation
- * but the dialogue is player-paced (waits for a click per line), so the
- * two are deliberately decoupled: the camera eases from its start position
- * to the settled two-shot over the run's own duration regardless of how
- * far the player has gotten through the text, and Kaufmo hands off from
- * running to pacing in place the instant the run ends — never just
- * vanishing mid-sentence the way playPassBy alone would. The rest of the
- * conversation (level2RoomOpeningDialogue) plays once the player clicks
- * through the hallway script, with him still pacing throughout. He never
- * actually goes near his own room for this — that happens later,
- * off-screen, before the photo hand-in visits.
+ * Only the pass-by: he runs past and keeps going, off toward his own room
+ * (not shown), rather than stopping to pace nearby — an earlier version
+ * had him settle into pacing right there in the hallway, which reads
+ * badly in a space this size (he ran through Pomni's exact position, and
+ * the pacing spot could land somewhere nonsensical, like right in a
+ * doorway curtain). The real catch-up conversation (pacing, Choice 1,
+ * Choice 2) happens afterward, once Pomni travels into his actual room —
+ * see playKaufmoHallway in main.js, which runs this cutscene first, then
+ * the travel and the rest of the dialogue.
  */
 export function createKaufmoHallwayEncounter({
   scene, camera, player, pomni, renderer, dialogueUI,
@@ -31,13 +28,13 @@ export function createKaufmoHallwayEncounter({
   onComplete,
   onCancel,
 }) {
-  const RUN_SPEED = 4.2;        // m/s — matches the player's own walk speed, reads as urgent without outrunning the eye
+  const RUN_SPEED = 4.6;        // a little brisker than the player's own walk — he's in a hurry
   const RUN_PAST_LEAD = 5;      // how far ahead of Pomni he's first visible, along the run direction
-  const RUN_PAST_TRAIL = 3;     // how far past her he keeps running before peeling off to pace
-  const PACE_SIDE = 1.6;        // off to the side of his run line, so he isn't pacing on top of where he just ran
-  const CAMERA_SIDE = 2.0;
-  const CAMERA_BACK = 1.6;
-  const CAMERA_HEIGHT = 0.4;
+  const RUN_PAST_TRAIL = 4;     // how far past her he keeps going before the shot ends
+  const RUN_SIDE_OFFSET = 1.4;  // clears Pomni's own position — the run line never actually crosses her
+  const CAMERA_SIDE = 2.2;
+  const CAMERA_BACK = 1.8;
+  const CAMERA_HEIGHT = 0.5;
   const RUN_DURATION_FALLBACK = 1.8;
   const UP = new THREE.Vector3(0, 1, 0);
 
@@ -49,7 +46,7 @@ export function createKaufmoHallwayEncounter({
 
   /** Sweeps out from Pomni's facing for the clearest line to run Kaufmo along. */
   function clearestDirection(origin, facing) {
-    const wanted = RUN_PAST_LEAD + RUN_PAST_TRAIL + PACE_SIDE;
+    const wanted = RUN_PAST_LEAD + RUN_PAST_TRAIL;
     let best = { forward: facing.clone(), reach: -1 };
     for (let i = 0; i < 12; i++) {
       const step = Math.ceil(i / 2) * (i % 2 ? 1 : -1);
@@ -80,11 +77,9 @@ export function createKaufmoHallwayEncounter({
   let kaufmoApi = null;
   let disposed = false;
   let phase = 'loading'; // 'loading' | 'running' | 'done'
-  let settled = false; // whether the run->pace handoff has happened yet
   let elapsed = 0;
   let runDuration = RUN_DURATION_FALLBACK;
 
-  const paceCenter = new THREE.Vector3();
   const camPos = new THREE.Vector3();
   const camLookAt = new THREE.Vector3();
   const initialCamPos = camera.position.clone();
@@ -98,27 +93,26 @@ export function createKaufmoHallwayEncounter({
     const facing = new THREE.Vector3(Math.sin(pomniFacing), 0, Math.cos(pomniFacing)).normalize();
     if (facing.lengthSq() < 1e-4) facing.set(0, 0, -1);
     const { forward } = clearestDirection(player.position, facing);
+    const side = new THREE.Vector3().crossVectors(UP, forward);
     const feetY = player.position.y - 1.7; // PLAYER_HEIGHT
 
-    const runFrom = player.position.clone().addScaledVector(forward, RUN_PAST_LEAD);
+    // A line parallel to, not through, Pomni's own position — a straight
+    // run from lead to trail along `forward` alone would pass exactly
+    // through wherever she's standing.
+    const lineCentre = player.position.clone().addScaledVector(side, RUN_SIDE_OFFSET);
+    const runFrom = lineCentre.clone().addScaledVector(forward, RUN_PAST_LEAD);
     runFrom.y = feetY;
-    const runTo = player.position.clone().addScaledVector(forward, -RUN_PAST_TRAIL);
+    const runTo = lineCentre.clone().addScaledVector(forward, -RUN_PAST_TRAIL);
     runTo.y = feetY;
-    const side = new THREE.Vector3().crossVectors(UP, forward);
-    paceCenter.copy(runTo).addScaledVector(side, PACE_SIDE);
-    paceCenter.y = feetY;
 
     runDuration = Math.max(runFrom.distanceTo(runTo) / RUN_SPEED, 0.5);
-    const toPaceCenter = paceCenter.clone().sub(player.position).setY(0);
-    if (toPaceCenter.lengthSq() < 1e-6) toPaceCenter.copy(forward);
-    toPaceCenter.normalize();
-    camPos.copy(cameraSpot(player.position, toPaceCenter));
-    camLookAt.copy(player.position).add(paceCenter).multiplyScalar(0.5).add(new THREE.Vector3(0, 0.2, 0));
+    camPos.copy(cameraSpot(player.position, forward));
+    camLookAt.copy(player.position).addScaledVector(forward, RUN_PAST_LEAD * 0.3).add(new THREE.Vector3(0, 0.2, 0));
 
     kaufmoApi.playPassBy(runFrom, runTo, runDuration);
     dialogueUI.play(level2HallwayDialogue, {
       startAt: 'kaufmoHurriesBy',
-      onComplete: startRoomOpening,
+      onComplete: () => { cleanup(); phase = 'done'; onComplete?.(); },
       onCancel: () => { cleanup(); phase = 'done'; onCancel?.(); },
     });
     phase = 'running';
@@ -130,30 +124,14 @@ export function createKaufmoHallwayEncounter({
     onComplete?.();
   });
 
-  function startRoomOpening() {
-    if (pomni) {
-      pomni.rotation.y = Math.atan2(paceCenter.x - player.position.x, paceCenter.z - player.position.z);
-    }
-    dialogueUI.play(level2RoomOpeningDialogue, {
-      onComplete: () => { cleanup(); phase = 'done'; onComplete?.(); },
-      onCancel: () => { cleanup(); phase = 'done'; onCancel?.(); },
-    });
-  }
-
   function update(deltaSeconds) {
     if (phase === 'loading') { renderer.render(scene, camera); return false; }
     if (phase === 'done') { renderer.render(scene, camera); return true; }
 
-    if (!settled) {
-      elapsed += deltaSeconds;
-      if (elapsed >= runDuration) {
-        settled = true;
-        kaufmoApi.pace(paceCenter); // hands off from running to pacing in place — never just vanishes
-      }
-    }
+    elapsed += deltaSeconds;
     kaufmoApi.update(deltaSeconds);
 
-    const t = settled ? 1 : elapsed / runDuration;
+    const t = Math.min(1, elapsed / runDuration);
     const eased = t * t * (3 - 2 * t);
     camera.position.lerpVectors(initialCamPos, camPos, eased);
     camera.lookAt(camLookAt);
