@@ -282,6 +282,22 @@ dialoguePicker.querySelectorAll('button').forEach((button) => {
   });
 });
 
+// Dev-only shortcut: drop straight into Level 2's photo search without
+// replaying Pre-Level 1/Level 1 first. Fast-forwards storyProgress through
+// the same calls the real flow makes (not a faked/shortcut state), so
+// 'collect-photos' ends up legitimately active and the search timer arms
+// itself exactly as it would mid-story.
+document.getElementById('btn-dev-level2-search').addEventListener('click', (event) => {
+  event.stopPropagation();
+  openingCompleted = false;
+  resetObjectiveSession(true);
+  itemState.reset();
+  objectives.activate('find-ribbit');
+  storyProgress.finishRibbit(4);
+  storyProgress.finishKaufmoIntro();
+  selectRoom('tadc');
+});
+
 btnResume.addEventListener('click', (event) => {
   event.stopPropagation();
   if (activeCinematic()?.active) { pauseOpening(false); return; }
