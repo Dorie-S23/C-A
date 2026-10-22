@@ -60,7 +60,13 @@ export function makeFeedbackBuffers(context) {
     }
     return .24 * sum;
   });
-  return { pickup, handIn, complete };
+  // A two-note dip, handIn's rise in reverse — a search/level failing.
+  const fail = make(.5, t => {
+    const note1 = Math.exp(-t * 10) * Math.sin(2 * Math.PI * 392 * t);
+    const note2 = t >= .16 ? Math.exp(-(t - .16) * 9) * Math.sin(2 * Math.PI * 294 * (t - .16)) : 0;
+    return .26 * (note1 + note2);
+  });
+  return { pickup, handIn, complete, fail };
 }
 
 // TEMPORARY procedural placeholders, pending approved door/footstep recordings.

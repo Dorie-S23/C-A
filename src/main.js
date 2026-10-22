@@ -1134,13 +1134,13 @@ const itemState = createLevel2Items({
 });
 const storyProgress = createStoryProgress({ objectives, isStorySession: () => preLevel1Session });
 
-// The photo search times out before all 3 are found and handed in: for now
-// that's a simple restart (new spots, same objective, back to Kaufmo's
-// door) rather than any "abstraction" fail effect — that's a later pass.
-// Armed/disarmed reactively off the objective itself, rather than at each
-// of the several places 'collect-photos' starts or ends, so it can't drift
-// out of sync with it.
-const SEARCH_TIMER_SECONDS = 90;
+// The photo search times out before all 3 are found and handed in: a
+// "LEVEL 2 FAILED" card (see restartPhotoSearch) and a restart (new spots,
+// same objective, back to Kaufmo's door) — not yet the real "abstraction"
+// fail effect, which is a later pass. Armed/disarmed reactively off the
+// objective itself, rather than at each of the several places
+// 'collect-photos' starts or ends, so it can't drift out of sync with it.
+const SEARCH_TIMER_SECONDS = 180;
 let searchTimeLeft = null; // seconds left, or null while it isn't the active objective
 objectives.subscribe((active) => {
   searchTimeLeft = active?.id === 'collect-photos' ? SEARCH_TIMER_SECONDS : null;
@@ -1158,10 +1158,14 @@ function updateSearchTimer(deltaSeconds) {
 
 async function restartPhotoSearch() {
   const token = loadToken;
+  const continued = await showLevelComplete(
+    'LEVEL 2 FAILED',
+    "Time's up — the photos are still out there, and Kaufmo's done waiting. The search starts over.",
+    { resume: false, chime: 'fail' },
+  );
+  if (!continued || token !== loadToken) return; // the player had already moved on by the time this landed
   itemState.reset();
-  showHint("Kaufmo's getting impatient — the photos have scattered again.", 6000);
   await missionApi.travel('kaufmo');
-  if (token !== loadToken) return; // the player had already moved on by the time this landed
 }
 
 function updatePictureCounter() {
@@ -2012,14 +2016,16 @@ function endLevel(title, subtitle) {
 }
 
 /**
- * A brief "Level N Complete" beat with a Continue button, for missions
- * that chain straight into the next one rather than stopping the story
- * (see level1.js) — unlike endLevel(), this doesn't drop to the room
- * picker, just pauses on a card until the player dismisses it themselves.
+ * A brief "Level N Complete" (or, with `chime: 'fail'`, a failure) beat
+ * with a Continue button, for missions that chain straight into the next
+ * one rather than stopping the story (see level1.js) — unlike endLevel(),
+ * this doesn't drop to the room picker, just pauses on a card until the
+ * player dismisses it themselves. Same card either way; only the text and
+ * chime change.
  * @returns {Promise<void>} resolves once Continue is clicked
  */
 let cancelLevelComplete = () => {};
-function showLevelComplete(title, subtitle, { resume = true } = {}) {
+function showLevelComplete(title, subtitle, { resume = true, chime = 'complete' } = {}) {
   cancelLevelComplete();
   const token = loadToken;
   resetMoveState();
@@ -2034,7 +2040,7 @@ function showLevelComplete(title, subtitle, { resume = true } = {}) {
   levelCompletePanel.classList.remove('level-complete-pop');
   void levelCompletePanel.offsetWidth;
   levelCompletePanel.classList.add('level-complete-pop');
-  openingAudio.playChime('complete');
+  openingAudio.playChime(chime);
   return new Promise(resolve => {
     function finish(continued) {
       btnLevelCompleteContinue.removeEventListener('click', onContinue);
