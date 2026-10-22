@@ -54,7 +54,12 @@ export function loadTadcRoom(onProgress, { from, items } = {}) {
       }
     }
     if (items) {
-      scatterPictures(room, items, PICTURES, defaultSpawn, [dormArch?.box.getCenter(new THREE.Vector3())]);
+      const pictures = scatterPictures(room, items, PICTURES, defaultSpawn, [dormArch?.box.getCenter(new THREE.Vector3())]);
+      const doorsUpdate = room.update;
+      room.update = (deltaSeconds, playerPosition) => {
+        doorsUpdate(deltaSeconds, playerPosition);
+        pictures.update(deltaSeconds);
+      };
     }
     return room;
   });

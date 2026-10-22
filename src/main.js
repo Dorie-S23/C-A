@@ -1134,7 +1134,12 @@ function turnPomniTowards(point, cameraOffset = 0) {
 // --- Level 2 item collection -------------------------------------------
 // One shared instance survives room changes and menu visits; PLAY resets it.
 const itemState = createLevel2Items({
-  onCollect: (count) => showHint(`Picked up a photo. (${count}/3)`),
+  onCollect: (count) => {
+    showHint(`Picked up a photo. (${count}/3)`);
+    // The clock is for finding them, not for the walk back to hand them
+    // in — once all 3 are actually in hand, stop it right there.
+    if (count >= 3) searchTimeLeft = null;
+  },
 });
 const storyProgress = createStoryProgress({ objectives, isStorySession: () => preLevel1Session });
 
