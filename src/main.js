@@ -271,7 +271,7 @@ roomPicker.querySelectorAll('button[data-room]').forEach((button) => {
   });
 });
 
-dialoguePicker.querySelectorAll('button').forEach((button) => {
+dialoguePicker.querySelectorAll('button:not(#btn-level2)').forEach((button) => {
   button.addEventListener('click', (event) => {
     event.stopPropagation();
     // The story runs for real from the start; levels are played for real
@@ -280,6 +280,21 @@ dialoguePicker.querySelectorAll('button').forEach((button) => {
     else if (button.dataset.mission) startMission(button.dataset.mission);
     else playDialoguePreview(button.dataset.dialogue);
   });
+});
+
+// Jumps straight to Level 2 for playtesting, skipping Level 1. Primes
+// storyProgress through the same calls the real flow makes (Ribbit done)
+// and then runs the real mission from its actual first beat — Kaufmo
+// hurrying past in the Dorm Hall — rather than faking any later state.
+document.getElementById('btn-level2').addEventListener('click', (event) => {
+  event.stopPropagation();
+  openingCompleted = false;
+  resetObjectiveSession(true);
+  itemState.reset();
+  objectives.activate('find-ribbit');
+  storyProgress.finishRibbit(4);
+  titleScreen.hide();
+  selectRoom('dorm', { onReady: () => playKaufmoHallway() });
 });
 
 btnResume.addEventListener('click', (event) => {
