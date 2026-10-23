@@ -1289,8 +1289,12 @@ async function restartPhotoSearch() {
 }
 
 function updatePictureCounter() {
-  // Only free exploration shows the HUD, including between room visits.
-  const visible = (!preLevel1Session || storyProgress.kaufmoIntroduced)
+  // Only the two rooms the photo search actually happens in — otherwise
+  // this kept showing "Pictures found: 5/5" forever afterward, including
+  // in the maze, since kaufmoIntroduced never goes back to false once
+  // Level 2's started.
+  const visible = (currentRoomKey === 'tadc' || currentRoomKey === 'kaufmo')
+    && (!preLevel1Session || storyProgress.kaufmoIntroduced)
     && isLocked && readyToPlay && !paused && !dialogueUI.isActive
     && !activeCutscene && !activeCinematic()?.active && !stageBusy() && !titleScreen.active
     && overlay.classList.contains('hidden') && controlsPanel.hidden
