@@ -1254,12 +1254,11 @@ const mazeItems = createMazeItems({
   },
 });
 
-// The photo search times out before all 3 are found and handed in: a
+// The photo search times out before all five photos are found: a
 // "LEVEL 2 FAILED" card (see restartPhotoSearch) and a restart (new spots,
 // same objective, back to Kaufmo's door) — not yet the real "abstraction"
-// fail effect, which is a later pass. Armed/disarmed reactively off the
-// objective itself, rather than at each of the several places
-// 'collect-photos' starts or ends, so it can't drift out of sync with it.
+// fail effect, which is a later pass. Objective changes arm/disarm the
+// clock; a retry resets it explicitly because the objective stays active.
 const SEARCH_TIMER_SECONDS = 180;
 let searchTimeLeft = null; // seconds left, or null while it isn't the active objective
 objectives.subscribe((active) => {
@@ -1285,6 +1284,7 @@ async function restartPhotoSearch() {
   );
   if (!continued || token !== loadToken) return; // the player had already moved on by the time this landed
   itemState.reset();
+  searchTimeLeft = SEARCH_TIMER_SECONDS;
   await missionApi.travel('kaufmo');
 }
 
