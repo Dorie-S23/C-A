@@ -18,6 +18,7 @@ import { bendBone, SIDEWAYS } from './characters/bendBone.js';
 import { preloadJaxHallwayCutscene, playJaxHallwayCutscene } from './cutscenes/jaxHallwayCutscene.js';
 import { createCaineApproachCutscene } from './cutscenes/caineApproachCutscene.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
+import { createVoicePlayer } from './audio/voicePlayer.js';
 import { createTitleScreen } from './ui/titleScreen.js';
 import { resetEscapeThreshold } from './state/escapeThreshold.js';
 import { createStoryProgress } from './game/storyProgress.js';
@@ -201,7 +202,8 @@ const btnLevelCompleteContinue = document.getElementById('btn-level-complete-con
 
 const pictureCounter = document.getElementById('picture-counter');
 const searchTimer = document.getElementById('search-timer');
-const dialogueUI = createDialogueUI({ speakers: SPEAKERS });
+const dialogueVoice = createVoicePlayer();
+const dialogueUI = createDialogueUI({ speakers: SPEAKERS, voice: dialogueVoice });
 const actionCaptions = createActionCaptions();
 const minimap = createMinimap();
 const objectives = createObjectiveController();
@@ -320,6 +322,9 @@ const titleQuit = document.getElementById('title-quit');
 const sensitivityInput = document.getElementById('sensitivity');
 const sensitivityValue = document.getElementById('sensitivity-value');
 const SENSITIVITY_KEY = 'tadc.mouseSensitivity';
+const voiceVolumeInput = document.getElementById('voice-volume');
+const voiceVolumeValue = document.getElementById('voice-volume-value');
+const VOICE_VOLUME_KEY = 'tadc.voiceVolume';
 
 const titleScreen = createTitleScreen({
   renderer,
@@ -359,6 +364,27 @@ sensitivityInput.addEventListener('input', () => {
     localStorage.setItem(SENSITIVITY_KEY, sensitivityInput.value);
   } catch {
     // Storage blocked (private window etc.) — the setting just won't persist.
+  }
+});
+
+// Dialogue voice volume, 0 (off) to 1. Same persistence as the sensitivity.
+function setVoiceVolume(value) {
+  dialogueVoice.setVolume(value);
+  voiceVolumeInput.value = value;
+  voiceVolumeValue.textContent = value === 0 ? 'off' : `${Math.round(value * 100)}%`;
+}
+try {
+  const stored = Number(localStorage.getItem(VOICE_VOLUME_KEY) ?? 1);
+  setVoiceVolume(Number.isFinite(stored) ? Math.max(0, Math.min(1, stored)) : 1);
+} catch {
+  setVoiceVolume(1);
+}
+voiceVolumeInput.addEventListener('input', () => {
+  setVoiceVolume(Number(voiceVolumeInput.value));
+  try {
+    localStorage.setItem(VOICE_VOLUME_KEY, voiceVolumeInput.value);
+  } catch {
+    // Storage blocked — the setting just won't persist.
   }
 });
 // Dev mode: open straight onto the room picker instead of playing the
