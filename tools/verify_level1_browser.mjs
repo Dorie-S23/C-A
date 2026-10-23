@@ -24,8 +24,25 @@ await page.route('**/src/main.js', async route => {
     };
     window.__level1Review = {
       state: getOpeningDiagnostics,
+      checkpointForReview: () => checkpoint,
+      saveCheckpoint() { saveSlots.write(1, checkpoint); return saveSlots.read(1); },
+      loadCheckpoint() { loadGame(saveSlots.read(1)); },
+      travel: key => missionApi.travel(key),
+      tryHallway: playKaufmoHallway,
+      hallway() {
+        const runner = scene.getObjectByName('KaufmoHallwayRunner');
+        return { runner: runner?.position.toArray() ?? null, inRealHall: runner?.parent === scene && scene.children.includes(currentRoom),
+          player: player.position.toArray(), held: stageHold, room: currentRoomKey,
+          ribbitDoor: currentRoom?.getObjectByName('Door_Frame089')?.getWorldPosition(new THREE.Vector3()).toArray(),
+          kaufmoOpen: currentRoomInfo?.hallDoors?.kaufmo?.control.isOpen };
+      },
+      async primeHallway(won) {
+        resetObjectiveSession(true); objectives.activate('find-ribbit');
+        if (won) storyProgress.finishRibbit(4);
+        await missionApi.enterRoom('dorm'); lock();
+      },
       async start() {
-        resetEscapeThreshold(); resetObjectiveSession(true);
+        resetEscapeThreshold(); resetObjectiveSession(true); openingCompleted = true;
         objectives.activate('find-ribbit'); titleScreen.hide();
         const room = await missionApi.enterRoom('dorm');
         lock();
@@ -58,7 +75,7 @@ const play = async picks => {
   return choice;
 };
 try {
-  await page.goto('http://127.0.0.1:5173/?dev=1');
+  await page.goto(`${process.env.GAME_URL ?? 'http://127.0.0.1:5173'}/?dev=1`);
   await page.waitForFunction(() => !!window.__level1Review);
   await page.evaluate(() => window.__level1Review.start());
   console.log('Starting loss attempt');
@@ -81,5 +98,91 @@ try {
   assert.equal(won.objective.id, 'find-kaufmo');
   assert.equal(await page.evaluate(async () => (await import('/src/state/escapeThreshold.js')).getLevelPoints('level1')), 4);
   assert.deepEqual(errors, []);
-  console.log('PASS Chromium browser: immediate failure, Retry Level without reload, fresh winning attempt, Find Kaufmo, 4 retained points, no page errors');
+  console.log('PASS Level 1 failure/retry and win; testing actual hallway');
+  await page.locator('#btn-level-complete-continue').click();
+  await page.evaluate(() => window.__level1Review.travel('dorm'));
+  await until(async () => (await state()).dialogueActive);
+  // Advance the opening beat to the mumble, then observe the runner in the loaded hall.
+  await until(async () => {
+    const h = await page.evaluate(() => window.__level1Review.hallway());
+    if (h.runner) return true;
+    await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', bubbles: true })));
+    return false;
+  });
+  const running = await page.evaluate(() => window.__level1Review.hallway());
+  assert.equal(running.inRealHall, true);
+  assert.equal(running.room, 'dorm');
+  assert.equal(running.held, true);
+  assert.ok(Math.abs(running.runner[0] - running.player[0]) > 1);
+  assert.ok(Math.abs(running.runner[2] - running.ribbitDoor[2]) < 10);
+  assert.equal(await page.evaluate(() => window.__level1Review.tryHallway()), false);
+  // Hammer advance while running: the reaction must wait until he reaches his door.
+  await until(async () => {
+    const s = await state();
+    if (!s.dialogueActive) return true;
+    await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', bubbles: true })));
+    return false;
+  });
+  const finished = await page.evaluate(() => window.__level1Review.hallway());
+  assert.equal(finished.runner, null);
+  assert.equal(finished.held, false);
+  assert.equal(finished.kaufmoOpen, true);
+  const saved = await page.evaluate(() => window.__level1Review.saveCheckpoint());
+  assert.equal(saved.story.hallwaySeen, true, 'checkpoint must retain the completed hallway intro');
+  assert.equal(saved.escape.level1, 4);
+  assert.equal(saved.objectives.active, 'find-kaufmo');
+  // Reload the whole page: the run must stay seen through a real localStorage slot.
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => !!window.__level1Review);
+  await page.evaluate(() => window.__level1Review.loadCheckpoint());
+  await until(async () => (await state()).room === 'dorm');
+  assert.equal((await state()).dialogueActive, false);
+  assert.equal((await state()).cutsceneActive, false);
+  assert.equal((await page.evaluate(() => window.__level1Review.hallway())).runner, null);
+  assert.equal(await page.evaluate(() => window.__level1Review.tryHallway()), false);
+  assert.equal((await page.evaluate(() => window.__level1Review.checkpointForReview())).story.hallwaySeen, true);
+  console.log('PASS completed intro survives save slot + full page reload without replay');
+
+  assert.equal((await state()).objective.id, 'find-kaufmo');
+  assert.equal(await page.evaluate(async () => (await import('/src/state/escapeThreshold.js')).getLevelPoints('level1')), 4);
+  await page.evaluate(() => window.__level1Review.travel('ribbit'));
+  await page.evaluate(() => window.__level1Review.travel('dorm'));
+  assert.equal((await state()).dialogueActive, false);
+  assert.equal(await page.evaluate(() => window.__level1Review.tryHallway()), false);
+
+  // Missing completion (including a failed attempt) cannot start the hallway beat.
+  await page.evaluate(() => window.__level1Review.primeHallway(false));
+  assert.equal(await page.evaluate(() => window.__level1Review.tryHallway()), false);
+  assert.equal((await state()).objective.id, 'find-ribbit');
+
+  // Cancel a fresh successful session's running beat and make sure no actor survives.
+  await page.evaluate(() => window.__level1Review.primeHallway(true));
+  await page.evaluate(() => window.__level1Review.tryHallway());
+  await until(async () => {
+    if ((await page.evaluate(() => window.__level1Review.hallway())).runner) return true;
+    await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', bubbles: true })));
+    return false;
+  });
+  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true })));
+  assert.equal((await page.evaluate(() => window.__level1Review.hallway())).runner, null);
+  assert.equal((await state()).cutsceneActive, false);
+  assert.equal((await state()).dialogueActive, false);
+  assert.equal((await page.evaluate(() => window.__level1Review.hallway())).held, false);
+  assert.equal(await page.evaluate(() => window.__level1Review.tryHallway()), false);
+  assert.equal((await page.evaluate(() => window.__level1Review.checkpointForReview())).story.hallwaySeen, true);
+  assert.equal((await state()).objective.id, 'find-kaufmo');
+  assert.equal(await page.evaluate(async () => (await import('/src/state/escapeThreshold.js')).getLevelPoints('level1')), 4);
+  // Leaving while he runs must also remove the extra and its Escape listener.
+  await page.evaluate(() => window.__level1Review.primeHallway(true));
+  await page.evaluate(() => window.__level1Review.tryHallway());
+  await until(async () => {
+    if ((await page.evaluate(() => window.__level1Review.hallway())).runner) return true;
+    await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', bubbles: true })));
+    return false;
+  });
+  await page.evaluate(() => window.__level1Review.travel('kaufmo'));
+  assert.equal((await page.evaluate(() => window.__level1Review.hallway())).runner, null);
+  assert.equal((await state()).cutsceneActive, false);
+  assert.deepEqual(errors, []);
+  console.log('PASS live Dorm Hall run, win-only gate, fast advance, Find Kaufmo, retained points, cancellation and revisit prevention');
 } finally { await browser.close(); }

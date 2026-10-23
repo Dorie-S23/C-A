@@ -93,3 +93,43 @@ test('slots store, list, overwrite and reject other versions', () => {
   storage.setItem('tadc.save.1', '{not json');
   assert.equal(slots.read(1), null);
 });
+
+
+test('completed Kaufmo pass-by survives a save slot without replay or lost Level 1 points', () => {
+  const a = session();
+  a.objectives.activate('find-ribbit');
+  a.story.finishRibbit(4);
+  setLevelPoints('level1', 4);
+  assert.equal(a.story.finishHallway(), true);
+  const slots = createSaveSlots(memoryStorage());
+  slots.write(1, {
+    room: 'dorm', from: 'ribbit', objectives: a.objectives.snapshot(),
+    story: a.story.snapshot(), items: a.items.snapshot(), escape: snapshotEscapeThreshold(),
+  });
+  const saved = slots.read(1);
+  resetEscapeThreshold();
+  const b = session();
+  b.objectives.restore(saved.objectives);
+  b.story.restore(saved.story);
+  b.items.restore(saved.items);
+  restoreEscapeThreshold(saved.escape);
+  assert.equal(b.story.ribbitComplete, true);
+  assert.equal(b.story.hallwayPending, false);
+  assert.equal(b.story.finishHallway(), false);
+  assert.equal(b.story.ribbitPoints, 4);
+  assert.equal(getLevelPoints('level1'), 4);
+  assert.equal(b.objectives.active.id, 'find-kaufmo');
+});
+
+test('saving an unfinished Level 1 cannot grant eligibility for Kaufmo on load', () => {
+  const a = session();
+  a.objectives.activate('find-ribbit');
+  const saved = JSON.parse(JSON.stringify({ objectives: a.objectives.snapshot(), story: a.story.snapshot() }));
+  const b = session();
+  b.objectives.restore(saved.objectives);
+  b.story.restore(saved.story);
+  assert.equal(b.story.ribbitComplete, false);
+  assert.equal(b.story.hallwayPending, false);
+  assert.equal(b.story.finishHallway(), false);
+  assert.equal(b.objectives.active.id, 'find-ribbit');
+});

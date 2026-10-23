@@ -84,6 +84,8 @@ test('immediate failure blocks recovery/completion, retry resets only Level 1, t
   assert.equal(getLevelPoints('level1'), 0);
   assert.equal(getLevelPoints('level2'), 2);
   assert.equal(f.progress.ribbitComplete, false);
+  assert.equal(f.progress.hallwayPending, false);
+  assert.equal(f.progress.finishHallway(), false);
   assert.equal(f.objectives.active.id, 'find-ribbit');
   assert.deepEqual(f.poses, []);
   assert.equal(f.distress.at(-1), 3);
@@ -101,6 +103,7 @@ test('immediate failure blocks recovery/completion, retry resets only Level 1, t
   await flush();
   assert.equal(f.cards[1].title, 'Level 1 Complete');
   assert.equal(f.progress.ribbitComplete, true);
+  assert.equal(f.progress.hallwayPending, true);
   assert.equal(f.objectives.active.id, 'find-kaufmo');
   assert.deepEqual(f.poses, ['sitting']);
   assert.equal(getLevelPoints('level1'), 3);
@@ -121,6 +124,8 @@ test('failure clears points already earned and repeated retries do not accumulat
     f.script().onChoice(wrong[3]); // distress 3 at final choice
     assert.equal(getLevelPoints('level1'), 0);
     assert.equal(f.progress.ribbitComplete, false);
+  assert.equal(f.progress.hallwayPending, false);
+  assert.equal(f.progress.finishHallway(), false);
     f.continue();
     await flush();
   }
@@ -139,6 +144,8 @@ test('leaving a failed session invalidates its pending retry', async () => {
   await flush();
   assert.equal(f.game.token, token);
   assert.equal(f.progress.ribbitComplete, false);
+  assert.equal(f.progress.hallwayPending, false);
+  assert.equal(f.progress.finishHallway(), false);
 });
 
 
