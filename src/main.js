@@ -1116,9 +1116,17 @@ function playKaufmoHallway() {
   });
 }
 
-function talkToKaufmo(lookAt, token) {
+function talkToKaufmo(kaufmoApi, token) {
   if (token !== loadToken || currentRoomKey !== 'kaufmo' || dialogueUI.isActive) return false;
   const valid = () => token === loadToken && currentRoomKey === 'kaufmo';
+  const lookAt = kaufmoApi.kaufmo.getWorldPosition(new THREE.Vector3());
+  // He turns to face her and starts gesturing on his own lines, same idea
+  // as Ribbit's/Caine's own faceTowards/setSpeaking — previously he just
+  // stood there frozen through the whole conversation.
+  kaufmoApi.faceTowards(player.position);
+  const onNode = node => kaufmoApi.setSpeaking(node.speaker === 'kaufmo');
+  const stopTalking = () => kaufmoApi.setSpeaking(false);
+
   if (preLevel1Session && !storyProgress.ribbitComplete) {
     showHint('Check on Ribbit first. Kaufmo can wait here.', 4500);
     return false;
@@ -1126,7 +1134,9 @@ function talkToKaufmo(lookAt, token) {
   if (preLevel1Session && !storyProgress.kaufmoIntroduced) {
     return playRoomDialogue('level2RoomOpening', {
       lookAt,
+      onNode,
       async onComplete() {
+        stopTalking();
         if (!valid() || !storyProgress.finishKaufmoIntro()) return;
         if (itemState.heldCount()) showHint('You already have a photo. Talk to Kaufmo again to show him.', 6000);
         // The photos are in the Lobby, not the Dorm Hall — spawn her right
@@ -1135,6 +1145,7 @@ function talkToKaufmo(lookAt, token) {
         // "Loading…" overlay while the room comes in.
         await missionApi.travel('tadc');
       },
+      onCancel: stopTalking,
     });
   }
   const key = pickKaufmoScript(itemState);
@@ -1142,7 +1153,9 @@ function talkToKaufmo(lookAt, token) {
   if (key.startsWith('level2HandIn')) openingAudio.playChime('handIn');
   return playRoomDialogue(key === 'level2Opening' ? 'level2RoomOpening' : key, {
     lookAt,
+    onNode,
     onComplete() {
+      stopTalking();
       if (!valid()) return;
       if (key === 'level2Payoff' && !itemState.isDone()) {
         if (preLevel1Session) objectives.complete('check-kaufmo');
@@ -1150,6 +1163,7 @@ function talkToKaufmo(lookAt, token) {
         void finishKaufmoLevel(token);
       }
     },
+    onCancel: stopTalking,
   });
 }
 
@@ -1297,7 +1311,7 @@ function roomLoadOptions(roomKey, { from, preview, openingMode }) {
     },
     kaufmoStory: {
       introduced: () => !preLevel1Session || storyProgress.kaufmoIntroduced,
-      talk: lookAt => talkToKaufmo(lookAt, loadToken),
+      talk: kaufmoApi => talkToKaufmo(kaufmoApi, loadToken),
     },
     openingMode: openingMode ?? (roomKey === 'pomni' && from && openingCompleted ? 'settled' : undefined),
   };
