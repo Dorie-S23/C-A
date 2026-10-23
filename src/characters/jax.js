@@ -15,12 +15,35 @@ const JAX_URL = './models/characters/jax/jax_from_tadc.glb';
 // side, Y just twists it in place, Z is the one that reads as a stride.
 const HINGE_AXIS = new THREE.Vector3(0, 0, 1);
 
+// This rig's bind pose has both arms held straight out to the sides (a
+// T-pose), not hanging down — measured against the real model
+// (tools/_tmp_check_jax_arm_lower.mjs, not kept: a one-off bind-pose
+// probe, same idea as the HINGE_AXIS comment above but for a different
+// question). The run cycle below only ever swung forward/back from
+// whatever rest pose it started from, so it was swinging straight,
+// shoulder-height, outstretched arms the whole time — reads as stiff/
+// wrong because it is: nothing ever brought them down to his sides.
+// Rotating -90° about the shoulder's local X (found the same way) does
+// that, identically for both arms, and is baked into the rest pose below
+// rather than applied per frame, so every other arm pose (the swing, the
+// elbow bend) composes on top of "hanging down" instead of "T-pose".
+const ARM_LOWER_AXIS = new THREE.Vector3(1, 0, 0);
+const ARM_LOWER_ANGLE = THREE.MathUtils.degToRad(-90);
+
 // An actual run (he "storms past"), not a walk: quicker cadence, a
 // bigger stride, and a real bounce rather than a gentle bob.
 const STRIDE_HZ = 3.3; // steps/second
 const LEG_SWING = THREE.MathUtils.degToRad(42);
 const KNEE_BEND = THREE.MathUtils.degToRad(55);
 const ARM_SWING = THREE.MathUtils.degToRad(36);
+// A real sprint holds the elbows bent throughout, not locked straight —
+// a straight swinging arm is a big part of what read as "stiff/robotic".
+// Constant rather than phase-varying like the knee: lower-confidence
+// without being able to see the result, so kept to the one change
+// (bent, not straight) that's true the whole cycle either way.
+const ELBOW_BEND = THREE.MathUtils.degToRad(70);
+const SLY_ELBOW_BEND = THREE.MathUtils.degToRad(25);
+const IDLE_ELBOW_BEND = THREE.MathUtils.degToRad(15); // a relaxed bend while just standing, not locked straight
 const BOB_HEIGHT = 0.07;
 // A forward body lean reads as "running" on its own, independent of how
 // precisely any single joint swings — leaning in over the first few
@@ -111,9 +134,17 @@ export function loadJax() {
       lowerLegR: findBone(model, 'lowerlegr'),
       upperArmL: findBone(model, 'upperarml'),
       upperArmR: findBone(model, 'upperarmr'),
+      lowerArmL: findBone(model, 'lowerarml'),
+      lowerArmR: findBone(model, 'lowerarmr'),
       spine: findBone(model, 'spine'),
       head: findBone(model, 'head'),
     };
+    // Bring the T-pose arms down to his sides before anything else reads
+    // these as "rest" — see ARM_LOWER_ANGLE above.
+    const armLower = new THREE.Quaternion().setFromAxisAngle(ARM_LOWER_AXIS, ARM_LOWER_ANGLE);
+    if (bones.upperArmL) bones.upperArmL.quaternion.premultiply(armLower);
+    if (bones.upperArmR) bones.upperArmR.quaternion.premultiply(armLower);
+
     const rest = new Map();
     for (const bone of Object.values(bones)) {
       if (bone) rest.set(bone, bone.quaternion.clone());
@@ -162,6 +193,8 @@ export function loadJax() {
         bendBone(bones.spine, jax, UP, Math.sin(time * IDLE_BREATHE_HZ * Math.PI * 2) * IDLE_BREATHE_ANGLE);
         bendBone(bones.spine, jax, SIDEWAYS, Math.sin(time * IDLE_TREMBLE_HZ * Math.PI * 2) * IDLE_TREMBLE_ANGLE);
         bendBone(bones.head, jax, SIDEWAYS, Math.sin(time * IDLE_TREMBLE_HZ * Math.PI * 2 + 1.3) * IDLE_TREMBLE_ANGLE);
+        poseLeg(bones.lowerArmL, IDLE_ELBOW_BEND);
+        poseLeg(bones.lowerArmR, IDLE_ELBOW_BEND);
 
         if (targetYaw !== null) {
           const diff = THREE.MathUtils.euclideanModulo(targetYaw - jax.rotation.y + Math.PI, Math.PI * 2) - Math.PI;
@@ -185,6 +218,8 @@ export function loadJax() {
       poseLeg(bones.lowerLegR, Math.max(0, Math.sin(phase + Math.PI / 2 + Math.PI)) * knee);
       poseLeg(bones.upperArmL, sly ? 0 : -Math.sin(phase) * ARM_SWING);
       poseLeg(bones.upperArmR, sly ? 0 : Math.sin(phase) * ARM_SWING);
+      poseLeg(bones.lowerArmL, sly ? SLY_ELBOW_BEND : ELBOW_BEND);
+      poseLeg(bones.lowerArmR, sly ? SLY_ELBOW_BEND : ELBOW_BEND);
       jax.position.y += Math.abs(Math.sin(phase)) * (sly ? .018 : BOB_HEIGHT);
       jax.rotation.x = sly ? -.035 : LEAN_ANGLE * Math.min(walk.elapsed / LEAN_IN_SECONDS, 1);
       jax.rotation.z = sly ? Math.sin(phase) * .025 : 0;
