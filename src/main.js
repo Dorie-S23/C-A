@@ -1116,6 +1116,7 @@ const missionApi = {
     interactables.push(interactable);
   },
   playDialogue: playRoomDialogue,
+  cancelDialogue: () => dialogueUI.cancel(),
   endLevel: (title, subtitle) => endLevel(title, subtitle),
   showHint,
   showLevelComplete,
@@ -2419,7 +2420,7 @@ function endLevel(title, subtitle) {
  * @returns {Promise<void>} resolves once Continue is clicked
  */
 let cancelLevelComplete = () => {};
-function showLevelComplete(title, subtitle, { resume = true, chime = 'complete' } = {}) {
+function showLevelComplete(title, subtitle, { resume = true, chime = 'complete', buttonLabel = 'Continue →' } = {}) {
   cancelLevelComplete();
   const token = loadToken;
   resetMoveState();
@@ -2427,6 +2428,7 @@ function showLevelComplete(title, subtitle, { resume = true, chime = 'complete' 
   // The pointer-lock event must see the card, so it never opens Pause over it.
   levelCompleteTitle.textContent = title;
   levelCompleteSubtitle.textContent = subtitle;
+  btnLevelCompleteContinue.textContent = buttonLabel;
   levelCompletePanel.hidden = false;
   paused = false;
   pauseMenu.hidden = true;

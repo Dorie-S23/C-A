@@ -601,8 +601,8 @@ export const level2OpeningDialogue = [
 // continues inside. Four graded choices: the best answer earns 1 Escape
 // point (`points: 1`), the others 0 — they still advance, but change
 // Ribbit's reply and Pomni has to walk it back. Every option's branch
-// rejoins the main line, so all 81 paths visit all four choices and end
-// the same way: Ribbit is steadied regardless of score (the score feeds
+// rejoins the main line. The Level 1 controller stops the conversation if
+// distress reaches 3; surviving paths steady Ribbit (the score feeds
 // the ending, not this level). Choice-checking lives in
 // src/dialogue/choiceTally.js; src/levels/level1.js owns the encounter.
 // `action` on a node names a stage direction the mission acts out in 3D

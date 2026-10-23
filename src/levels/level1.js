@@ -1,37 +1,35 @@
 import * as THREE from 'three';
-import { createChoiceTally } from '../dialogue/choiceTally.js';
-import { level1RibbitDialogue } from '../data/dialogues.js';
+import { createLevel1Attempt } from '../state/level1Attempt.js';
 import { getLevelPoints, setLevelPoints } from '../state/escapeThreshold.js';
 
 /** A door/bedroom encounter. Session and room tokens guard every async handoff. */
 export async function runLevel1(game, { hall, onComplete, story = false } = {}) {
   const { stage } = game;
   const session = game.session;
-  const pointsBefore = getLevelPoints('level1');
+  let pointsBefore = getLevelPoints('level1');
   let token = game.token;
-  let tally = createChoiceTally(level1RibbitDialogue);
-  let distress = 1;
+  let tally = createLevel1Attempt();
   let reactNextLine = false;
   let ribbitScene = null;
   const live = () => game.session === session && game.token === token;
 
   const scoring = {
     onChoice(option) {
-      if (!live()) return;
+      if (!live() || tally.failed) return;
       const correct = tally.record(option);
       if (correct === null) return;
       setLevelPoints('level1', tally.points);
-      distress = Math.max(0, Math.min(3, distress + (correct ? -1 : 1)));
       reactNextLine = !correct;
-      ribbitScene?.setDistress(distress);
+      ribbitScene?.setDistress(tally.distress);
+      if (tally.failed) void failAttempt();
     },
     distressFor(line) {
       if (!reactNextLine || line.speaker !== 'ribbit') return 0;
       reactNextLine = false;
-      return distress;
+      return tally.distress;
     },
     onCancel() {
-      if (!live()) return;
+      if (!live() || tally.failed) return;
       setLevelPoints('level1', pointsBefore);
       stage.reset();
       if (story) {
@@ -42,6 +40,27 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
       }
     },
   };
+
+  async function failAttempt() {
+    // Cancel synchronously before the choice callback can render another line.
+    game.cancelDialogue();
+    setLevelPoints('level1', 0);
+    pointsBefore = 0;
+    stage.reset();
+    const retry = await game.showLevelComplete(
+      'Level 1 Failed',
+      'Ribbit is too distressed to continue. Try again and help her stay calm.',
+      { chime: 'fail', buttonLabel: 'Retry Level' },
+    );
+    if (!retry || !live()) return;
+    const room = await game.travel('dorm');
+    if (!room || game.session !== session || !game.isRoom(room)) return;
+    token = game.token;
+    ribbitScene = null;
+    room.hallDoors?.ribbit?.shut();
+    stage.place({ ...KNOCK_SPOT, lookAt: RIBBIT_DOOR });
+    knock(ribbitsDormDoor(room.group));
+  }
 
   async function atTheDoor() {
     ribbitScene = null;
@@ -59,8 +78,8 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
 
   function knock(door) {
     if (!live()) return;
-    tally = createChoiceTally(level1RibbitDialogue);
-    distress = 1;
+    tally = createLevel1Attempt();
+    setLevelPoints('level1', 0);
     reactNextLine = false;
     game.playDialogue('level1Ribbit', {
       ...scoring, stopAt: 'l1_inside', lookAt: RIBBIT_DOOR,
@@ -76,13 +95,13 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
   }
 
   async function goInside() {
-    if (!live()) return;
+    if (!live() || tally.failed) return;
     const room = await game.travel('ribbit');
     if (!room || game.session !== session || !game.isRoom(room)) return;
     token = game.token;
     ribbitScene = room.ribbitScene;
     const { door, points, seatY, setPose, setDistress, shots } = ribbitScene;
-    setDistress(distress);
+    setDistress(tally.distress);
     door.open({ immediate: true });
     stage.place({ ...points.DOORWAY, lookAt: points.BEDSIDE });
 
@@ -114,7 +133,7 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
         : node,
       onNode: node => actions[node.action]?.(),
       async onComplete() {
-        if (!live()) return;
+        if (!live() || tally.failed) return;
         onComplete?.(tally.points);
         stage.hold(true);
         stage.stand();
