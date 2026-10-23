@@ -1810,6 +1810,9 @@ document.addEventListener('pointerlockchange', () => {
   if (isLocked) {
     overlay.classList.add('hidden');
     pauseMenu.hidden = true;
+    // Unfreeze a conversation the pause below froze, so its voice clip
+    // picks up where it stopped.
+    if (paused) dialogueUI.setPaused(false);
     paused = false;
     return;
   }
@@ -1821,6 +1824,10 @@ document.addEventListener('pointerlockchange', () => {
   if (!currentRoom || !readyToPlay) return; // home screen, loading or endLevel — handled elsewhere
   // Esc mid-game: show the pause menu
   paused = true;
+  // Freeze an in-room conversation behind the menu, as pauseOpening does.
+  // Left running, its voice clip played out unheard and the player came back
+  // to silent text.
+  dialogueUI.setPaused(true);
   overlay.classList.remove('hidden');
   overlayTitle.textContent = 'Paused';
   overlaySubtitle.textContent = 'Press Esc or click Resume to continue';
