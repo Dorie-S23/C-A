@@ -13,17 +13,21 @@ import { loadJax } from '../characters/jax.js';
 // three times over.
 const SPAWN_AT = { x: 0, z: -15 };
 
-// Full sprint, closer to camera than either existing shot — this is the
-// one the story actually hangs a decision on ("follow him"), so it reads
-// as more urgent, not just a background flourish.
-const RUN_FROM = new THREE.Vector3(1.1, 0, -12);
-const RUN_TO = new THREE.Vector3(1.1, 0, -19.5);
-const RUN_DURATION = 1.4;
+// Same travel-distance-to-camera-distance ratio as Kaufmo's hallway
+// cutscene (see kaufmoHallwayCutscene.js's own comment on this): he needs
+// to already be small and distant by the time playPassBy's update() flips
+// him invisible at t>=1, or the cut reads as a pop, not "gone round the
+// corner". An earlier version of this shot ran him only ~7.5m while the
+// camera sat ~8m from his endpoint — half Kaufmo's margin — which is
+// exactly that pop.
+const RUN_FROM = new THREE.Vector3(1.1, 0, -9);
+const RUN_TO = new THREE.Vector3(1.1, 0, -24);
+const RUN_DURATION = 2.8;
 
-const CAMERA_POSITION = new THREE.Vector3(2.4, 1.5, -11.2);
-const CAMERA_LOOK_AT = new THREE.Vector3(0.9, 1.0, -18);
+const CAMERA_POSITION = new THREE.Vector3(2.6, 1.5, -8.2);
+const CAMERA_LOOK_AT = new THREE.Vector3(0.9, 1.0, -21);
 
-const HOLD_AFTER = 0.3;
+const HOLD_AFTER = 0.35;
 
 /**
  * Loads the hall + Jax once, ahead of time, so the actual cutscene never
