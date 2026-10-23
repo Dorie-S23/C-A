@@ -1124,8 +1124,12 @@ function talkToKaufmo(kaufmoApi, token) {
   // as Ribbit's/Caine's own faceTowards/setSpeaking — previously he just
   // stood there frozen through the whole conversation.
   kaufmoApi.faceTowards(player.position);
-  const onNode = node => kaufmoApi.setSpeaking(node.speaker === 'kaufmo');
-  const stopTalking = () => kaufmoApi.setSpeaking(false);
+  const onNode = (node) => {
+    const speaking = node.speaker === 'kaufmo';
+    kaufmoApi.setSpeaking(speaking);
+    kaufmoApi.setPose(speaking ? (node.mood || 'neutral') : 'neutral');
+  };
+  const stopTalking = () => { kaufmoApi.setSpeaking(false); kaufmoApi.setPose('neutral'); };
 
   if (preLevel1Session && !storyProgress.ribbitComplete) {
     showHint('Check on Ribbit first. Kaufmo can wait here.', 4500);
