@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { generateMaze } from '../maze/generateMaze.js';
+import { loadJax } from '../characters/jax.js';
 
 // Exported so main.js can size the player's outer bounds without duplicating
 // numbers, the same way room.js exposes ROOM.
@@ -38,9 +39,9 @@ function createCheckerTexture() {
 }
 
 /**
- * Builds the level-3 maze. Kept async (like the GLB room loaders) so
- * main.js can treat every room the same way, even though this one has no
- * network fetch to await.
+ * Builds the level-3 maze. Loads the real Jax model (the same rig/run-cycle
+ * the Pre-Level-1 hallway cutscene uses) before building, replacing what
+ * used to be a placeholder cylinder marking his spot.
  *
  * @returns {Promise<{ group: THREE.Group, bounds: THREE.Box3, spawn: THREE.Vector3,
  *   spawnFacing: number, colliders: THREE.Box3[],
@@ -50,11 +51,13 @@ function createCheckerTexture() {
  *   hazards: Array<{ mesh: THREE.Object3D, radius: number }> }>}
  */
 export function loadMazeRoom(onProgress) {
-  onProgress?.(1);
-  return Promise.resolve(buildMaze());
+  return loadJax().then((jaxApi) => {
+    onProgress?.(1);
+    return buildMaze(jaxApi);
+  });
 }
 
-function buildMaze() {
+function buildMaze(jaxApi) {
   const { cols, rows, cellSize, wallHeight, wallThickness } = MAZE;
   const maze = generateMaze(cols, rows);
 
@@ -165,17 +168,19 @@ function buildMaze() {
   // (x, z), so solving for the desired (dx, dz) gives this atan2.
   const spawnFacing = Math.atan2(-openDir.dx, -openDir.dz);
 
-  // Placeholder markers stand in for the real Jax model / exit dressing
-  // until the team has those assets — swap the meshes, keep the triggers.
+  // The exit still gets a placeholder marker — real dressing (a doorway,
+  // light, etc.) is still for the team to add — but Jax himself is the
+  // real model now, not a stand-in.
   const jaxCenter = cellCenter(maze.jax.r, maze.jax.c);
   const jaxNeighborCenter = cellCenter(maze.jaxNeighbor.r, maze.jaxNeighbor.c);
-  const jaxMarker = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.4, 0.4, 1.6, 12),
-    new THREE.MeshStandardMaterial({ color: 0x8a7bd6, emissive: 0x241f4d, emissiveIntensity: 0.4 }),
-  );
-  jaxMarker.position.set(jaxCenter.x, 0.8, jaxCenter.z);
-  jaxMarker.name = 'JaxMarker';
-  group.add(jaxMarker);
+  const { jax } = jaxApi;
+  jax.position.set(jaxCenter.x, 0, jaxCenter.z);
+  // Facing back down the one corridor leading to him — the direction
+  // anyone finding him actually approaches from — rather than an arbitrary
+  // default orientation.
+  jax.rotation.y = Math.atan2(jaxNeighborCenter.x - jaxCenter.x, jaxNeighborCenter.z - jaxCenter.z);
+  jax.visible = true;
+  group.add(jax);
 
   const exitCenter = cellCenter(maze.exit.r, maze.exit.c);
   const exitMarker = new THREE.Mesh(
@@ -186,9 +191,13 @@ function buildMaze() {
   exitMarker.name = 'ExitMarker';
   group.add(exitMarker);
 
-  // Jax wanders a short back-and-forth patrol between his dead end and its
-  // one open neighbor, rather than standing still — a stand-in for the
-  // plan's "pathfinding/wandering AI (simple waypoint system)" task.
+  // His found-trigger still covers both his own cell and the approach
+  // neighbor's — generous on purpose, same cushion the old patrol-covering
+  // zone gave, even though he's standing still here rather than pacing
+  // between them (a real walk-cycle patrol needs its own per-frame driver;
+  // the generic mover system below just slides a mesh's position, which
+  // reads fine for a marker shape but not for a rigged character with legs
+  // that never move — left for a later pass).
   const jaxWaypoints = [
     new THREE.Vector3(jaxCenter.x, 0.8, jaxCenter.z),
     new THREE.Vector3(jaxNeighborCenter.x, 0.8, jaxNeighborCenter.z),
@@ -236,9 +245,7 @@ function buildMaze() {
     exit: makeTrigger(exitCenter),
   };
 
-  const movers = [
-    { mesh: jaxMarker, waypoints: jaxWaypoints, speed: 0.6, targetIndex: 1, direction: 1 },
-  ];
+  const movers = [];
   const hazards = [];
   if (hazardMarker) {
     movers.push({ mesh: hazardMarker, waypoints: hazardWaypoints, speed: 1.4, targetIndex: 1, direction: 1, spin: true });
