@@ -12,6 +12,7 @@
     "build": "vite build",
     "package": "node tools/package.mjs",
     "voices": "node tools/generateVoices.mjs",
+    "sounds": "node tools/generateSounds.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

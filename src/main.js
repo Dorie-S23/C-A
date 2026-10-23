@@ -19,6 +19,7 @@ import { preloadJaxHallwayCutscene, playJaxHallwayCutscene } from './cutscenes/j
 import { createCaineApproachCutscene } from './cutscenes/caineApproachCutscene.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
 import { createVoicePlayer } from './audio/voicePlayer.js';
+import { createAmbience } from './audio/ambience.js';
 import { createTitleScreen } from './ui/titleScreen.js';
 import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold } from './state/escapeThreshold.js';
 import { createStoryProgress } from './game/storyProgress.js';
@@ -138,6 +139,8 @@ const camera = new THREE.PerspectiveCamera(
   500,
 );
 const openingAudio = createOpeningAudio(camera);
+// Each room's looping background bed; shares the opening audio's context.
+const ambience = createAmbience(() => openingAudio.context);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -376,6 +379,10 @@ const SENSITIVITY_KEY = 'tadc.mouseSensitivity';
 const voiceVolumeInput = document.getElementById('voice-volume');
 const voiceVolumeValue = document.getElementById('voice-volume-value');
 const VOICE_VOLUME_KEY = 'tadc.voiceVolume';
+const ambienceVolumeInput = document.getElementById('ambience-volume');
+const ambienceVolumeValue = document.getElementById('ambience-volume-value');
+const AMBIENCE_VOLUME_KEY = 'tadc.ambienceVolume';
+const DEFAULT_AMBIENCE_VOLUME = 0.45;
 
 const titleScreen = createTitleScreen({
   renderer,
@@ -434,6 +441,27 @@ voiceVolumeInput.addEventListener('input', () => {
   setVoiceVolume(Number(voiceVolumeInput.value));
   try {
     localStorage.setItem(VOICE_VOLUME_KEY, voiceVolumeInput.value);
+  } catch {
+    // Storage blocked — the setting just won't persist.
+  }
+});
+
+// Room ambience volume, 0 (off) to 1, persisted the same way.
+function setAmbienceVolume(value) {
+  ambience.setVolume(value);
+  ambienceVolumeInput.value = value;
+  ambienceVolumeValue.textContent = value === 0 ? 'off' : `${Math.round(value * 100)}%`;
+}
+try {
+  const stored = Number(localStorage.getItem(AMBIENCE_VOLUME_KEY) ?? DEFAULT_AMBIENCE_VOLUME);
+  setAmbienceVolume(Number.isFinite(stored) ? Math.max(0, Math.min(1, stored)) : DEFAULT_AMBIENCE_VOLUME);
+} catch {
+  setAmbienceVolume(DEFAULT_AMBIENCE_VOLUME);
+}
+ambienceVolumeInput.addEventListener('input', () => {
+  setAmbienceVolume(Number(ambienceVolumeInput.value));
+  try {
+    localStorage.setItem(AMBIENCE_VOLUME_KEY, ambienceVolumeInput.value);
   } catch {
     // Storage blocked — the setting just won't persist.
   }
@@ -586,6 +614,8 @@ function returnToHome({ toRoomPicker = false } = {}) {
   if (dialogueUI.isActive) dialogueUI.cancel();
   minimap.hide();
   paused = false;
+  ambience.setRoom(null);
+  ambience.setPaused(false);
   caineArrivalIn = null;
   resetMoveState();
   resetStage();
@@ -713,6 +743,7 @@ function pauseOpening(value) {
   activeOpening?.setPaused(value);
   activeEntrance?.setPaused(value);
   activeJaxPass?.setPaused(value);
+  ambience.setPaused(value);
   dialogueUI.setPaused(value);
   if (!value) clock.getDelta(); // a background-tab pause must not fast-forward on resume
   resetMoveState();
@@ -1671,6 +1702,7 @@ function applyLoadedRoom({
   roomInteractables = currentRoomInfo.interactables;
   currentRoom = group;
   currentRoomKey = roomKey;
+  ambience.setRoom(roomKey);
   controlsTutorial.enterRoom(roomKey);
   player.visible = true;
   scene.add(group);
@@ -2016,6 +2048,7 @@ document.addEventListener('pointerlockchange', () => {
     // Unfreeze a conversation the pause below froze, so its voice clip
     // picks up where it stopped.
     if (paused) dialogueUI.setPaused(false);
+    ambience.setPaused(false);
     paused = false;
     return;
   }
@@ -2032,6 +2065,7 @@ document.addEventListener('pointerlockchange', () => {
   // Left running, its voice clip played out unheard and the player came back
   // to silent text.
   dialogueUI.setPaused(true);
+  ambience.setPaused(true);
   overlay.classList.remove('hidden');
   overlayTitle.textContent = 'Paused';
   overlaySubtitle.textContent = 'Press Esc or click Resume to continue';
@@ -3207,6 +3241,7 @@ function applyStagePose(dt) {
     const rap = Math.max(0, Math.sin(rapPhase * Math.PI * 2));
     if (rapPhase > gesture.taps + 0.25 && gesture.taps < KNOCK_TAPS) {
       gesture.taps++;
+      openingAudio.playKnock();
       gesture.onTap?.(gesture.taps);
     }
     bendBone(pomniBones.RightArm, pomni, SIDEWAYS, -1.25 * raise);

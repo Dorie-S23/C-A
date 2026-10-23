@@ -14,3 +14,7 @@ _t01_tmp/
 artifacts/
 assets-src/animation-development/
 assets-src/Pomni_Waking_Animation.blend*
+
+# Local secrets: the ElevenLabs API key for npm run voices / sounds.
+.env
+.env.*
