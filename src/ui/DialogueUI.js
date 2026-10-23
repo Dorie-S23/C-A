@@ -1,6 +1,7 @@
 import { createDialogueEngine } from '../dialogue/dialogueEngine.js';
 import { SPRITES } from './portraitSprites.js';
 import { ICONS } from './portraitIcons.js';
+import { speechText } from '../audio/voiceKey.js';
 
 const TYPE_SPEED_MS = 22;
 // With the pointer locked there's no cursor, so mouse movement steps the
@@ -21,8 +22,15 @@ const CHOICE_HINT = 'move the mouse or ↑/↓ to pick · click or press Space t
  * Typing reveals text a character at a time; advancing mid-type snaps
  * straight to the full line instead of queuing another step, so mashing
  * the advance key never skips a line.
+ *
+ * `voice` (optional, see audio/voicePlayer.js) speaks each line as it
+ * appears. Snapping a line to full text leaves its clip playing; moving to
+ * the next node, pausing, cancelling or finishing stops or pauses it.
+ *
+ * A picked choice option is then shown (and voiced) as its speaker's own
+ * line, and the next advance brings in the reply — see selectOption.
  */
-export function createDialogueUI({ speakers }) {
+export function createDialogueUI({ speakers, voice = null }) {
   const root = document.getElementById('dialogue');
   const box = document.getElementById('dialogue-box');
   const portraitLeft = document.getElementById('dialogue-portrait-left');
@@ -53,6 +61,13 @@ export function createDialogueUI({ speakers }) {
   let pointerTravel = 0;
   let awaitingNode = false;
   let nodeGeneration = 0;
+  // skipToEnd renders every remaining node in one go; voicing each would
+  // just fire off a burst of clip downloads that are cut off immediately.
+  let skipping = false;
+  // The option just picked, shown as its speaker's line before the reply.
+  // While set, engine.current is already the reply — not yet rendered, so
+  // its onNode hasn't fired.
+  let echo = null;
 
   /**
    * Fills a portrait slot with whichever speaker last occupied that side.
@@ -151,6 +166,7 @@ export function createDialogueUI({ speakers }) {
       // Scene actions own this beat until they arrive. Escape still cancels.
       awaitingNode = true;
       stopTyping();
+      voice?.stop();
       root.style.visibility = 'hidden';
       Promise.resolve(pending).then(() => {
         if (!engine || generation !== nodeGeneration) return;
@@ -168,7 +184,7 @@ export function createDialogueUI({ speakers }) {
   }
 
   function displayNode(node) {
-    node = lineFor?.(node) ?? node;
+    if (node !== echo) node = lineFor?.(node) ?? node;
 
     // A silent sync point for the scene behind the dialogue (e.g. cueing a
     // background animation) rather than anything the player reads — skip
@@ -179,6 +195,10 @@ export function createDialogueUI({ speakers }) {
       renderNode();
       return;
     }
+
+    const spoken = node.type === 'line' || (node.type === 'choice' && node.speaker && node.text);
+    if (spoken && !skipping) voice?.play(node.speaker, node.voiceText ?? node.text);
+    else voice?.stop();
 
     if (node.type === 'line' && node.side) {
       if (node.side === 'left') {
@@ -195,7 +215,7 @@ export function createDialogueUI({ speakers }) {
     renderPortrait(portraitRight, rightSpeaker, rightMood, activeSide === 'right');
 
     box.classList.toggle('dialogue-box-beat', node.type === 'beat');
-    setDistress(node.type === 'line' && distressFor ? distressFor(node) : 0);
+    setDistress(node.type === 'line' && node !== echo && distressFor ? distressFor(node) : 0);
     optionsEl.hidden = true;
     continueEl.textContent = CONTINUE_HINT;
 
@@ -226,22 +246,38 @@ export function createDialogueUI({ speakers }) {
   }
 
   function selectOption(i) {
-    if (!engine || paused || awaitingNode) return;
+    if (!engine || paused || awaitingNode || echo) return;
+    const choice = engine.current;
     const option = engine.choose(i);
     if (option && onChoice) onChoice(option, engine.current);
+    // Have the speaker actually say what was picked, as a line of their own,
+    // instead of jumping straight to the reply (which would cut the voice
+    // off at once). Action-only options like "(Sit down next to her and
+    // wait.)" have nothing to say and go straight on, as before.
+    const said = option && choice.speaker ? speechText(option.text) : '';
+    if (said) {
+      const side = rightSpeaker === choice.speaker ? 'right' : 'left';
+      echo = {
+        type: 'line', speaker: choice.speaker, side, mood: side === 'left' ? leftMood : rightMood,
+        text: said, voiceText: option.text, // the clip is named after the option as written
+      };
+      displayNode(echo);
+      return;
+    }
     renderNode();
   }
 
   function advance() {
     if (!engine || paused || awaitingNode) return;
     const node = engine.current;
-    if (!node || node.type === 'choice') return;
+    if (!echo && (!node || node.type === 'choice')) return;
     if (typing) {
       stopTyping();
       textEl.textContent = fullText;
       return;
     }
-    engine.advance();
+    if (echo) echo = null; // on to the reply, which choose() already moved to
+    else engine.advance();
     renderNode();
   }
 
@@ -256,10 +292,11 @@ export function createDialogueUI({ speakers }) {
   }
 
   function finish() {
-    nodeGeneration++; awaitingNode = false;
+    nodeGeneration++; awaitingNode = false; echo = null;
     paused = false; root.style.visibility = '';
     root.classList.add('hidden');
     stopTyping();
+    voice?.stop();
     const callback = onComplete;
     engine = null;
     onComplete = null;
@@ -281,10 +318,11 @@ export function createDialogueUI({ speakers }) {
    */
   function cancelDialogue() {
     if (!engine) return;
-    nodeGeneration++; awaitingNode = false;
+    nodeGeneration++; awaitingNode = false; echo = null;
     paused = false; root.style.visibility = '';
     root.classList.add('hidden');
     stopTyping();
+    voice?.stop();
     const callback = onCancel;
     engine = null;
     onComplete = null;
@@ -307,7 +345,7 @@ export function createDialogueUI({ speakers }) {
     }
     if (awaitingNode) { event.preventDefault(); return; }
 
-    const choosing = engine?.current?.type === 'choice';
+    const choosing = !echo && engine?.current?.type === 'choice';
     if (choosing) {
       const count = optionButtons.length;
       if (event.code === 'ArrowDown' || event.code === 'ArrowRight' || event.code === 'KeyS') {
@@ -344,7 +382,7 @@ export function createDialogueUI({ speakers }) {
   // option buttons. Handle them here instead: moving the mouse steps the
   // highlight, and a click anywhere picks it or continues.
   document.addEventListener('mousemove', (event) => {
-    if (paused || awaitingNode || !document.pointerLockElement || engine?.current?.type !== 'choice') return;
+    if (paused || awaitingNode || echo || !document.pointerLockElement || engine?.current?.type !== 'choice') return;
     pointerTravel += event.movementY;
     const steps = Math.trunc(pointerTravel / OPTION_STEP_PX);
     if (steps === 0) return;
@@ -359,7 +397,7 @@ export function createDialogueUI({ speakers }) {
   });
   document.addEventListener('mousedown', (event) => {
     if (event.button !== 0 || !document.pointerLockElement || !engine) return;
-    if (engine.current?.type === 'choice') selectOption(highlightedIndex);
+    if (engine.current?.type === 'choice' && !echo) selectOption(highlightedIndex);
     else advance();
   });
   window.addEventListener('keydown', handleKeydown);
@@ -382,7 +420,7 @@ export function createDialogueUI({ speakers }) {
       onComplete: complete, onChoice: choice, onCancel: cancel, distressFor: distress, onNode: node, lineFor: transform,
       startAt, stopAt,
     } = {}) {
-      nodeGeneration++; awaitingNode = false;
+      nodeGeneration++; awaitingNode = false; echo = null;
       paused = false; root.style.visibility = '';
       engine = createDialogueEngine(script, { startAt, stopAt });
       onComplete = complete ?? null;
@@ -411,30 +449,45 @@ export function createDialogueUI({ speakers }) {
       if (!engine || paused || awaitingNode) return;
       const running = engine;
       stopTyping();
-      for (let guard = 0; engine === running && engine.current && guard < 1000; guard++) {
-        if (awaitingNode) return;
-        const node = engine.current;
-        if (node.type === 'choice') {
-          const best = node.options.reduce((top, option, i) =>
-            ((option.points ?? 0) > (node.options[top].points ?? 0) ? i : top), 0);
-          const option = engine.choose(best);
-          if (option && onChoice) onChoice(option, engine.current);
-        } else {
-          engine.advance();
+      voice?.stop();
+      skipping = true;
+      try {
+        if (echo) {
+          // The reply to a picked option hasn't been shown yet: show it first
+          // (so its onNode runs), then skip on from it like any other node.
+          echo = null;
+          renderNode();
+          stopTyping();
         }
-        if (engine !== running) return;
-        renderNode(); // Runs each new cue once and honours awaited scene actions.
-        stopTyping();
+        for (let guard = 0; engine === running && engine.current && guard < 1000; guard++) {
+          if (awaitingNode) return;
+          const node = engine.current;
+          if (node.type === 'choice') {
+            const best = node.options.reduce((top, option, i) =>
+              ((option.points ?? 0) > (node.options[top].points ?? 0) ? i : top), 0);
+            const option = engine.choose(best);
+            if (option && onChoice) onChoice(option, engine.current);
+          } else {
+            engine.advance();
+          }
+          if (engine !== running) return;
+          renderNode(); // Runs each new cue once and honours awaited scene actions.
+          stopTyping();
+        }
+      } finally {
+        skipping = false;
       }
     },
     setPaused(value) {
       paused = value;
+      voice?.setPaused(value);
       root.style.visibility = value || awaitingNode ? 'hidden' : '';
     },
     get isActive() {
       return engine !== null;
     },
     get currentSpeaker() {
+      if (echo) return echo.speaker;
       return engine?.current?.type === 'line' ? engine.current.speaker ?? null : null;
     },
     get isWaiting() { return awaitingNode; },
