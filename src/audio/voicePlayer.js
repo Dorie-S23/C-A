@@ -12,7 +12,8 @@ import { VOICE_DIR, VOICE_MANIFEST, voiceKey } from './voiceKey.js';
  * One reused <audio> element rather than THREE.Audio: voice is UI sound,
  * not positional, and streaming a short MP3 needs no decode-to-buffer step.
  *
- * @returns {{ play(speaker: string, text: string): boolean, progress(): number|null, stop(): void,
+ * @returns {{ play(speaker: string, text: string): boolean, has(speaker: string, text: string): boolean,
+ *   progress(): number|null, stop(): void,
  *   setPaused(paused: boolean): void, setVolume(volume: number): void }}
  */
 export function createVoicePlayer() {
@@ -61,6 +62,10 @@ export function createVoicePlayer() {
       // Rejects if the browser hasn't had a user gesture yet; the text still shows.
       audio.play().catch(() => { active = false; following = false; });
       return true;
+    },
+    /** Whether play() would find a clip for this line (without starting it). */
+    has(speaker, text) {
+      return Boolean(speaker && text && volume > 0 && available.has(voiceKey(speaker, text)));
     },
     /**
      * How far through the current line's clip playback is, 0–1, for the

@@ -8,10 +8,9 @@ import { createStaircase } from '../props/accessStairs.js';
 
 // Level 2's five office photos (see PHOTO_COUNT in level2Items.js),
 // scattered round the lobby rather than sitting in Kaufmo's own room — a
-// real search, not a hand-in on arrival. scatterPictures() picks different
-// wall spots each time this room loads, so a retry (the search timer
-// running out, or just leaving and coming back) doesn't put them back
-// where they were. ca6.png exists alongside these but isn't used.
+// real search, not a hand-in on arrival. scatterPictures() keeps wall spots
+// in the shared item state for the whole attempt. Only a retry or New Game
+// picks new positions. ca6.png exists alongside these but isn't used.
 const PICTURES = [
   { id: 'ca1', url: './models/objects/ca1.png' },
   { id: 'ca2', url: './models/objects/ca2.png' },
@@ -51,6 +50,7 @@ export function loadTadcRoom(onProgress, { from, items } = {}) {
     const defaultSpawn = room.spawn;
     replaceCastleWalls(room, castleWalls.scene);
     fixExportedPlastics(room.group);
+    singleSided(room.group, SINGLE_SIDED);
     const doors = setupLobbyDoors(room.group, room.spawn, room.collisionMeshes);
     room.interactables = doors.interactables;
     room.update = doors.update;
@@ -79,6 +79,7 @@ export function loadTadcRoom(onProgress, { from, items } = {}) {
     const stairs = createStaircase({ base: STAIRS_BASE, floorY: STAIRS_FLOOR_Y });
     room.group.add(stairs.group);
     room.collisionMeshes.push(...stairs.colliders);
+    room.stairs = stairs.zone; // main.js hints the backwards long jump here
     return room;
   });
 }
@@ -97,11 +98,37 @@ function replaceCastleWalls(room, walls) {
   walls.updateMatrixWorld(true);
   walls.traverse((child) => {
     if (!child.isMesh) return;
+    // These wall blocks are thin slabs, front and back faces millimetres
+    // apart, exported double-sided: from any distance each block's back
+    // face fought its front one for the same pixels, flickering in bands as
+    // the camera moved. Each slab has a face on both sides, so drawing only
+    // front faces loses nothing.
+    for (const material of [child.material].flat()) material.side = THREE.FrontSide;
     child.castShadow = true;
     child.receiveShadow = true;
     room.collisionMeshes.push({ mesh: child, box: new THREE.Box3().setFromObject(child) });
   });
 }
+
+// Thin, closed pieces of the lobby's own export that, double-sided, have
+// their back faces fighting their front ones (see replaceCastleWalls).
+// They share materials with the rest of the lobby, so each gets its own.
+const SINGLE_SIDED = ['Castle_Stairs'];
+
+function singleSided(group, names) {
+  for (const name of names) {
+    const mesh = group.getObjectByName(name);
+    if (!mesh?.isMesh) continue;
+    mesh.material = [mesh.material].flat().map((material) => {
+      const own = material.clone();
+      own.side = THREE.FrontSide;
+      return own;
+    });
+    if (mesh.material.length === 1) mesh.material = mesh.material[0];
+  }
+}
+
+const TRANSMISSION_IGNORED = 0.1; // below this, a material's see-through look isn't worth it
 
 /**
  * Most of the lobby (doors, buildings, props) uses vertex-coloured
@@ -109,7 +136,7 @@ function replaceCastleWalls(room, walls) {
  * translate, so it wrote them out as fully metallic and fully rough. A
  * metal shows no diffuse colour at all — only reflections — so they
  * rendered nearly black. Restore them to plain non-metals so their vertex
- * colours show.
+ * colours show. Also turns off the walls' token transmission (see below).
  */
 function fixExportedPlastics(group) {
   group.traverse((child) => {
@@ -118,6 +145,14 @@ function fixExportedPlastics(group) {
     for (const material of materials) {
       if (material.metalness >= 0.99 && material.roughness >= 0.99 && !material.metalnessMap) {
         material.metalness = 0;
+      }
+      // The tent's walls ("Circus Tent") export with a token 3% transmission.
+      // three.js draws any transmissive surface see-through, with a blurred,
+      // low-resolution copy of what's behind it redrawn every frame — so
+      // faint ghosts of the ledges and blocks behind each wall flickered as
+      // the camera moved. Too faint to be worth an extra render pass anyway.
+      if (material.transmission > 0 && material.transmission < TRANSMISSION_IGNORED) {
+        material.transmission = 0;
       }
     }
   });

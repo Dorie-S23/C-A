@@ -35,8 +35,13 @@ const CHOICE_HINT = 'move the mouse or ↑/↓ to pick · click or press Space t
  *
  * A picked choice option is then shown (and voiced) as its speaker's own
  * line, and the next advance brings in the reply — see selectOption.
+ *
+ * @param {{ speakers: object, voice?: object, escapeCancels?: () => boolean }} options
+ *   escapeCancels: whether Escape backs out of the script right now. In
+ *   play, Escape is the pause key (it frees the mouse), so main.js says no
+ *   then and the conversation simply carries on after the pause.
  */
-export function createDialogueUI({ speakers, voice = null }) {
+export function createDialogueUI({ speakers, voice = null, escapeCancels = () => true }) {
   const root = document.getElementById('dialogue');
   const box = document.getElementById('dialogue-box');
   const portraitLeft = document.getElementById('dialogue-portrait-left');
@@ -74,6 +79,7 @@ export function createDialogueUI({ speakers, voice = null }) {
   // While set, engine.current is already the reply — not yet rendered, so
   // its onNode hasn't fired.
   let echo = null;
+  let pendingVoice = null; // an awaited scene revealed this line while paused
 
   /**
    * Fills a portrait slot with whichever speaker last occupied that side.
@@ -219,8 +225,18 @@ export function createDialogueUI({ speakers, voice = null }) {
 
     const spoken = node.type === 'line' || (node.type === 'choice' && node.speaker && node.text);
     let voiced = false;
-    if (spoken && !skipping) voiced = voice?.play(node.speaker, node.voiceText ?? node.text) === true;
-    else voice?.stop();
+    pendingVoice = null;
+    if (spoken && !skipping) {
+      const text = node.voiceText ?? node.text;
+      if (paused) {
+        // Held until the pause menu closes (setPaused). Still counts as
+        // voiced: typing doesn't advance while paused either, so the text
+        // waits too and then keeps pace with the voice once it starts.
+        voice?.stop();
+        pendingVoice = { speaker: node.speaker, text };
+        voiced = voice?.has(node.speaker, text) === true;
+      } else voiced = voice?.play(node.speaker, text) === true;
+    } else voice?.stop();
 
     if (node.type === 'line' && node.side) {
       if (node.side === 'left') {
@@ -272,6 +288,7 @@ export function createDialogueUI({ speakers, voice = null }) {
     const choice = engine.current;
     const option = engine.choose(i);
     if (option && onChoice) onChoice(option, engine.current);
+    if (!engine) return; // A choice can synchronously fail and cancel the level.
     // Have the speaker actually say what was picked, as a line of their own,
     // instead of jumping straight to the reply (which would cut the voice
     // off at once). Action-only options like "(Sit down next to her and
@@ -314,7 +331,7 @@ export function createDialogueUI({ speakers, voice = null }) {
   }
 
   function finish() {
-    nodeGeneration++; awaitingNode = false; echo = null;
+    nodeGeneration++; awaitingNode = false; echo = null; pendingVoice = null;
     paused = false; root.style.visibility = '';
     root.classList.add('hidden');
     stopTyping();
@@ -340,7 +357,7 @@ export function createDialogueUI({ speakers, voice = null }) {
    */
   function cancelDialogue() {
     if (!engine) return;
-    nodeGeneration++; awaitingNode = false; echo = null;
+    nodeGeneration++; awaitingNode = false; echo = null; pendingVoice = null;
     paused = false; root.style.visibility = '';
     root.classList.add('hidden');
     stopTyping();
@@ -361,6 +378,7 @@ export function createDialogueUI({ speakers, voice = null }) {
     if (paused || root.classList.contains('hidden')) return;
 
     if (event.code === 'Escape') {
+      if (!escapeCancels()) return;
       event.preventDefault();
       cancelDialogue();
       return;
@@ -442,7 +460,7 @@ export function createDialogueUI({ speakers, voice = null }) {
       onComplete: complete, onChoice: choice, onCancel: cancel, distressFor: distress, onNode: node, lineFor: transform,
       startAt, stopAt,
     } = {}) {
-      nodeGeneration++; awaitingNode = false; echo = null;
+      nodeGeneration++; awaitingNode = false; echo = null; pendingVoice = null;
       paused = false; root.style.visibility = '';
       engine = createDialogueEngine(script, { startAt, stopAt });
       onComplete = complete ?? null;
@@ -502,7 +520,11 @@ export function createDialogueUI({ speakers, voice = null }) {
     },
     setPaused(value) {
       paused = value;
-      voice?.setPaused(value);
+      if (!value && pendingVoice) {
+        const { speaker, text } = pendingVoice;
+        pendingVoice = null;
+        voice?.play(speaker, text);
+      } else voice?.setPaused(value);
       root.style.visibility = value || awaitingNode ? 'hidden' : '';
     },
     get isActive() {

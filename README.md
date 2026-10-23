@@ -72,3 +72,7 @@ GitHub Actions ([`.github/workflows/build.yml`](.github/workflows/build.yml)) ru
 ## Story progression and verification
 
 See [docs/story-flow.md](docs/story-flow.md) for the Caine, Ribbit and Kaufmo sequence and browser checks.
+
+See [docs/maze-seeds.md](docs/maze-seeds.md) to record and reproduce a Level 3
+maze in development and use its corridor-distance placement helpers for items
+and Jax destinations.

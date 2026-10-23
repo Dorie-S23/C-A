@@ -86,6 +86,41 @@ try {
   console.log('PASS The text is complete when the voice finishes');
   await page.keyboard.press('Escape');
 
+  // An awaited room action can finish after the player opens the pause menu.
+  // Its next line must wait to speak until the same conversation resumes.
+  await page.evaluate(async () => {
+    const { preLevel1Dialogue } = await import('/src/data/dialogues.js');
+    window.ui.play([{ type: 'cue', id: 'arrival' }, preLevel1Dialogue[0]], {
+      onNode: node => node.id === 'arrival'
+        ? new Promise(resolve => { window.finishArrival = resolve; }) : undefined,
+    });
+    window.ui.setPaused(true);
+    window.finishArrival();
+  });
+  await page.waitForFunction(() => !window.ui.isWaiting);
+  await page.waitForTimeout(150);
+  assert.equal((await clip()).paused, true, 'The next line must not speak behind the pause menu');
+  assert.equal(await page.locator('#dialogue-text').textContent(), '', 'Its text must not run ahead of the held voice');
+  await page.evaluate(() => window.ui.setPaused(false));
+  await page.waitForFunction(() => !window.voiceEl.paused && window.voiceEl.currentTime > 0.1);
+  console.log('PASS An action completed while paused defers its next voice until resume');
+  await page.evaluate(() => window.ui.cancel());
+
+  await page.evaluate(async () => {
+    const { preLevel1Dialogue } = await import('/src/data/dialogues.js');
+    window.ui.play([{ type: 'cue' }, preLevel1Dialogue[0]], {
+      onNode: node => node.type === 'cue'
+        ? new Promise(resolve => { window.finishArrival = resolve; }) : undefined,
+    });
+    window.ui.setPaused(true);
+    window.finishArrival();
+  });
+  await page.waitForFunction(() => !window.ui.isWaiting);
+  await page.evaluate(() => { window.ui.cancel(); window.ui.setPaused(false); });
+  assert.equal((await clip()).paused, true);
+  assert.equal(await page.evaluate(() => window.ui.isActive), false);
+  console.log('PASS Cancelling while paused discards the deferred voice');
+
   // Choices: the picked option is said as Pomni's own line before the reply.
   await page.evaluate(async () => {
     const { level2OpeningDialogue } = await import('/src/data/dialogues.js');
