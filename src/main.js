@@ -2360,6 +2360,7 @@ function dropRoomPreload() {
 function showRoomBehindDoor(entry, show) {
   entry.peeking = show;
   const { group, hallLink } = entry.result;
+  if (hallLink.door) hallLink.door.visible = !show;
   if (!show) {
     group.removeFromParent();
     bedroomClip.copy(KEEP_ALL);
@@ -2456,12 +2457,13 @@ function walkIntoHall(link) {
   // Still getting ready: the widened bounds hold her at the threshold.
   if (!roomReady(entry)) return;
 
-  // The hall's own copy of her door is shut, so she comes out just clear
-  // of it — it reads as having closed behind her.
+  // She comes out just clear of the doorway, and the hall's copy of her
+  // door stands open into her room, just as she left her own.
   const past = link.depthPast(player.position);
   const pose = carryPose(link.toHall, link.yawToHall);
   pose.feet.addScaledVector(link.outward, Math.max(0, HALL_DOOR_CLEARANCE - past));
   enterPreloadedRoom(entry, pose);
+  currentRoomInfo.hallDoors?.pomni?.control.open({ immediate: true });
   armCaineArrival();
 }
 
@@ -2478,6 +2480,7 @@ function walkIntoPomniRoom(entry, doorway) {
   const pose = carryPose(link.toHall.clone().invert(), -link.yawToHall);
   // Just clear of her (open) door's leaf and the doorway, inside.
   pose.feet.addScaledVector(link.outward, -Math.max(0, BEDROOM_DOOR_CLEARANCE - past));
+  if (link.door) link.door.visible = true; // the hall's copy goes with the hall
   enterPreloadedRoom(entry, pose);
   // Looking back out, the hall's right there through the open door.
   currentRoom.userData.dormHallPreview?.setVisible(true);
@@ -3129,7 +3132,7 @@ function gameplayHUDContext() {
 }
 
 function focusedBedroomDoor() {
-  return currentRoomKey === 'pomni' && focusedInteractable?.prompt() === 'Exit to Hallway';
+  return currentRoomKey === 'pomni' && Boolean(focusedInteractable?.bedroomExit);
 }
 
 /** Development-only A/B review: no gameplay/input settings or production API. */

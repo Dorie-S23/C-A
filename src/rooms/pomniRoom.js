@@ -28,6 +28,7 @@ export function loadPomniRoom(onProgress, { from, travel, openingMode,
       doorName: 'Plane_1', detailNames: ['Door_Frame024', 'Plane_2'],
       to: 'dorm', prompt: 'Exit to Hallway', travel,
     });
+    exit.interactable.bedroomExit = true; // the controls tutorial's "Press E" target
     room.interactables = [exit.interactable, ...(room.interactables ?? [])];
     const doorCenter = new THREE.Box3().setFromObject(exit.interactable.objects[0]).getCenter(new THREE.Vector3());
     room.spawnFacing = Math.atan2(room.spawn.x - doorCenter.x, room.spawn.z - doorCenter.z);
@@ -71,10 +72,19 @@ export function loadPomniRoom(onProgress, { from, travel, openingMode,
         room.group.add(preview.group);
         room.group.userData.dormHallPreview = preview;
         room.hallLink = createHallLink(room, preview);
+        room.bedroomDoor = createBedroomDoor(room, preview);
+        room.group.userData.bedroomDoor = room.bedroomDoor;
         room.openDoorway = () => openDoorway(room);
-        // With the door open she just walks out (main.js swaps the hall
-        // in), so E has nothing left to offer there.
-        exit.interactable.enabled = () => !room.hallLink.isOpen();
+        // E opens and closes her door like the hall's; with it open she
+        // just walks out (main.js swaps the hall in).
+        const door = room.bedroomDoor;
+        exit.interactable.prompt = () => (door.isOpen ? 'Close door' : 'Open door');
+        exit.interactable.interact = () => (door.isOpen ? door.close() : door.open());
+        const lightingUpdate = room.update;
+        room.update = (deltaSeconds, playerPosition) => {
+          lightingUpdate?.(deltaSeconds, playerPosition);
+          door.update(deltaSeconds);
+        };
       } catch (error) {
         room.group.userData.dormHallPreviewError = String(error.message ?? error);
         console.warn('Hall preview unavailable; retaining the temporary vestibule.', error);
@@ -129,6 +139,9 @@ function createHallLink(room, preview) {
     // Rotating the world by the preview's turn adds it to every facing.
     yawToHall: -preview.group.rotation.y,
     doorway: centre,
+    // Her own door leaf. Seen from the hall it's hidden: the hall's copy of
+    // this door swings into the same doorway, and both would show.
+    door: room.group.getObjectByName('Door_Slab024'),
     isOpen: () => preview.group.visible,
     /** Whether a point has stepped out through the doorway. */
     crossed: (point) => (point[axis] - centre[axis]) * outward > 0
@@ -136,19 +149,49 @@ function createHallLink(room, preview) {
   };
 }
 
+const DOOR_SWING_SECONDS = 0.9;
+
 /**
- * Opens the bedroom doorway for good, outside Ragatha's entrance (which
- * opens its own): the door swung wide on its real hinge and the wall
- * behind the decorative door cut through. For Pomni walking in from the
- * Dorm Hall (main.js's walkIntoPomniRoom): the hall preview beyond is
- * shown separately, once she's actually in here.
+ * Her door, on its real hinge, opened and closed with E like the hall's.
+ * Open, the wall behind the decorative door is cut through and the hall
+ * shows beyond it; once it's swung fully shut the hall is hidden again.
+ * Ragatha's entrance drives the same leaf through hold().
  */
-function openDoorway(room) {
-  if (room.group.userData.doorwayOpen) return;
-  room.group.userData.doorwayOpen = true;
+function createBedroomDoor(room, preview) {
   room.group.updateMatrixWorld(true);
   const panelBox = new THREE.Box3().setFromObject(room.group.getObjectByName('Plane_1'));
-  createDoorwayAperture(room, panelBox).setEnabled(true);
-  createBedroomDoorHinge({ group: room.group, collisionMeshes: room.collisionMeshes, insidePoint: room.spawn })
-    .setOpenFraction(1);
+  const aperture = createDoorwayAperture(room, panelBox);
+  const hinge = createBedroomDoorHinge({ group: room.group, collisionMeshes: room.collisionMeshes, insidePoint: room.spawn });
+  let progress = 0, target = 0, showHall = true;
+  function set(value, ease = true) {
+    progress = THREE.MathUtils.clamp(value, 0, 1);
+    hinge.setOpenFraction(ease ? THREE.MathUtils.smootherstep(progress, 0, 1) : progress);
+    if (progress > 0) aperture.setEnabled(true);
+    if (showHall) preview.setVisible(progress > 0);
+  }
+  return {
+    get isOpen() { return target > 0; },
+    open({ immediate = false, hall = true } = {}) {
+      target = 1; showHall = hall;
+      if (immediate) set(1);
+      showHall = true;
+    },
+    close({ immediate = false } = {}) { target = 0; if (immediate) set(0); },
+    /** Puts the leaf straight at `value` (0 shut, 1 open), for a cinematic that eases its own swing. */
+    hold(value) { target = value; set(value, false); },
+    update(deltaSeconds) {
+      if (progress === target) return;
+      const step = deltaSeconds / DOOR_SWING_SECONDS;
+      set(target > progress ? Math.min(target, progress + step) : Math.max(target, progress - step));
+    },
+  };
+}
+
+/**
+ * Opens her door straight away, for Pomni walking in from the Dorm Hall
+ * (main.js's walkIntoPomniRoom), the hall's copy of it standing open. The
+ * hall preview beyond is shown separately, once she's actually in here.
+ */
+function openDoorway(room) {
+  room.bedroomDoor.open({ immediate: true, hall: false });
 }
