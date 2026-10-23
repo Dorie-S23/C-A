@@ -4,6 +4,7 @@ import { loadRoomModel } from './loadRoomModel.js';
 import { setupLobbyDoors } from './lobbyDoors.js';
 import { createCurtainPortal } from './portals.js';
 import { scatterPictures } from '../props/officePicture.js';
+import { createStaircase } from '../props/accessStairs.js';
 
 // Level 2's five office photos (see PHOTO_COUNT in level2Items.js),
 // scattered round the lobby rather than sitting in Kaufmo's own room — a
@@ -30,6 +31,14 @@ const CASTLE_WALL_SETBACK = 0.2;
 // The red curtained arch by the toy blocks leads to the Dorm Hall. It opens
 // toward +Z, into the lobby.
 const DORM_ARCH_CURTAIN = 'Plane081';
+
+// A small riser up to a platform, for actual elevation change — the lobby
+// otherwise never takes the player off one flat floor. Measured against
+// the real model (tools/verify_lobby_stairs.mjs): this stretch (x 0.5-3.5,
+// z 3-12 at floor y≈0.26) is open floor with 6m+ headroom the whole way,
+// clear of the stage, doors and everything scatterPictures might use.
+const STAIRS_BASE = { x: 2, z: 3 };
+const STAIRS_FLOOR_Y = 0.26;
 
 export function loadTadcRoom(onProgress, { from, items } = {}) {
   return Promise.all([
@@ -64,6 +73,12 @@ export function loadTadcRoom(onProgress, { from, items } = {}) {
         pictures.update(deltaSeconds);
       };
     }
+    // Added after scatterPictures (if it ran) has already committed to its
+    // wall spots — its sweep rays hit room.group directly, so a staircase
+    // added any earlier would've been fair game for a picture to land on.
+    const stairs = createStaircase({ base: STAIRS_BASE, floorY: STAIRS_FLOOR_Y });
+    room.group.add(stairs.group);
+    room.collisionMeshes.push(...stairs.colliders);
     return room;
   });
 }
