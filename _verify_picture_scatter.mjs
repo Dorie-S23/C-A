@@ -13,6 +13,10 @@ const PICTURES = [
   { id: 'ca3', url: './models/objects/ca3.png' },
 ];
 const SPAWN = { x: 0, y: 0, z: 0 };
+// Production's defaults (gridStep 10, gridRadius 4, spacing 8) are tuned
+// for the real Circus Lobby, which is enormous — scaled down to match this
+// test's small 10x10 room instead of the production room it isn't.
+const SMALL_ROOM_OPTIONS = { spacing: 2, gridStep: 3, gridRadius: 1, maxDistance: 8 };
 
 /** A plain 10x10 square room (four thin walls), fresh each call so one
  * trial's placed pictures can't shadow the next trial's raycasts. */
@@ -42,7 +46,7 @@ test('places all three pictures, each its own wall spot, none in the keep-clear 
   const room = buildRoom();
   const items = createLevel2Items();
   const keepClear = [{ x: 0, z: -4.5 }]; // right against the north wall's midpoint
-  scatterPictures(room, items, PICTURES, SPAWN, keepClear);
+  scatterPictures(room, items, PICTURES, SPAWN, keepClear, SMALL_ROOM_OPTIONS);
 
   const pictures = placedPictures(room);
   assert.equal(pictures.length, 3, 'all three should find a free wall spot in an empty square room');
@@ -63,7 +67,7 @@ test('a replay scatters them differently, not back to the same three spots', () 
   for (let trial = 0; trial < 30; trial++) {
     const room = buildRoom();
     const items = createLevel2Items();
-    scatterPictures(room, items, PICTURES, SPAWN, []);
+    scatterPictures(room, items, PICTURES, SPAWN, [], SMALL_ROOM_OPTIONS);
     const [first] = placedPictures(room);
     firstSpotKeys.add(`${first.position.x.toFixed(2)},${first.position.z.toFixed(2)}`);
   }
@@ -76,6 +80,6 @@ test('an already-collected picture is not placed again', () => {
   const room = buildRoom();
   const items = createLevel2Items();
   items.collect('ca1');
-  scatterPictures(room, items, PICTURES, SPAWN, []);
+  scatterPictures(room, items, PICTURES, SPAWN, [], SMALL_ROOM_OPTIONS);
   assert.equal(placedPictures(room).length, 2, 'only the two not-yet-collected pictures get hung');
 });

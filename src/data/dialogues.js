@@ -571,7 +571,7 @@ export const level2RoomOpeningDialogue = [
     speaker: 'kaufmo',
     side: 'right',
     mood: 'worried',
-    text: "There were three. I'm sure there were three. Bring them back to me? Please?",
+    text: "There were five. I'm sure there were five. Bring them back to me? Please?",
   },
   {
     type: 'line',
@@ -1239,7 +1239,7 @@ export const level2IdleDialogue = [
   },
 ];
 
-// Idle line once all three have been handed in, before he comes to find her.
+// Idle line once all five have been handed in, before he comes to find her.
 export const level2CompleteDialogue = [
   {
     type: 'line',
@@ -1280,7 +1280,7 @@ export const level2PayoffDialogue = [
     speaker: 'kaufmo',
     side: 'right',
     mood: 'happy',
-    text: "Same carpet in all three. Same baseboard. There's a water stain in the corner of two of them, same shape, same spot. It's not three places, Pomni. It's one room.",
+    text: "Same carpet in all five. Same baseboard. There's a water stain in the corner of two of them, same shape, same spot. It's not five places, Pomni. It's one room.",
   },
   {
     type: 'line',
@@ -1310,6 +1310,46 @@ export const level2PayoffDialogue = [
     side: 'right',
     mood: 'neutral',
     text: "Remember that? 'The door that wasn't a door'? I wrote it off as a glitch. I don't think it was.",
+  },
+  {
+    type: 'beat',
+    text: 'A door slams somewhere down the hall. Then footsteps — fast, frantic, getting closer.',
+  },
+  {
+    // The hallway cutaway plays before this beat's own text — see
+    // jaxBurstsPast's handling in main.js's talkToKaufmo, same technique as
+    // Pre-Level-1's jaxPassByText.
+    id: 'jaxBurstsPast',
+    type: 'beat',
+    text: "Jax bolts past the open doorway at a dead sprint. He doesn't even look in.",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'shocked',
+    text: "...Okay. That's new.",
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'worried',
+    text: 'Kaufmo—',
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'worried',
+    text: "Go. Follow him — I'll be right here. Just go!",
+  },
+  {
+    // Narrates the actual chase and how she ends up at the maze, instead
+    // of cutting straight from this line to "Level 2 Complete" with no
+    // sense of how she got there.
+    type: 'beat',
+    text: 'She chases him down the hall, through the lobby, past the stage — until he ducks through a door she’s never noticed before. She follows him in.',
     next: null,
   },
 ];

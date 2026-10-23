@@ -1,11 +1,17 @@
 import * as THREE from 'three';
 import { generateMaze } from '../maze/generateMaze.js';
+import { loadJax } from '../characters/jax.js';
+import { createBowlingBall, createHotChocolateMug, placeMazeFindable, pulseGlow } from '../props/mazeFindables.js';
 
 // Exported so main.js can size the player's outer bounds without duplicating
 // numbers, the same way room.js exposes ROOM.
+// Up from 9x9 — more room for the search objects to actually hide in, and
+// more separation between the spawn, Jax, the exit and the hazard's route.
+// Traversal time hasn't been played live at this size yet; if it drags,
+// cols/rows is the one number to pull back down.
 export const MAZE = {
-  cols: 9,
-  rows: 9,
+  cols: 13,
+  rows: 13,
   cellSize: 4.5, // clear corridor width = cellSize - wallThickness (~4.3 units)
   wallHeight: 3,
   wallThickness: 0.2,
@@ -34,23 +40,27 @@ function createCheckerTexture() {
 }
 
 /**
- * Builds the level-3 maze. Kept async (like the GLB room loaders) so
- * main.js can treat every room the same way, even though this one has no
- * network fetch to await.
+ * Builds the level-3 maze. Loads the real Jax model (the same rig/run-cycle
+ * the Pre-Level-1 hallway cutscene uses) before building, replacing what
+ * used to be a placeholder cylinder marking his spot.
  *
  * @returns {Promise<{ group: THREE.Group, bounds: THREE.Box3, spawn: THREE.Vector3,
  *   spawnFacing: number, colliders: THREE.Box3[],
  *   triggers: { jax: THREE.Box3, exit: THREE.Box3 },
  *   movers: Array<{ mesh: THREE.Object3D, waypoints: THREE.Vector3[], speed: number,
  *     targetIndex: number, direction: number, spin?: boolean }>,
- *   hazards: Array<{ mesh: THREE.Object3D, radius: number }> }>}
+ *   hazards: Array<{ mesh: THREE.Object3D, radius: number }>,
+ *   interactables: Array,
+ *   update: (deltaSeconds: number, playerPosition: THREE.Vector3) => void }>}
  */
-export function loadMazeRoom(onProgress) {
-  onProgress?.(1);
-  return Promise.resolve(buildMaze());
+export function loadMazeRoom(onProgress, { mazeItems } = {}) {
+  return loadJax().then((jaxApi) => {
+    onProgress?.(1);
+    return buildMaze(jaxApi, mazeItems);
+  });
 }
 
-function buildMaze() {
+function buildMaze(jaxApi, mazeItems) {
   const { cols, rows, cellSize, wallHeight, wallThickness } = MAZE;
   const maze = generateMaze(cols, rows);
 
@@ -161,17 +171,19 @@ function buildMaze() {
   // (x, z), so solving for the desired (dx, dz) gives this atan2.
   const spawnFacing = Math.atan2(-openDir.dx, -openDir.dz);
 
-  // Placeholder markers stand in for the real Jax model / exit dressing
-  // until the team has those assets — swap the meshes, keep the triggers.
+  // The exit still gets a placeholder marker — real dressing (a doorway,
+  // light, etc.) is still for the team to add — but Jax himself is the
+  // real model now, not a stand-in.
   const jaxCenter = cellCenter(maze.jax.r, maze.jax.c);
   const jaxNeighborCenter = cellCenter(maze.jaxNeighbor.r, maze.jaxNeighbor.c);
-  const jaxMarker = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.4, 0.4, 1.6, 12),
-    new THREE.MeshStandardMaterial({ color: 0x8a7bd6, emissive: 0x241f4d, emissiveIntensity: 0.4 }),
-  );
-  jaxMarker.position.set(jaxCenter.x, 0.8, jaxCenter.z);
-  jaxMarker.name = 'JaxMarker';
-  group.add(jaxMarker);
+  const { jax } = jaxApi;
+  jax.position.set(jaxCenter.x, 0, jaxCenter.z);
+  // Facing back down the one corridor leading to him — the direction
+  // anyone finding him actually approaches from — rather than an arbitrary
+  // default orientation.
+  jax.rotation.y = Math.atan2(jaxNeighborCenter.x - jaxCenter.x, jaxNeighborCenter.z - jaxCenter.z);
+  jax.visible = true;
+  group.add(jax);
 
   const exitCenter = cellCenter(maze.exit.r, maze.exit.c);
   const exitMarker = new THREE.Mesh(
@@ -182,9 +194,13 @@ function buildMaze() {
   exitMarker.name = 'ExitMarker';
   group.add(exitMarker);
 
-  // Jax wanders a short back-and-forth patrol between his dead end and its
-  // one open neighbor, rather than standing still — a stand-in for the
-  // plan's "pathfinding/wandering AI (simple waypoint system)" task.
+  // His found-trigger still covers both his own cell and the approach
+  // neighbor's — generous on purpose, same cushion the old patrol-covering
+  // zone gave, even though he's standing still here rather than pacing
+  // between them (a real walk-cycle patrol needs its own per-frame driver;
+  // the generic mover system below just slides a mesh's position, which
+  // reads fine for a marker shape but not for a rigged character with legs
+  // that never move — left for a later pass).
   const jaxWaypoints = [
     new THREE.Vector3(jaxCenter.x, 0.8, jaxCenter.z),
     new THREE.Vector3(jaxNeighborCenter.x, 0.8, jaxNeighborCenter.z),
@@ -219,6 +235,60 @@ function buildMaze() {
     group.add(hazardMarker);
   }
 
+  // The two hidden keepsakes (see src/state/mazeItems.js) go in random
+  // cells away from the start, Jax's own spot and approach, the exit, and
+  // the hazard's patrol segment — so finding them never means walking
+  // into immediate danger or them sitting right where the player already
+  // has to go anyway.
+  const findableRoom = { group, interactables: [] };
+  const placedFindables = [];
+  if (mazeItems) {
+    const reserved = new Set([
+      `${maze.start.r},${maze.start.c}`,
+      `${maze.jax.r},${maze.jax.c}`,
+      `${maze.jaxNeighbor.r},${maze.jaxNeighbor.c}`,
+      `${maze.exit.r},${maze.exit.c}`,
+      ...patrolCells.map((cell) => `${cell.r},${cell.c}`),
+    ]);
+    const openCells = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (!reserved.has(`${r},${c}`)) openCells.push({ r, c });
+      }
+    }
+    for (let i = openCells.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [openCells[i], openCells[j]] = [openCells[j], openCells[i]];
+    }
+    const findables = [
+      { id: 'bowling-ball', label: 'bowling ball', createMesh: createBowlingBall },
+      { id: 'hot-chocolate-mug', label: 'mug of hot chocolate', createMesh: createHotChocolateMug },
+    ];
+    findables.forEach(({ id, label, createMesh }, i) => {
+      const cell = openCells[i];
+      if (!cell) return;
+      const center = cellCenter(cell.r, cell.c);
+      const mesh = placeMazeFindable(findableRoom, mazeItems, id, label, createMesh, new THREE.Vector3(center.x, 0, center.z));
+      if (mesh) placedFindables.push(mesh);
+    });
+  }
+
+  // Jax breathes/trembles in place all the time (see jax.js's idle
+  // branch) and turns to actually look at Pomni once she's close — a
+  // little earlier than his found-trigger itself fires, so he's already
+  // turning by the time the hint shows rather than snapping to face her.
+  const FACE_RADIUS = cellSize * 1.4;
+  let findableElapsed = 0;
+  function update(deltaSeconds, playerPosition) {
+    jaxApi.update(deltaSeconds);
+    findableElapsed += deltaSeconds;
+    pulseGlow(placedFindables, findableElapsed);
+    if (!playerPosition) return;
+    const dx = playerPosition.x - jaxCenter.x;
+    const dz = playerPosition.z - jaxCenter.z;
+    jaxApi.faceTowards(Math.hypot(dx, dz) < FACE_RADIUS ? playerPosition : null);
+  }
+
   const triggerRadius = cellSize * 0.4;
   const makeTrigger = (center) => new THREE.Box3(
     new THREE.Vector3(center.x - triggerRadius, -1, center.z - triggerRadius),
@@ -232,9 +302,7 @@ function buildMaze() {
     exit: makeTrigger(exitCenter),
   };
 
-  const movers = [
-    { mesh: jaxMarker, waypoints: jaxWaypoints, speed: 0.6, targetIndex: 1, direction: 1 },
-  ];
+  const movers = [];
   const hazards = [];
   if (hazardMarker) {
     movers.push({ mesh: hazardMarker, waypoints: hazardWaypoints, speed: 1.4, targetIndex: 1, direction: 1, spin: true });
@@ -246,5 +314,8 @@ function buildMaze() {
     new THREE.Vector3(width / 2, wallHeight, depth / 2),
   );
 
-  return { group, bounds, spawn, spawnFacing, colliders, triggers, movers, hazards };
+  return {
+    group, bounds, spawn, spawnFacing, colliders, triggers, movers, hazards, update,
+    interactables: findableRoom.interactables,
+  };
 }
