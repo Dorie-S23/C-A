@@ -3,9 +3,13 @@ import { generateMaze } from '../maze/generateMaze.js';
 
 // Exported so main.js can size the player's outer bounds without duplicating
 // numbers, the same way room.js exposes ROOM.
+// Up from 9x9 — more room for the search objects to actually hide in, and
+// more separation between the spawn, Jax, the exit and the hazard's route.
+// Traversal time hasn't been played live at this size yet; if it drags,
+// cols/rows is the one number to pull back down.
 export const MAZE = {
-  cols: 9,
-  rows: 9,
+  cols: 13,
+  rows: 13,
   cellSize: 4.5, // clear corridor width = cellSize - wallThickness (~4.3 units)
   wallHeight: 3,
   wallThickness: 0.2,
