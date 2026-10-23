@@ -45,7 +45,8 @@ The playable sequence is:
    Theory**; his stall/payoff conversations resolve that objective and show
    **Level 2 Complete** once per run. Running out of time before all 5 are
    found shows a **LEVEL 2 FAILED** card and restarts the search (new photo
-   spots, same objective) — not yet the real "abstraction" fail effect.
+   spots, same objective, fresh 3-minute countdown on every retry) — not yet
+   the real "abstraction" fail effect.
 
 `src/game/storyProgress.js` owns the post-Caine milestones. Objectives and
 milestones survive room changes. Ribbit's completed pose and an unscored
@@ -80,6 +81,11 @@ Ribbit completion and revisit, Kaufmo's hallway/room transition,
 hand-ins, completion cards, pause and New Game. It uses installed Edge with software rendering;
 review-only browser instrumentation positions the player between encounters.
 Screenshots and the report are written to ignored `artifacts/story-flow/`.
+
+`node tools/verify_photo_search_timer_browser.mjs` checks the initial countdown,
+two consecutive timeout/retry cycles, pause, stopping after five pickups, and
+cancelling a failure card by returning home. Its report is written to
+`artifacts/photo-search-timer/`.
 
 Room/cutscene cleanup releases unique geometries, skeletons, shadow targets,
 textures and decoded bitmap sources. A loading-manager hook also releases the

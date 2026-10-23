@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { loadRoomModel } from './loadRoomModel.js';
-import { loadKaufmo } from '../characters/kaufmo.js';
+import { loadKaufmoTalk } from '../characters/kaufmoTalk.js';
 import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { createDoorPortal } from './portals.js';
 
@@ -18,8 +18,9 @@ export function loadKaufmoRoom(onProgress, {
 } = {}) {
   return Promise.all([
     loadRoomModel('./models/character%20rooms/kaufmos-room.glb', onProgress),
-    loadKaufmo(),
-  ]).then(([room, { kaufmo, collider }]) => {
+    loadKaufmoTalk(),
+  ]).then(([room, kaufmoApi]) => {
+    const { kaufmo, collider } = kaufmoApi;
     fixExportedMaterials(room.group);
     // Kaufmo always stands relative to the room's own default spawn, even
     // when `from` below moves the player's actual spawn to the doorway.
@@ -52,13 +53,21 @@ export function loadKaufmoRoom(onProgress, {
         objects,
         anchor: kaufmo, radius: 2.8,
         prompt: () => ((kaufmoStory?.introduced?.() ?? true) && items?.heldCount() > 0 ? 'Give photos to Kaufmo' : 'Talk to Kaufmo'),
-        interact: () => kaufmoStory.talk(kaufmo.getWorldPosition(new THREE.Vector3())),
+        interact: () => kaufmoStory.talk(kaufmoApi),
       }];
     }
     if (doorControl) {
       room.interactables = [...(room.interactables ?? []), doorControl.interactable];
-      room.update = doorControl.update;
     }
+    room.update = (deltaSeconds, playerPosition) => {
+      kaufmoApi.update(deltaSeconds);
+      doorControl?.update?.(deltaSeconds, playerPosition);
+    };
+
+    // Exposed so a caller outside this closure (main.js's Level 3 dev-jump
+    // button) can trigger the real talkToKaufmo(kaufmoApi, ...) itself,
+    // the same call kaufmoStory.talk above already makes from in-room E.
+    room.kaufmoApi = kaufmoApi;
 
     return room;
   });

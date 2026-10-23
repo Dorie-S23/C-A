@@ -9,16 +9,19 @@ const FRAME_HEIGHT = 0.42;
 const FRAME_DEPTH = 0.035;
 const FRAME_BORDER = 0.045;
 
-// A found-but-not-yet-collected picture glows softly — a point light plus
-// a bit of emissive warmth on the photo itself, pulsing slowly so it reads
-// as "something's here" from across a big room without looking like a
-// blinking alarm. See pulseGlow(), driven from the owning room's update().
+// A found-but-not-yet-collected picture glows softly — emissive warmth on
+// the photo itself, pulsing slowly so it reads as "something's here"
+// without looking like a blinking alarm. See pulseGlow(), driven from the
+// owning room's update(). This used to also carry its own PointLight, but
+// 5 extra dynamic lights in a room already this large and geometrically
+// heavy (the Lobby, merged with a second big GLB for its castle walls) was
+// a real, measured performance cost — removed in favour of emissive-only,
+// which is weaker from a distance (it lights the picture's own surface,
+// not the wall around it) but costs nothing extra to render.
 const GLOW_COLOR = 0xfff2c0;
-const GLOW_LIGHT_INTENSITY = 1.6;
-const GLOW_LIGHT_RANGE = 3.5;
 const GLOW_PULSE_HZ = 0.6;
-const GLOW_EMISSIVE_BASE = 0.35;
-const GLOW_EMISSIVE_SWING = 0.25;
+const GLOW_EMISSIVE_BASE = 0.4;
+const GLOW_EMISSIVE_SWING = 0.5;
 
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map();
@@ -63,13 +66,7 @@ export function createOfficePicture(imageUrl) {
   photo.position.z = FRAME_DEPTH / 2 + 0.002;
   group.add(photo);
 
-  // Stood out a little further than the photo itself, so the light spills
-  // onto the wall and floor around it rather than just the frame's face.
-  const glow = new THREE.PointLight(GLOW_COLOR, GLOW_LIGHT_INTENSITY, GLOW_LIGHT_RANGE, 2);
-  glow.position.z = FRAME_DEPTH / 2 + 0.3;
-  group.add(glow);
-
-  group.userData.glow = { light: glow, material: photoMaterial };
+  group.userData.glow = { material: photoMaterial };
   return group;
 }
 
@@ -83,9 +80,7 @@ export function pulseGlow(pictures, elapsedSeconds) {
   const wave = 0.5 + 0.5 * Math.sin(elapsedSeconds * GLOW_PULSE_HZ * Math.PI * 2);
   for (const picture of pictures) {
     if (!picture.parent) continue;
-    const { light, material } = picture.userData.glow;
-    light.intensity = GLOW_LIGHT_INTENSITY * (0.6 + 0.4 * wave);
-    material.emissiveIntensity = GLOW_EMISSIVE_BASE + GLOW_EMISSIVE_SWING * wave;
+    picture.userData.glow.material.emissiveIntensity = GLOW_EMISSIVE_BASE + GLOW_EMISSIVE_SWING * wave;
   }
 }
 
@@ -200,16 +195,31 @@ export function placeOfficePicture(room, items, itemId, imageUrl, position, rota
 }
 
 /**
- * Hangs each not-yet-collected picture on a different wall, swept round
- * from `spawn` at picture height — starting from a random angle every
- * call, so a replay (the search timer running out, or just leaving and
- * coming back) doesn't put them back exactly where they were. Spots too
- * close to another picture or to anything in `keepClear` are passed over.
+ * Hangs each not-yet-collected picture on a different wall, found by
+ * sweeping outward from a grid of origins around `spawn` rather than just
+ * `spawn` itself — measured against the real Circus Lobby, a single
+ * central sweep found a usable wall on only 2 of 16 rays within a sensible
+ * mounting distance (it's a large, mostly-open room, not a tight one), so
+ * one origin alone can't reliably find enough spots for 5 pictures. A grid
+ * (origins spread `gridStep` apart out to `gridRadius` steps from spawn,
+ * swept in a random order) pools far more candidates than needed, and
+ * which of them actually get used is itself randomized — measured against
+ * the real Lobby, these defaults reliably spread the 5 picked spots 10m+
+ * apart, often 50m+ end to end, instead of landing in one cluster (an
+ * earlier, tighter grid technically found enough candidates but they were
+ * all close together, which read as "neatly scattered" rather than
+ * actually scattered around the room). The wider sweep is a one-time cost
+ * at room load (measured ~400-600ms against the real Lobby), not a
+ * per-frame one.
+ *
+ * Each call starts from a random grid order and a random sweep angle per
+ * origin, so a replay (the search timer running out, or just leaving and
+ * coming back) doesn't put them back exactly where they were.
  *
  * @param {{ group: THREE.Group, interactables?: Array }} room
  * @param {object} items shared item state (see src/state/level2Items.js)
  * @param {{ id: string, url: string }[]} pictures
- * @param {{ x: number, y: number, z: number }} spawn sweep origin (a point
+ * @param {{ x: number, y: number, z: number }} spawn grid centre (a point
  *   inside the room, usually its own spawn)
  * @param {Array<{ x: number, z: number } | null | undefined>} [keepClear]
  *   points to stay clear of (doors, NPCs) — nullish entries are skipped
@@ -218,20 +228,43 @@ export function placeOfficePicture(room, items, itemId, imageUrl, position, rota
  *   loaded, same as any other room.update
  */
 export function scatterPictures(room, items, pictures, spawn, keepClear = [], {
-  height = 1.5, spacing = 2, keepClearRadius = 1.5, maxDistance = 10,
+  height = 1.5, spacing = 8, keepClearRadius = 1.5, maxDistance = 12,
+  gridStep = 10, gridRadius = 4,
 } = {}) {
-  const origin = new THREE.Vector3(spawn.x, spawn.y + height, spawn.z);
-  const avoid = keepClear.filter(Boolean).map((point) => new THREE.Vector3(point.x, origin.y, point.z));
-  const startAngle = Math.random() * Math.PI * 2;
+  const avoid = keepClear.filter(Boolean).map((point) => new THREE.Vector3(point.x, spawn.y + height, point.z));
+
+  const origins = [];
+  for (let gx = -gridRadius; gx <= gridRadius; gx++) {
+    for (let gz = -gridRadius; gz <= gridRadius; gz++) {
+      origins.push(new THREE.Vector3(spawn.x + gx * gridStep, spawn.y + height, spawn.z + gz * gridStep));
+    }
+  }
+  for (let i = origins.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [origins[i], origins[j]] = [origins[j], origins[i]];
+  }
+
   const spots = [];
-  for (let i = 0; i < 16 && spots.length < pictures.length; i++) {
-    const angle = startAngle + (i / 16) * Math.PI * 2;
-    const spot = findWallSpot(room.group, origin, new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle)), maxDistance);
-    if (!spot) continue;
-    const flat = new THREE.Vector3(spot.position.x, origin.y, spot.position.z);
-    if (avoid.some((point) => point.distanceTo(flat) < keepClearRadius)) continue;
-    if (spots.some((other) => other.position.distanceTo(spot.position) < spacing)) continue;
-    spots.push(spot);
+  const wanted = pictures.length * 3; // a bigger pool than needed, so the spacing/keep-clear filters still have real room to choose from
+  for (const origin of origins) {
+    if (spots.length >= wanted) break;
+    const startAngle = Math.random() * Math.PI * 2;
+    for (let i = 0; i < 16; i++) {
+      const angle = startAngle + (i / 16) * Math.PI * 2;
+      const spot = findWallSpot(room.group, origin, new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle)), maxDistance);
+      if (!spot) continue;
+      const flat = new THREE.Vector3(spot.position.x, spawn.y + height, spot.position.z);
+      if (avoid.some((point) => point.distanceTo(flat) < keepClearRadius)) continue;
+      if (spots.some((other) => other.position.distanceTo(spot.position) < spacing)) continue;
+      spots.push(spot);
+    }
+  }
+  // Which of the (likely more than enough) candidates actually get used is
+  // itself randomized, not just their search order — otherwise the pictures
+  // would always cluster around whichever origins happen first in the grid.
+  for (let i = spots.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [spots[i], spots[j]] = [spots[j], spots[i]];
   }
   const placed = [];
   pictures.forEach(({ id, url }, i) => {

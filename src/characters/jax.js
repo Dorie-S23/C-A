@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { bendBone, SIDEWAYS, UP } from './bendBone.js';
 
 // "jax_from_tadc.glb": rigged (hips/spine/legs/arms down to fingers) but,
 // like Caine's model, ships with no baked animation clips — the run below
@@ -14,12 +15,35 @@ const JAX_URL = './models/characters/jax/jax_from_tadc.glb';
 // side, Y just twists it in place, Z is the one that reads as a stride.
 const HINGE_AXIS = new THREE.Vector3(0, 0, 1);
 
+// This rig's bind pose has both arms held straight out to the sides (a
+// T-pose), not hanging down — measured against the real model
+// (tools/_tmp_check_jax_arm_lower.mjs, not kept: a one-off bind-pose
+// probe, same idea as the HINGE_AXIS comment above but for a different
+// question). The run cycle below only ever swung forward/back from
+// whatever rest pose it started from, so it was swinging straight,
+// shoulder-height, outstretched arms the whole time — reads as stiff/
+// wrong because it is: nothing ever brought them down to his sides.
+// Rotating -90° about the shoulder's local X (found the same way) does
+// that, identically for both arms, and is baked into the rest pose below
+// rather than applied per frame, so every other arm pose (the swing, the
+// elbow bend) composes on top of "hanging down" instead of "T-pose".
+const ARM_LOWER_AXIS = new THREE.Vector3(1, 0, 0);
+const ARM_LOWER_ANGLE = THREE.MathUtils.degToRad(-90);
+
 // An actual run (he "storms past"), not a walk: quicker cadence, a
 // bigger stride, and a real bounce rather than a gentle bob.
 const STRIDE_HZ = 3.3; // steps/second
 const LEG_SWING = THREE.MathUtils.degToRad(42);
 const KNEE_BEND = THREE.MathUtils.degToRad(55);
 const ARM_SWING = THREE.MathUtils.degToRad(36);
+// A real sprint holds the elbows bent throughout, not locked straight —
+// a straight swinging arm is a big part of what read as "stiff/robotic".
+// Constant rather than phase-varying like the knee: lower-confidence
+// without being able to see the result, so kept to the one change
+// (bent, not straight) that's true the whole cycle either way.
+const ELBOW_BEND = THREE.MathUtils.degToRad(70);
+const SLY_ELBOW_BEND = THREE.MathUtils.degToRad(25);
+const IDLE_ELBOW_BEND = THREE.MathUtils.degToRad(15); // a relaxed bend while just standing, not locked straight
 const BOB_HEIGHT = 0.07;
 // A forward body lean reads as "running" on its own, independent of how
 // precisely any single joint swings — leaning in over the first few
@@ -44,6 +68,19 @@ const KEY_LIGHT_INTENSITY = 6;
 const KEY_LIGHT_RANGE = 5;
 const KEY_LIGHT_OFFSET = new THREE.Vector3(0.9, 1.6, 1.1); // forward-up-right of his centre, clear of his own mesh
 
+// Idle hold (e.g. the maze, where he just stands rather than running) reads
+// as "frozen like a statue" with nothing layered on top of the bind pose —
+// same problem Kaufmo had before kaufmoTalk.js. A slow breathing sway plus
+// a faster, smaller shiver on top (he's spent the run getting here scared,
+// not calm) sells "alive and on edge" without needing any mood/dialogue
+// content to drive it, which isn't written yet.
+const IDLE_BREATHE_HZ = 0.3;
+const IDLE_BREATHE_ANGLE = THREE.MathUtils.degToRad(2.5);
+const IDLE_TREMBLE_HZ = 5.5;
+const IDLE_TREMBLE_ANGLE = THREE.MathUtils.degToRad(1.1);
+const IDLE_HUNCH_ANGLE = THREE.MathUtils.degToRad(6); // a little drawn in on himself, not standing tall
+const TURN_SHARPNESS = 5; // matches ribbit.js's/kaufmoTalk.js's own faceTowards rate
+
 /**
  * Finds a bone by a loose, punctuation-insensitive match on its name.
  * glTF export mangles "upper_leg.L_53_59" in ways that vary by loader
@@ -61,13 +98,16 @@ function findBone(root, prefix) {
 }
 
 /**
- * Loads Jax, hidden and idle until playPassBy() is called. There's no
- * interact/collider here — he's a one-shot background flourish, not a
- * character the player stops and talks to.
+ * Loads Jax, hidden and idle until playPassBy() is called. Still no
+ * interact/collider here — he has no lines yet (that's pending the team's
+ * review of the maze payoff script) — but update() keeps him breathing
+ * and trembling while he stands still, and faceTowards() turns him to
+ * look at whoever finds him, instead of holding dead still either way.
  *
  * @returns {Promise<{ jax: THREE.Group,
  *   update: (deltaSeconds: number) => void,
- *   playPassBy: (from: THREE.Vector3, to: THREE.Vector3, duration: number) => void }>}
+ *   playPassBy: (from: THREE.Vector3, to: THREE.Vector3, duration: number) => void,
+ *   faceTowards: (worldPoint: THREE.Vector3 | null) => void }>}
  */
 export function loadJax() {
   return new GLTFLoader().loadAsync(JAX_URL).then((gltf) => {
@@ -94,7 +134,17 @@ export function loadJax() {
       lowerLegR: findBone(model, 'lowerlegr'),
       upperArmL: findBone(model, 'upperarml'),
       upperArmR: findBone(model, 'upperarmr'),
+      lowerArmL: findBone(model, 'lowerarml'),
+      lowerArmR: findBone(model, 'lowerarmr'),
+      spine: findBone(model, 'spine'),
+      head: findBone(model, 'head'),
     };
+    // Bring the T-pose arms down to his sides before anything else reads
+    // these as "rest" — see ARM_LOWER_ANGLE above.
+    const armLower = new THREE.Quaternion().setFromAxisAngle(ARM_LOWER_AXIS, ARM_LOWER_ANGLE);
+    if (bones.upperArmL) bones.upperArmL.quaternion.premultiply(armLower);
+    if (bones.upperArmR) bones.upperArmR.quaternion.premultiply(armLower);
+
     const rest = new Map();
     for (const bone of Object.values(bones)) {
       if (bone) rest.set(bone, bone.quaternion.clone());
@@ -108,6 +158,9 @@ export function loadJax() {
     }
 
     let walk = null;
+    let time = 0;
+    let targetYaw = null;
+    const ownPosition = new THREE.Vector3();
 
     function playPassBy(from, to, duration, { style = 'run' } = {}) {
       jax.position.copy(from);
@@ -115,11 +168,40 @@ export function loadJax() {
       jax.rotation.x = 0;
       jax.rotation.z = 0;
       jax.visible = true;
+      // Clears any idle hunch/tremble left over from standing still, so
+      // the run starts from a clean bind pose rather than a frozen bend.
+      if (bones.spine) bones.spine.quaternion.copy(rest.get(bones.spine));
+      if (bones.head) bones.head.quaternion.copy(rest.get(bones.head));
       walk = { from: from.clone(), to: to.clone(), duration, elapsed: 0, style };
     }
 
+    /** Turns him (smoothly, while idle) toward a world point; null stops turning. */
+    function faceTowards(worldPoint) {
+      if (!worldPoint) { targetYaw = null; return; }
+      jax.getWorldPosition(ownPosition);
+      targetYaw = Math.atan2(worldPoint.x - ownPosition.x, worldPoint.z - ownPosition.z);
+    }
+
     function update(deltaSeconds) {
-      if (!walk) return;
+      time += deltaSeconds;
+      if (!walk) {
+        // Standing still (e.g. found in the maze) still breathes and
+        // shivers instead of holding dead still like a mannequin.
+        if (bones.spine) bones.spine.quaternion.copy(rest.get(bones.spine));
+        if (bones.head) bones.head.quaternion.copy(rest.get(bones.head));
+        bendBone(bones.spine, jax, SIDEWAYS, IDLE_HUNCH_ANGLE);
+        bendBone(bones.spine, jax, UP, Math.sin(time * IDLE_BREATHE_HZ * Math.PI * 2) * IDLE_BREATHE_ANGLE);
+        bendBone(bones.spine, jax, SIDEWAYS, Math.sin(time * IDLE_TREMBLE_HZ * Math.PI * 2) * IDLE_TREMBLE_ANGLE);
+        bendBone(bones.head, jax, SIDEWAYS, Math.sin(time * IDLE_TREMBLE_HZ * Math.PI * 2 + 1.3) * IDLE_TREMBLE_ANGLE);
+        poseLeg(bones.lowerArmL, IDLE_ELBOW_BEND);
+        poseLeg(bones.lowerArmR, IDLE_ELBOW_BEND);
+
+        if (targetYaw !== null) {
+          const diff = THREE.MathUtils.euclideanModulo(targetYaw - jax.rotation.y + Math.PI, Math.PI * 2) - Math.PI;
+          jax.rotation.y += diff * (1 - Math.exp(-TURN_SHARPNESS * deltaSeconds));
+        }
+        return;
+      }
       walk.elapsed += deltaSeconds;
       const t = Math.min(walk.elapsed / walk.duration, 1);
       jax.position.lerpVectors(walk.from, walk.to, t);
@@ -136,6 +218,8 @@ export function loadJax() {
       poseLeg(bones.lowerLegR, Math.max(0, Math.sin(phase + Math.PI / 2 + Math.PI)) * knee);
       poseLeg(bones.upperArmL, sly ? 0 : -Math.sin(phase) * ARM_SWING);
       poseLeg(bones.upperArmR, sly ? 0 : Math.sin(phase) * ARM_SWING);
+      poseLeg(bones.lowerArmL, sly ? SLY_ELBOW_BEND : ELBOW_BEND);
+      poseLeg(bones.lowerArmR, sly ? SLY_ELBOW_BEND : ELBOW_BEND);
       jax.position.y += Math.abs(Math.sin(phase)) * (sly ? .018 : BOB_HEIGHT);
       jax.rotation.x = sly ? -.035 : LEAN_ANGLE * Math.min(walk.elapsed / LEAN_IN_SECONDS, 1);
       jax.rotation.z = sly ? Math.sin(phase) * .025 : 0;
@@ -146,6 +230,6 @@ export function loadJax() {
       }
     }
 
-    return { jax, update, playPassBy };
+    return { jax, update, playPassBy, faceTowards };
   });
 }

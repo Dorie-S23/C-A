@@ -23,8 +23,10 @@ import { resetEscapeThreshold } from './state/escapeThreshold.js';
 import { createStoryProgress } from './game/storyProgress.js';
 import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.js';
 import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT } from './state/level2Items.js';
+import { createMazeItems, MAZE_FINDABLES } from './state/mazeItems.js';
 import { runLevel1 } from './levels/level1.js';
 import { preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
+import { preloadJaxFleeCutscene, playJaxFleeCutscene } from './cutscenes/jaxFleeCutscene.js';
 import { createMinimap } from './ui/minimap.js';
 import { createObjectiveController } from './game/objectives.js';
 import { createObjectiveHUD } from './ui/objectiveHUD.js';
@@ -272,7 +274,7 @@ roomPicker.querySelectorAll('button[data-room]').forEach((button) => {
   });
 });
 
-dialoguePicker.querySelectorAll('button:not(#btn-level2)').forEach((button) => {
+dialoguePicker.querySelectorAll('button:not(#btn-level2):not(#btn-level3)').forEach((button) => {
   button.addEventListener('click', (event) => {
     event.stopPropagation();
     // The story runs for real from the start; levels are played for real
@@ -292,10 +294,36 @@ document.getElementById('btn-level2').addEventListener('click', (event) => {
   openingCompleted = false;
   resetObjectiveSession(true);
   itemState.reset();
+  mazeItems.reset();
   objectives.activate('find-ribbit');
   storyProgress.finishRibbit(4);
   titleScreen.hide();
   selectRoom('dorm', { onReady: () => playKaufmoHallway() });
+});
+
+// Jumps straight to Level 3 for playtesting, skipping Levels 1-2. Primes
+// storyProgress/itemState through the same calls the real flow makes
+// (Ribbit done, Kaufmo introduced, all photos collected and handed in,
+// the one-time "Level 2 Complete" stall already consumed) then runs the
+// real mission from its actual first beat: Jax bolting past Kaufmo's open
+// door, same as finishing the photo search for real triggers. The raw
+// "Maze" room-picker button still exists for jumping straight into the
+// maze room itself with no intro, which is a different, narrower thing.
+document.getElementById('btn-level3').addEventListener('click', (event) => {
+  event.stopPropagation();
+  openingCompleted = false;
+  resetObjectiveSession(true);
+  itemState.reset();
+  mazeItems.reset();
+  objectives.activate('find-ribbit');
+  storyProgress.finishRibbit(4);
+  storyProgress.finishKaufmoIntro();
+  for (let i = 0; i < PHOTO_COUNT; i++) itemState.collect(`dev-level3-priming-${i}`);
+  itemState.presentHeld();
+  storyProgress.presentedPhotos(PHOTO_COUNT);
+  itemState.pickPostHandInScript(); // consumes the stall beat so talkToKaufmo lands straight on the payoff below
+  titleScreen.hide();
+  selectRoom('kaufmo', { onReady: (room) => talkToKaufmo(room.kaufmoApi, loadToken) });
 });
 
 btnResume.addEventListener('click', (event) => {
@@ -551,6 +579,7 @@ function startNewGame() {
   // Hidden score and Level 2's photos start over too.
   resetEscapeThreshold();
   itemState.reset();
+  mazeItems.reset();
   resetObjectiveSession(true);
   openingAudio.unlock();
   if (isLocked) document.exitPointerLock();
@@ -1116,9 +1145,34 @@ function playKaufmoHallway() {
   });
 }
 
-function talkToKaufmo(lookAt, token) {
+function talkToKaufmo(kaufmoApi, token) {
   if (token !== loadToken || currentRoomKey !== 'kaufmo' || dialogueUI.isActive) return false;
   const valid = () => token === loadToken && currentRoomKey === 'kaufmo';
+  const lookAt = kaufmoApi.kaufmo.getWorldPosition(new THREE.Vector3());
+  // He turns to face her and starts gesturing on his own lines, same idea
+  // as Ribbit's/Caine's own faceTowards/setSpeaking — previously he just
+  // stood there frozen through the whole conversation.
+  kaufmoApi.faceTowards(player.position);
+  const onNode = (node) => {
+    const speaking = node.speaker === 'kaufmo';
+    kaufmoApi.setSpeaking(speaking);
+    kaufmoApi.setPose(speaking ? (node.mood || 'neutral') : 'neutral');
+    // Jax bolting past is a wordless cutaway, same technique as Pre-Level
+    // 1's jaxPassByText: returning a promise here hides the dialogue box
+    // and holds this beat until the cutscene resolves, then its own
+    // caption text shows — see withHallwayCutscene for the sibling case.
+    if (node.id === 'jaxBurstsPast') {
+      return preloadJaxFleeCutscene().then((assets) => {
+        if (!assets || !valid()) { if (assets) disposeObject3D(assets.scene); return; }
+        return new Promise((resolve) => {
+          const finish = () => { disposeObject3D(assets.scene); resolve(); };
+          runCutscene({ ...playJaxFleeCutscene(renderer, assets), cancel: finish }, finish);
+        });
+      }).catch((error) => console.warn('Jax flee cutscene unavailable; continuing dialogue.', error));
+    }
+  };
+  const stopTalking = () => { kaufmoApi.setSpeaking(false); kaufmoApi.setPose('neutral'); };
+
   if (preLevel1Session && !storyProgress.ribbitComplete) {
     showHint('Check on Ribbit first. Kaufmo can wait here.', 4500);
     return false;
@@ -1126,14 +1180,18 @@ function talkToKaufmo(lookAt, token) {
   if (preLevel1Session && !storyProgress.kaufmoIntroduced) {
     return playRoomDialogue('level2RoomOpening', {
       lookAt,
+      onNode,
       async onComplete() {
+        stopTalking();
         if (!valid() || !storyProgress.finishKaufmoIntro()) return;
         if (itemState.heldCount()) showHint('You already have a photo. Talk to Kaufmo again to show him.', 6000);
-        // The search starts in the Dorm Hall, not wherever Kaufmo's room
-        // door happens to leave her — missionApi.travel already shows the
-        // normal "Loading…" overlay while the room comes in.
-        await missionApi.travel('dorm');
+        // The photos are in the Lobby, not the Dorm Hall — spawn her right
+        // where the search actually happens instead of making her walk
+        // there herself. missionApi.travel already shows the normal
+        // "Loading…" overlay while the room comes in.
+        await missionApi.travel('tadc');
       },
+      onCancel: stopTalking,
     });
   }
   const key = pickKaufmoScript(itemState);
@@ -1141,7 +1199,9 @@ function talkToKaufmo(lookAt, token) {
   if (key.startsWith('level2HandIn')) openingAudio.playChime('handIn');
   return playRoomDialogue(key === 'level2Opening' ? 'level2RoomOpening' : key, {
     lookAt,
+    onNode,
     onComplete() {
+      stopTalking();
       if (!valid()) return;
       if (key === 'level2Payoff' && !itemState.isDone()) {
         if (preLevel1Session) objectives.complete('check-kaufmo');
@@ -1149,14 +1209,15 @@ function talkToKaufmo(lookAt, token) {
         void finishKaufmoLevel(token);
       }
     },
+    onCancel: stopTalking,
   });
 }
 
 async function finishKaufmoLevel(token) {
   const title = 'Level 2 Complete';
-  const subtitle = "Five photos, one real room — and a door that isn't what it says it is. More coming soon — thanks for playing!";
+  const subtitle = "Five photos, one real room — and Jax just sprinted off like something's actually chasing him. Better go see.";
   if (!await showLevelComplete(title, subtitle, { resume: false }) || token !== loadToken) return;
-  endLevel(title, subtitle);
+  await missionApi.travel('maze');
 }
 
 /**
@@ -1183,12 +1244,21 @@ const itemState = createLevel2Items({
 });
 const storyProgress = createStoryProgress({ objectives, isStorySession: () => preLevel1Session });
 
-// The photo search times out before all 3 are found and handed in: a
+// --- Level 3 maze keepsakes ---------------------------------------------
+// Not scored, just a hint on pickup — same shared-instance-survives-room-
+// changes lifecycle as itemState above.
+const mazeItems = createMazeItems({
+  onCollect: (id, count, total) => {
+    const label = MAZE_FINDABLES.find((findable) => findable.id === id)?.label ?? 'something';
+    showHint(`Found the ${label}. (${count}/${total})`);
+  },
+});
+
+// The photo search times out before all five photos are found: a
 // "LEVEL 2 FAILED" card (see restartPhotoSearch) and a restart (new spots,
 // same objective, back to Kaufmo's door) — not yet the real "abstraction"
-// fail effect, which is a later pass. Armed/disarmed reactively off the
-// objective itself, rather than at each of the several places
-// 'collect-photos' starts or ends, so it can't drift out of sync with it.
+// fail effect, which is a later pass. Objective changes arm/disarm the
+// clock; a retry resets it explicitly because the objective stays active.
 const SEARCH_TIMER_SECONDS = 180;
 let searchTimeLeft = null; // seconds left, or null while it isn't the active objective
 objectives.subscribe((active) => {
@@ -1214,12 +1284,17 @@ async function restartPhotoSearch() {
   );
   if (!continued || token !== loadToken) return; // the player had already moved on by the time this landed
   itemState.reset();
+  searchTimeLeft = SEARCH_TIMER_SECONDS;
   await missionApi.travel('kaufmo');
 }
 
 function updatePictureCounter() {
-  // Only free exploration shows the HUD, including between room visits.
-  const visible = (!preLevel1Session || storyProgress.kaufmoIntroduced)
+  // Only the two rooms the photo search actually happens in — otherwise
+  // this kept showing "Pictures found: 5/5" forever afterward, including
+  // in the maze, since kaufmoIntroduced never goes back to false once
+  // Level 2's started.
+  const visible = (currentRoomKey === 'tadc' || currentRoomKey === 'kaufmo')
+    && (!preLevel1Session || storyProgress.kaufmoIntroduced)
     && isLocked && readyToPlay && !paused && !dialogueUI.isActive
     && !activeCutscene && !activeCinematic()?.active && !stageBusy() && !titleScreen.active
     && overlay.classList.contains('hidden') && controlsPanel.hidden
@@ -1289,14 +1364,14 @@ function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
 function roomLoadOptions(roomKey, { from, preview, openingMode }) {
   return {
     from, playDialogue: playRoomDialogue, preview, endLevel, stage, items: itemState, travel: travelTo,
-    objectives, showLevelComplete, playChime: openingAudio.playChime,
+    objectives, showLevelComplete, playChime: openingAudio.playChime, mazeItems,
     ribbitStory: {
       complete: () => storyProgress.ribbitComplete,
       points: () => storyProgress.ribbitPoints,
     },
     kaufmoStory: {
       introduced: () => !preLevel1Session || storyProgress.kaufmoIntroduced,
-      talk: lookAt => talkToKaufmo(lookAt, loadToken),
+      talk: kaufmoApi => talkToKaufmo(kaufmoApi, loadToken),
     },
     openingMode: openingMode ?? (roomKey === 'pomni' && from && openingCompleted ? 'settled' : undefined),
   };
@@ -2446,7 +2521,11 @@ function checkTriggers(player) {
 
   if (!foundJax && triggers.jax.containsPoint(triggerProbe)) {
     foundJax = true;
-    showHint('You found Jax. (Dialogue goes here.)');
+    // His own reaction (the real payoff scene/dialogue) is still pending
+    // the team's review — see dialogues.js's level2PayoffDialogue beat
+    // that sent her in here. This is just a placeholder hint in the
+    // meantime, not a stand-in for that scene.
+    showHint("You found Jax — he's shaking, pressed up against the wall.");
   }
 
   if (triggers.exit.containsPoint(triggerProbe)) {
