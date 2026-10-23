@@ -1,0 +1,37 @@
+{
+  "generator": "tools/generateSounds.mjs",
+  "sounds": {
+    "ambience-dorm": {
+      "signature": "9eb591914790",
+      "loop": true
+    },
+    "ambience-kaufmo": {
+      "signature": "a28f2b512ae2",
+      "loop": true
+    },
+    "ambience-maze": {
+      "signature": "8e1f2c3a7d03",
+      "loop": true
+    },
+    "ambience-pomni": {
+      "signature": "35874cb60f87",
+      "loop": true
+    },
+    "ambience-ribbit": {
+      "signature": "9114884402da",
+      "loop": true
+    },
+    "ambience-tadc": {
+      "signature": "a459682598ae",
+      "loop": true
+    },
+    "knock": {
+      "signature": "28186e10082b",
+      "loop": false
+    },
+    "snore": {
+      "signature": "73e84ed5e913",
+      "loop": true
+    }
+  }
+}

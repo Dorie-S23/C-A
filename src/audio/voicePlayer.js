@@ -18,16 +18,21 @@ import { VOICE_DIR, VOICE_MANIFEST, voiceKey } from './voiceKey.js';
 export function createVoicePlayer() {
   const audio = new Audio();
   audio.preload = 'auto';
-  let available = new Set();
+  // key -> gain for that clip (muttered lines are recorded at full level and
+  // played quieter; see QUIET_GAIN in the generator).
+  let available = new Map();
   let volume = 1;
+  let clipGain = 1;
   // True from play() until the clip ends or is stopped, so unpausing after a
   // clip already finished doesn't replay it from the start.
   let active = false;
 
   fetch(VOICE_MANIFEST)
     .then((response) => (response.ok ? response.json() : { clips: {} }))
-    .then((manifest) => { available = new Set(Object.keys(manifest.clips ?? {})); })
-    .catch(() => { available = new Set(); });
+    .then((manifest) => {
+      available = new Map(Object.entries(manifest.clips ?? {}).map(([key, entry]) => [key, entry?.gain ?? 1]));
+    })
+    .catch(() => { available = new Map(); });
 
   audio.addEventListener('ended', () => { active = false; });
 
@@ -43,7 +48,8 @@ export function createVoicePlayer() {
       const key = voiceKey(speaker, text);
       if (!available.has(key)) return;
       audio.src = `${VOICE_DIR}${key}.mp3`;
-      audio.volume = volume;
+      clipGain = available.get(key);
+      audio.volume = volume * clipGain;
       active = true;
       // Rejects if the browser hasn't had a user gesture yet; the text still shows.
       audio.play().catch(() => { active = false; });
@@ -56,7 +62,7 @@ export function createVoicePlayer() {
     },
     setVolume(value) {
       volume = Math.max(0, Math.min(1, value));
-      audio.volume = volume;
+      audio.volume = volume * clipGain;
       if (volume === 0) stop();
     },
   };
