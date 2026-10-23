@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { generateMaze } from '../maze/generateMaze.js';
+import { createSeededRandom } from '../maze/seededRandom.js';
 import { loadJax } from '../characters/jax.js';
 import { createBowlingBall, createHotChocolateMug, placeMazeFindable, pulseGlow } from '../props/mazeFindables.js';
 
@@ -44,7 +45,10 @@ function createCheckerTexture() {
  * the Pre-Level-1 hallway cutscene uses) before building, replacing what
  * used to be a placeholder cylinder marking his spot.
  *
- * @returns {Promise<{ group: THREE.Group, bounds: THREE.Box3, spawn: THREE.Vector3,
+ * @param {Function} [onProgress]
+ * @param {{ mazeItems?: object, seed?: number }} [options] Omit seed for a fresh
+ *   random maze; pass the returned mazeSeed to reproduce it on a fresh run.
+ * @returns {Promise<{ mazeSeed: number, group: THREE.Group, bounds: THREE.Box3, spawn: THREE.Vector3,
  *   spawnFacing: number, colliders: THREE.Box3[],
  *   triggers: { jax: THREE.Box3, exit: THREE.Box3 },
  *   movers: Array<{ mesh: THREE.Object3D, waypoints: THREE.Vector3[], speed: number,
@@ -53,16 +57,20 @@ function createCheckerTexture() {
  *   interactables: Array,
  *   update: (deltaSeconds: number, playerPosition: THREE.Vector3) => void }>}
  */
-export function loadMazeRoom(onProgress, { mazeItems } = {}) {
-  return loadJax().then((jaxApi) => {
-    onProgress?.(1);
-    return buildMaze(jaxApi, mazeItems);
-  });
+export async function loadMazeRoom(onProgress, {
+  mazeItems, seed = Math.floor(Math.random() * 0x100000000),
+} = {}) {
+  // Resolve the seed before loading assets. All layout/prop randomness uses
+  // this private stream, independent of other rooms and Three.js internals.
+  const rng = createSeededRandom(seed);
+  const jaxApi = await loadJax();
+  onProgress?.(1);
+  return buildMaze(jaxApi, mazeItems, seed, rng);
 }
 
-function buildMaze(jaxApi, mazeItems) {
+function buildMaze(jaxApi, mazeItems, seed, rng) {
   const { cols, rows, cellSize, wallHeight, wallThickness } = MAZE;
-  const maze = generateMaze(cols, rows);
+  const maze = generateMaze(cols, rows, rng);
 
   const group = new THREE.Group();
   group.name = 'MazeRoom';
@@ -257,7 +265,7 @@ function buildMaze(jaxApi, mazeItems) {
       }
     }
     for (let i = openCells.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(rng() * (i + 1));
       [openCells[i], openCells[j]] = [openCells[j], openCells[i]];
     }
     const findables = [
@@ -268,7 +276,7 @@ function buildMaze(jaxApi, mazeItems) {
       const cell = openCells[i];
       if (!cell) return;
       const center = cellCenter(cell.r, cell.c);
-      const mesh = placeMazeFindable(findableRoom, mazeItems, id, label, createMesh, new THREE.Vector3(center.x, 0, center.z));
+      const mesh = placeMazeFindable(findableRoom, mazeItems, id, label, createMesh, new THREE.Vector3(center.x, 0, center.z), rng);
       if (mesh) placedFindables.push(mesh);
     });
   }
@@ -315,7 +323,7 @@ function buildMaze(jaxApi, mazeItems) {
   );
 
   return {
-    group, bounds, spawn, spawnFacing, colliders, triggers, movers, hazards, update,
+    mazeSeed: seed, group, bounds, spawn, spawnFacing, colliders, triggers, movers, hazards, update,
     interactables: findableRoom.interactables,
   };
 }

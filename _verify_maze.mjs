@@ -3,13 +3,39 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { generateMaze } from './src/maze/generateMaze.js';
+import { createSeededRandom as makeRng } from './src/maze/seededRandom.js';
 
-/** Deterministic PRNG so a test can compare two runs built from the same
- * base maze (one with loops, one without) rather than two unrelated ones. */
-function makeRng(seed) {
-  let s = seed;
-  return () => { s = (1664525 * s + 1013904223) >>> 0; return s / 2 ** 32; };
-}
+test('maze random streams are repeatable, independent and stay in [0, 1)', () => {
+  for (const seed of [0, 1, 12345, 0xffffffff]) {
+    const first = makeRng(seed), second = makeRng(seed), unrelated = makeRng(seed + 1 >>> 0);
+    for (let i = 0; i < 1000; i++) {
+      unrelated();
+      const value = first();
+      assert.equal(value, second());
+      assert.ok(value >= 0 && value < 1);
+    }
+  }
+});
+
+test('unsupported seeds are rejected rather than silently changed', () => {
+  for (const seed of [undefined, null, '123', true, -1, 0.5, 0x100000000, NaN, Infinity]) {
+    assert.throws(() => makeRng(seed), /Maze seed must be an integer/);
+  }
+});
+
+test('the same seed reproduces every maze wall and the Jax, exit and patrol locations', () => {
+  for (const seed of [0, 1, 12345, 0xffffffff]) {
+    assert.deepEqual(generateMaze(13, 13, makeRng(seed)), generateMaze(13, 13, makeRng(seed)));
+  }
+});
+
+test('different seeds produce varied maze layouts', () => {
+  const layouts = new Set();
+  for (let seed = 0; seed < 20; seed++) {
+    layouts.add(JSON.stringify(generateMaze(13, 13, makeRng(seed)).cells));
+  }
+  assert.equal(layouts.size, 20);
+});
 
 function countOpenWalls(cells) {
   // Each interior wall is shared by two cells; count right/bottom once each

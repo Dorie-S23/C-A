@@ -405,6 +405,17 @@ function setDevSkipIntro(on) {
   }
 }
 const devParam = new URLSearchParams(window.location.search).get('dev');
+// Development-only reproduction of a reported Level 3 layout. Normal loads
+// choose a new seed, available through getOpeningDiagnostics().mazeSeed.
+const devMazeSeed = (() => {
+  if (!import.meta.env.DEV) return undefined;
+  const value = new URLSearchParams(window.location.search).get('mazeSeed');
+  if (value === null) return undefined;
+  const seed = Number(value);
+  if (/^\d+$/.test(value) && Number.isInteger(seed) && seed <= 0xffffffff) return seed;
+  console.warn('Ignoring invalid mazeSeed; use an integer from 0 to 4294967295.');
+  return undefined;
+})();
 if (devParam !== null) {
   setDevSkipIntro(devParam !== '0');
 } else {
@@ -1365,6 +1376,7 @@ function roomLoadOptions(roomKey, { from, preview, openingMode }) {
   return {
     from, playDialogue: playRoomDialogue, preview, endLevel, stage, items: itemState, travel: travelTo,
     objectives, showLevelComplete, playChime: openingAudio.playChime, mazeItems,
+    seed: roomKey === 'maze' ? devMazeSeed : undefined,
     ribbitStory: {
       complete: () => storyProgress.ribbitComplete,
       points: () => storyProgress.ribbitPoints,
@@ -3140,7 +3152,7 @@ export function setDormHallPreviewForReview(visible) {
   return Boolean(preview);
 }
 
-/** Read-only development diagnostics for the opening's browser regressions. */
+/** Read-only development diagnostics for story and room browser regressions. */
 export function getOpeningDiagnostics() {
   if (!import.meta.env.DEV) return null;
   const opening = currentRoom?.userData.pomniOpening;
@@ -3154,6 +3166,7 @@ export function getOpeningDiagnostics() {
   });
   return {
     room: currentRoomKey, phase: opening?.phase ?? null, time: opening?.time ?? null,
+    mazeSeed: currentRoomKey === 'maze' ? currentRoomInfo?.mazeSeed ?? null : null,
     dialogueWaiting: dialogueUI.isWaiting,
     stagedWalk: Boolean(stageWalk), stagedSeat: stageSeatY !== null,
     stagedDelay: stageDelay?.remaining ?? null, stagedCamera: Boolean(stageCamera),

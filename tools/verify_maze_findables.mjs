@@ -10,6 +10,22 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { loadMazeRoom } from '../src/rooms/mazeRoom.js';
 import { createMazeItems, MAZE_FINDABLES } from '../src/state/mazeItems.js';
 
+// Ignore per-load UUIDs/material IDs: compare actual rendered layout and poses.
+function layout(room) {
+  return {
+    seed: room.mazeSeed,
+    walls: room.colliders.map(box => [box.min.toArray(), box.max.toArray()]),
+    spawn: room.spawn.toArray(), spawnFacing: room.spawnFacing,
+    jax: room.group.getObjectByName('Jax').position.toArray(),
+    jaxFacing: room.group.getObjectByName('Jax').rotation.y,
+    exit: [room.triggers.exit.min.toArray(), room.triggers.exit.max.toArray()],
+    patrol: room.movers.map(mover => mover.waypoints.map(point => point.toArray())),
+    items: room.group.children.filter(child => child.name === 'MazeFindable')
+      .map(item => ({ position: item.position.toArray(), rotation: item.rotation.y })),
+    prompts: room.interactables.map(item => item.prompt()),
+  };
+}
+
 globalThis.ProgressEvent ??= class {};
 GLTFLoader.prototype.load = function (url, onLoad, _progress, onError) {
   try {
@@ -59,4 +75,44 @@ GLTFLoader.prototype.load = function (url, onLoad, _progress, onError) {
   assert.equal(room.group.children.filter((c) => c.name === 'MazeFindable').length, 0);
   assert.deepEqual(room.interactables, []);
   console.log('PASS loads clean with no findables when mazeItems is omitted');
+}
+
+{
+  for (const seed of [0, 12345, 0xffffffff]) {
+    const first = await loadMazeRoom(null, { seed, mazeItems: createMazeItems() });
+    const second = await loadMazeRoom(null, { seed, mazeItems: createMazeItems() });
+    assert.equal(first.mazeSeed, seed);
+    assert.deepEqual(layout(second), layout(first), `seed ${seed} must reproduce walls, actors and props`);
+  }
+  console.log('PASS explicit seeds, including zero and the maximum, reproduce the entire fresh room layout');
+}
+
+{
+  const first = await loadMazeRoom(null, { mazeItems: createMazeItems() });
+  assert.ok(Number.isInteger(first.mazeSeed) && first.mazeSeed >= 0 && first.mazeSeed <= 0xffffffff);
+  const replay = await loadMazeRoom(null, { seed: first.mazeSeed, mazeItems: createMazeItems() });
+  assert.deepEqual(layout(replay), layout(first), 'a randomly chosen seed must recreate the reported room');
+  console.log('PASS an unseeded load records a seed that reproduces its walls and item placements');
+}
+
+{
+  const first = await loadMazeRoom(null, { seed: 1, mazeItems: createMazeItems() });
+  const second = await loadMazeRoom(null, { seed: 2, mazeItems: createMazeItems() });
+  assert.notDeepEqual(layout(first).walls, layout(second).walls);
+  assert.notDeepEqual(layout(first).items, layout(second).items);
+
+  const items = createMazeItems();
+  const room = await loadMazeRoom(null, { seed: 1, mazeItems: items });
+  room.interactables[0].interact();
+  const revisited = await loadMazeRoom(null, { seed: 1, mazeItems: items });
+  assert.equal(revisited.interactables.length, 1);
+  assert.deepEqual(layout(revisited).walls, layout(first).walls);
+  assert.deepEqual(layout(revisited).items[0].position, layout(first).items[1].position);
+  console.log('PASS different seeds vary the room, and collected items stay absent on a seeded revisit');
+}
+
+{
+  await assert.rejects(loadMazeRoom(null, { seed: -1 }), /Maze seed must be an integer/);
+  await assert.rejects(loadMazeRoom(null, { seed: '12345' }), /Maze seed must be an integer/);
+  console.log('PASS invalid room seeds reject with an actionable error');
 }
