@@ -1331,7 +1331,21 @@ export const level2PayoffDialogue = [
     speaker: 'pomni',
     side: 'left',
     mood: 'worried',
-    text: "That's not 'new.' That's 'follow him.'",
+    text: 'Kaufmo—',
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'worried',
+    text: "Go. Follow him — I'll be right here. Just go!",
+  },
+  {
+    // Narrates the actual chase and how she ends up at the maze, instead
+    // of cutting straight from this line to "Level 2 Complete" with no
+    // sense of how she got there.
+    type: 'beat',
+    text: 'She chases him down the hall, through the lobby, past the stage — until he ducks through a door she’s never noticed before. She follows him in.',
     next: null,
   },
 ];
