@@ -11,6 +11,7 @@ const SIZE = 180;              // CSS px; index.html's objective HUD makes room 
 const PX_PER_METRE = 1.7;      // map zoom: the window spans ~105 m
 const PLAN_PX_PER_METRE = 6;   // floor plan resolution (it's scaled down to draw)
 const PLAN_MAX_PX = 4096;
+const GLOW_PX = 2.5;           // the walls' glow, in map pixels
 const FLOOR_BELOW = 0.6;       // metres under the floor height still counted as floor
 const FLOOR_ABOVE = 0.45;      // ...and over it (steps, the dorm arch's dais)
 const MIN_FLOOR_NORMAL_Y = 0.7;
@@ -113,7 +114,19 @@ function traceFloorPlan(group, floorY) {
     ctx.lineWidth = 0.6;
     ctx.stroke();
   }
-  return { canvas, minX: minX - 1 / pxPerMetre, minZ: minZ - 1 / pxPerMetre, pxPerMetre };
+  // The gold glow round the floor's edge (it reads as the walls) is baked
+  // in here once: blurring the whole plan as it's drawn, every frame, is
+  // what made the map cost a few hundred milliseconds.
+  const glow = Math.ceil(GLOW_PX * pxPerMetre / PX_PER_METRE);
+  const baked = document.createElement('canvas');
+  baked.width = canvas.width + glow * 2;
+  baked.height = canvas.height + glow * 2;
+  const bakedCtx = baked.getContext('2d');
+  bakedCtx.shadowColor = COLORS.floorEdge;
+  bakedCtx.shadowBlur = glow;
+  bakedCtx.drawImage(canvas, glow, glow);
+  const offset = (1 + glow) / pxPerMetre;
+  return { canvas: baked, minX: minX - offset, minZ: minZ - offset, pxPerMetre };
 }
 
 /**
@@ -123,6 +136,11 @@ function traceFloorPlan(group, floorY) {
  *   update: (x: number, z: number, yaw: number) => void,
  * }}
  */
+function planFor(group, floorY) {
+  if (!planCache.has(group)) planCache.set(group, traceFloorPlan(group, floorY));
+  return planCache.get(group);
+}
+
 export function createMinimap() {
   const canvas = document.createElement('canvas');
   canvas.id = 'minimap';
@@ -243,11 +261,7 @@ export function createMinimap() {
         });
       }
 
-      plan = null;
-      if (room?.group) {
-        if (!planCache.has(room.group)) planCache.set(room.group, traceFloorPlan(room.group, room.floorY));
-        plan = planCache.get(room.group);
-      }
+      plan = room?.group ? planFor(room.group, room.floorY) : null;
 
       fitToScreen();
       canvas.style.display = 'block';
@@ -255,6 +269,18 @@ export function createMinimap() {
 
     hide() {
       canvas.style.display = 'none';
+    },
+
+    /**
+     * Traces a room's floor plan ahead of time (e.g. under a loading
+     * screen), so show() doesn't stall: tracing walks every triangle, and
+     * the browser uploads the plan image the first time it's drawn.
+     */
+    prepare(group, floorY) {
+      const ready = planFor(group, floorY);
+      if (!ready) return;
+      ctx.drawImage(ready.canvas, 0, 0, 1, 1);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
     },
 
     update(playerX, playerZ, playerYaw) {
@@ -279,13 +305,16 @@ export function createMinimap() {
       });
 
       if (plan) {
-        const topLeft = toMap(plan.minX, plan.minZ);
-        const scale = PX_PER_METRE / plan.pxPerMetre;
-        // A thin gold glow round the floor's edge reads as the walls.
-        ctx.shadowColor = COLORS.floorEdge;
-        ctx.shadowBlur = 3;
-        ctx.drawImage(plan.canvas, topLeft.x, topLeft.y, plan.canvas.width * scale, plan.canvas.height * scale);
-        ctx.shadowBlur = 0;
+        // Only the part of the plan inside the map's window.
+        const toPlan = plan.pxPerMetre / PX_PER_METRE;
+        const sx = Math.max(0, Math.floor(((playerX - plan.minX) * PX_PER_METRE - centre) * toPlan));
+        const sy = Math.max(0, Math.floor(((playerZ - plan.minZ) * PX_PER_METRE - centre) * toPlan));
+        const sw = Math.min(plan.canvas.width - sx, Math.ceil(SIZE * toPlan) + 2);
+        const sh = Math.min(plan.canvas.height - sy, Math.ceil(SIZE * toPlan) + 2);
+        if (sw > 0 && sh > 0) {
+          const at = toMap(plan.minX + sx / plan.pxPerMetre, plan.minZ + sy / plan.pxPerMetre);
+          ctx.drawImage(plan.canvas, sx, sy, sw, sh, at.x, at.y, sw / toPlan, sh / toPlan);
+        }
       }
 
       // View cone: which way the camera's looking.

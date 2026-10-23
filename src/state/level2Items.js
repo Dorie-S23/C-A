@@ -61,6 +61,18 @@ export function createLevel2Items({ onCollect = () => {} } = {}) {
     markDone() {
       done = true;
     },
+    snapshot() {
+      return { collected: [...collectedItems], presented: [...presentedItems], stallSeen, done };
+    },
+    /** From a save. Escape points are restored separately (escapeThreshold.js). */
+    restore(saved = {}) {
+      collectedItems.clear();
+      presentedItems.clear();
+      for (const id of saved.collected ?? []) collectedItems.add(id);
+      for (const id of saved.presented ?? []) presentedItems.add(id);
+      stallSeen = Boolean(saved.stallSeen);
+      done = Boolean(saved.done);
+    },
     reset() {
       collectedItems.clear();
       presentedItems.clear();

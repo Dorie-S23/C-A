@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { restylePomni } from '../characters/pomni.js';
 
 export const OPENING_URL = './models/cinematics/pomni-sleep-wake-r5.glb';
 export const OPENING_DURATION = 7.5;
@@ -72,6 +73,10 @@ export async function loadPomniOpening(room, { settled = false, onProgress } = {
   const gltf = await new GLTFLoader().loadAsync(OPENING_URL, onProgress);
   const root = gltf.scene;
   try {
+    // Same model and rig as the game's Pomni: give her the same look (and
+    // neck) before anything plays, so waking up matches who you then play.
+    const actor = root.getObjectByName('PomniPlacement_GameScale');
+    if (actor) restylePomni(actor, gltf.animations);
     const controller = createPomniOpening({ root, animations: gltf.animations, room });
     controller.loadMilliseconds = performance.now() - start;
     if (settled) controller.settle();

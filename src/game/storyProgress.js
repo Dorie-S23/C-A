@@ -35,5 +35,11 @@ export function createStoryProgress({ objectives, isStorySession }) {
       if (objectives.complete('collect-photos')) objectives.activate('check-kaufmo');
     },
     reset() { ribbitPoints = null; hallwaySeen = false; kaufmoIntroduced = false; },
+    snapshot() { return { ribbitPoints, hallwaySeen, kaufmoIntroduced }; },
+    restore(saved = {}) {
+      ribbitPoints = saved.ribbitPoints ?? null;
+      hallwaySeen = Boolean(saved.hallwaySeen);
+      kaufmoIntroduced = Boolean(saved.kaufmoIntroduced);
+    },
   };
 }

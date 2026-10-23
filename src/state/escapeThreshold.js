@@ -51,3 +51,16 @@ export function passesEscapeGate() {
 export function resetEscapeThreshold() {
   levelPoints.clear();
 }
+
+/** For a save: each level's points. */
+export function snapshotEscapeThreshold() {
+  return Object.fromEntries(levelPoints);
+}
+
+/** From a save; levels that no longer exist are ignored. */
+export function restoreEscapeThreshold(saved = {}) {
+  levelPoints.clear();
+  for (const [level, points] of Object.entries(saved)) {
+    if (level in LEVEL_MAX_POINTS && Number.isFinite(points)) setLevelPoints(level, points);
+  }
+}

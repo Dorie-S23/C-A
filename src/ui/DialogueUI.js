@@ -29,8 +29,13 @@ const CHOICE_HINT = 'move the mouse or ↑/↓ to pick · click or press Space t
  *
  * A picked choice option is then shown (and voiced) as its speaker's own
  * line, and the next advance brings in the reply — see selectOption.
+ *
+ * @param {{ speakers: object, voice?: object, escapeCancels?: () => boolean }} options
+ *   escapeCancels: whether Escape backs out of the script right now. In
+ *   play, Escape is the pause key (it frees the mouse), so main.js says no
+ *   then and the conversation simply carries on after the pause.
  */
-export function createDialogueUI({ speakers, voice = null }) {
+export function createDialogueUI({ speakers, voice = null, escapeCancels = () => true }) {
   const root = document.getElementById('dialogue');
   const box = document.getElementById('dialogue-box');
   const portraitLeft = document.getElementById('dialogue-portrait-left');
@@ -346,6 +351,7 @@ export function createDialogueUI({ speakers, voice = null }) {
     if (paused || root.classList.contains('hidden')) return;
 
     if (event.code === 'Escape') {
+      if (!escapeCancels()) return;
       event.preventDefault();
       cancelDialogue();
       return;
