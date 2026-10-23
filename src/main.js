@@ -1129,10 +1129,11 @@ function talkToKaufmo(lookAt, token) {
       async onComplete() {
         if (!valid() || !storyProgress.finishKaufmoIntro()) return;
         if (itemState.heldCount()) showHint('You already have a photo. Talk to Kaufmo again to show him.', 6000);
-        // The search starts in the Dorm Hall, not wherever Kaufmo's room
-        // door happens to leave her — missionApi.travel already shows the
-        // normal "Loading…" overlay while the room comes in.
-        await missionApi.travel('dorm');
+        // The photos are in the Lobby, not the Dorm Hall — spawn her right
+        // where the search actually happens instead of making her walk
+        // there herself. missionApi.travel already shows the normal
+        // "Loading…" overlay while the room comes in.
+        await missionApi.travel('tadc');
       },
     });
   }

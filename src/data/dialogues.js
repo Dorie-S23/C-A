@@ -571,7 +571,7 @@ export const level2RoomOpeningDialogue = [
     speaker: 'kaufmo',
     side: 'right',
     mood: 'worried',
-    text: "There were three. I'm sure there were three. Bring them back to me? Please?",
+    text: "There were five. I'm sure there were five. Bring them back to me? Please?",
   },
   {
     type: 'line',
@@ -1235,7 +1235,7 @@ export const level2IdleDialogue = [
   },
 ];
 
-// Idle line once all three have been handed in, before he comes to find her.
+// Idle line once all five have been handed in, before he comes to find her.
 export const level2CompleteDialogue = [
   {
     type: 'line',
@@ -1276,7 +1276,7 @@ export const level2PayoffDialogue = [
     speaker: 'kaufmo',
     side: 'right',
     mood: 'happy',
-    text: "Same carpet in all three. Same baseboard. There's a water stain in the corner of two of them, same shape, same spot. It's not three places, Pomni. It's one room.",
+    text: "Same carpet in all five. Same baseboard. There's a water stain in the corner of two of them, same shape, same spot. It's not five places, Pomni. It's one room.",
   },
   {
     type: 'line',
