@@ -35,12 +35,12 @@ test('Caine → Ribbit → hallway → Kaufmo → photos advances once and survi
   assert.equal(objectives.active.id, 'check-kaufmo');
 });
 
-test('poor Ribbit choices still advance, and previews cannot award story milestones', () => {
+test('surviving lower-score completion advances, and previews cannot award story milestones', () => {
   const { objectives, progress, preview } = fixture();
   objectives.activate('find-ribbit');
-  assert.equal(progress.finishRibbit(0), true);
+  assert.equal(progress.finishRibbit(2), true);
   assert.equal(progress.ribbitComplete, true);
-  assert.equal(progress.ribbitPoints, 0);
+  assert.equal(progress.ribbitPoints, 2);
   preview();
   assert.equal(progress.finishKaufmoIntro(), false);
   assert.equal(progress.ribbitComplete, false);

@@ -250,6 +250,7 @@ export function createDialogueUI({ speakers, voice = null }) {
     const choice = engine.current;
     const option = engine.choose(i);
     if (option && onChoice) onChoice(option, engine.current);
+    if (!engine) return; // A choice can synchronously fail and cancel the level.
     // Have the speaker actually say what was picked, as a line of their own,
     // instead of jumping straight to the reply (which would cut the voice
     // off at once). Action-only options like "(Sit down next to her and
