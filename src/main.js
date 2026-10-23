@@ -1262,8 +1262,8 @@ function updatePictureCounter() {
 function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
   objectiveHUD.hide();
   caineConversation.cancelPending();
-  activeJaxPass?.dispose(); activeJaxPass = null;
   dropRoomPreload();
+  activeJaxPass?.dispose(); activeJaxPass = null;
 
   activeEntrance?.dispose(); activeEntrance = null;
   // Invalidate callbacks before cancelling a dialogue owned by the old room.
