@@ -214,6 +214,22 @@ export function createOpeningAudio(camera) {
         source.start();
       } catch { /* same silent fallback as unlock() above */ }
     },
+    /**
+     * One door knock, as Pomni raps on someone's door (the stage's 'knock'
+     * gesture calls this per rap): the same recorded knock as the opening,
+     * or its synthesized fallback. Not positional — she's right at the door.
+     */
+    playKnock() {
+      if (!listener || listener.context.state !== 'running') return;
+      try {
+        const source = listener.context.createBufferSource();
+        source.buffer = buffers.knock;
+        const gain = listener.context.createGain();
+        gain.gain.value = .55;
+        source.connect(gain).connect(listener.context.destination);
+        source.start();
+      } catch { /* same silent fallback as unlock() above */ }
+    },
     createSession(room) {
       if (!listener) return null;
       const door = room.getObjectByProperty('name', 'Plane_1');

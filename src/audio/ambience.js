@@ -4,7 +4,9 @@ const FADE_SECONDS = 1.5;
 // Under the pause menu the room bed ducks rather than cuts out: silence
 // would read as the game having crashed.
 const PAUSED_LEVEL = 0.35;
-const PEAK = 0.2;
+// Average loudness each room's bed is scaled to (see loadSound), well under
+// the voices so dialogue always sits on top.
+const RMS = 0.03;
 
 /**
  * A quiet looping background bed per room (`ambience-<room key>`, generated
@@ -24,7 +26,7 @@ export function createAmbience(getContext) {
   let wanted = null;
   let playing = null; // { key, source, fade }
   let master = null;
-  let volume = 0.6;
+  let volume = 0.45;
   let paused = false;
   let request = 0;
   const buffers = new Map(); // key -> Promise<AudioBuffer|null>, so each loop downloads once
@@ -50,7 +52,7 @@ export function createAmbience(getContext) {
     const mine = ++request;
     fadeOut(context);
     if (!wanted) return;
-    if (!buffers.has(wanted)) buffers.set(wanted, loadSound(context, `ambience-${wanted}`, { peak: PEAK }));
+    if (!buffers.has(wanted)) buffers.set(wanted, loadSound(context, `ambience-${wanted}`, { rms: RMS }));
     const buffer = await buffers.get(wanted);
     // Another room was picked (or home) while this one downloaded.
     if (!buffer || mine !== request) return;

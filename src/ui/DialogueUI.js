@@ -4,6 +4,12 @@ import { ICONS } from './portraitIcons.js';
 import { speechText } from '../audio/voiceKey.js';
 
 const TYPE_SPEED_MS = 22;
+// A voiced line types along with its clip instead (see startTyping), a
+// little ahead of it — reading slightly ahead of the voice feels natural,
+// lagging behind it doesn't. Lines whose clip hasn't started within
+// VOICE_WAIT_MS (slow download, or it failed) fall back to plain typing.
+const VOICE_LEAD = 1.12;
+const VOICE_WAIT_MS = 700;
 // With the pointer locked there's no cursor, so mouse movement steps the
 // highlighted option instead: one step per this many pixels of travel.
 const OPTION_STEP_PX = 60;
@@ -112,16 +118,31 @@ export function createDialogueUI({ speakers, voice = null }) {
     typing = false;
   }
 
-  function startTyping(text) {
+  /**
+   * Types `text` out a character at a time. With `followVoice`, the reveal
+   * tracks how far the line's voice clip has played rather than a fixed
+   * speed, so the words appear as they're spoken: it holds while the clip
+   * loads, and finishes as the voice does.
+   */
+  function startTyping(text, followVoice = false) {
     stopTyping();
     fullText = text ?? '';
     textEl.textContent = '';
     if (fullText.length === 0) return;
     typing = true;
     let i = 0;
+    let waited = 0;
     typeTimer = setInterval(() => {
       if (paused) return;
-      i++;
+      let next = i + 1;
+      if (followVoice) {
+        const progress = voice.progress();
+        if (progress !== null) next = Math.max(i, Math.ceil(Math.min(1, progress * VOICE_LEAD) * fullText.length));
+        else if ((waited += TYPE_SPEED_MS) < VOICE_WAIT_MS) next = i;
+        else followVoice = false; // no clip after all: plain typing from here on
+      }
+      if (next === i) return;
+      i = Math.min(next, fullText.length);
       textEl.textContent = fullText.slice(0, i);
       if (i >= fullText.length) stopTyping();
     }, TYPE_SPEED_MS);
@@ -197,7 +218,8 @@ export function createDialogueUI({ speakers, voice = null }) {
     }
 
     const spoken = node.type === 'line' || (node.type === 'choice' && node.speaker && node.text);
-    if (spoken && !skipping) voice?.play(node.speaker, node.voiceText ?? node.text);
+    let voiced = false;
+    if (spoken && !skipping) voiced = voice?.play(node.speaker, node.voiceText ?? node.text) === true;
     else voice?.stop();
 
     if (node.type === 'line' && node.side) {
@@ -242,7 +264,7 @@ export function createDialogueUI({ speakers, voice = null }) {
     const speaker = speakers[node.speaker];
     nameEl.textContent = speaker ? speaker.name : '';
     directionEl.textContent = node.direction ? `(${node.direction})` : '';
-    startTyping(node.text);
+    startTyping(node.text, voiced);
   }
 
   function selectOption(i) {

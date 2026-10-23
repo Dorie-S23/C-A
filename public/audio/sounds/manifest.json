@@ -2,11 +2,11 @@
   "generator": "tools/generateSounds.mjs",
   "sounds": {
     "ambience-dorm": {
-      "signature": "9eb591914790",
+      "signature": "5d8e44f1c121",
       "loop": true
     },
     "ambience-kaufmo": {
-      "signature": "a28f2b512ae2",
+      "signature": "9b4ca3beca0c",
       "loop": true
     },
     "ambience-maze": {
@@ -14,11 +14,11 @@
       "loop": true
     },
     "ambience-pomni": {
-      "signature": "35874cb60f87",
+      "signature": "23f5407a0858",
       "loop": true
     },
     "ambience-ribbit": {
-      "signature": "9114884402da",
+      "signature": "382458ad2b04",
       "loop": true
     },
     "ambience-tadc": {

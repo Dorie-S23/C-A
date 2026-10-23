@@ -64,6 +64,28 @@ try {
   assert.equal((await clip()).paused, true);
   console.log('PASS Escape cancels the conversation and stops the voice');
 
+  // Typing keeps pace with the voice instead of racing ahead of it.
+  await page.evaluate(async () => {
+    const { preLevel1Dialogue } = await import('/src/data/dialogues.js');
+    window.ui.play(preLevel1Dialogue, { stopAt: 'ragathaMorningGreeting' });
+  });
+  await page.waitForFunction(() => window.voiceEl.currentTime > 1 && !window.voiceEl.paused);
+  const midway = await page.evaluate(() => ({
+    shown: document.getElementById('dialogue-text').textContent.length,
+    progress: window.voiceEl.currentTime / window.voiceEl.duration,
+  }));
+  const fullLength = (await page.evaluate(async () =>
+    (await import('/src/data/dialogues.js')).preLevel1Dialogue[0].text.length));
+  const expected = Math.min(1, midway.progress * 1.12) * fullLength;
+  assert.ok(midway.shown < fullLength, `text already complete at ${midway.progress.toFixed(2)} of the clip`);
+  assert.ok(Math.abs(midway.shown - expected) <= 6, `shown ${midway.shown} chars, expected ≈${expected.toFixed(0)}`);
+  console.log(`PASS Typing follows the voice (${midway.shown}/${fullLength} chars at ${(midway.progress * 100).toFixed(0)}% of the clip)`);
+  await page.waitForFunction(() => window.voiceEl.ended, null, { timeout: 30000 });
+  await page.waitForTimeout(100);
+  assert.equal((await page.locator('#dialogue-text').textContent()).length, fullLength);
+  console.log('PASS The text is complete when the voice finishes');
+  await page.keyboard.press('Escape');
+
   // Choices: the picked option is said as Pomni's own line before the reply.
   await page.evaluate(async () => {
     const { level2OpeningDialogue } = await import('/src/data/dialogues.js');

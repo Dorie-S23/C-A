@@ -22,18 +22,21 @@ const MANIFEST = path.join(OUT_DIR, 'manifest.json');
 const CREDITS_PER_SECOND = 40;
 
 // Ambience ids are `ambience-<room key>` (the keys of ROOM_LOADERS in
-// main.js). Each is a quiet bed under everything else — "unobtrusive" and
-// "no music in the foreground" keep the model from writing a tune over it.
+// main.js). Describe sounds that are actually there and steady, and leave
+// the level to the game (ambience.js scales every bed to the same loudness):
+// prompts full of "quiet", "faint" and "unobtrusive" came back as
+// near-silence, which, turned up, was just hiss that sounded like rain.
+// Avoid rain, wind and static for the same reason — they read as noise.
 const SOUNDS = {
   'ambience-pomni': {
     seconds: 12, loop: true,
-    prompt: 'Quiet bedroom ambience inside a surreal cartoon circus, soft room tone, faint muffled carnival music '
-      + 'drifting from far away through the walls, gentle low hum, calm and unobtrusive, seamless loop',
+    prompt: 'Muffled cheerful circus calliope music playing in another room, heard through a bedroom wall, '
+      + 'soft and warm, slow gentle waltz, slightly melancholy, steady, seamless loop',
   },
   'ambience-dorm': {
     seconds: 12, loop: true,
-    prompt: 'Long empty hallway ambience, hollow echoey room tone, distant muffled circus music, occasional faint '
-      + 'wooden creak, subtle electrical hum, slightly lonely, unobtrusive, seamless loop',
+    prompt: 'Distant circus organ music echoing down a long wooden hallway, hollow reverb, '
+      + 'an occasional soft floorboard creak, slightly lonely, steady, seamless loop',
   },
   'ambience-tadc': {
     seconds: 12, loop: true,
@@ -42,13 +45,13 @@ const SOUNDS = {
   },
   'ambience-ribbit': {
     seconds: 12, loop: true,
-    prompt: 'Small quiet bedroom ambience, soft muffled rain against a window, low gentle room tone, melancholy and '
-      + 'still, unobtrusive, seamless loop',
+    prompt: 'Gentle music box melody playing slowly in a small bedroom, soft crickets chirping outside, '
+      + 'calm, sad and tender, steady, seamless loop',
   },
   'ambience-kaufmo': {
     seconds: 12, loop: true,
-    prompt: 'Cluttered small room ambience, faint ticking clock, occasional quiet paper rustle, low uneasy hum, '
-      + 'distant muffled carnival music, tense but quiet, unobtrusive, seamless loop',
+    prompt: 'Steady ticking clock in a cluttered small room, pencil scribbling on paper now and then, '
+      + 'muffled carnival music far away, tense and anxious, steady, seamless loop',
   },
   'ambience-maze': {
     seconds: 12, loop: true,

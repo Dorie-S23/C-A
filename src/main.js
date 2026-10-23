@@ -359,7 +359,7 @@ const VOICE_VOLUME_KEY = 'tadc.voiceVolume';
 const ambienceVolumeInput = document.getElementById('ambience-volume');
 const ambienceVolumeValue = document.getElementById('ambience-volume-value');
 const AMBIENCE_VOLUME_KEY = 'tadc.ambienceVolume';
-const DEFAULT_AMBIENCE_VOLUME = 0.6;
+const DEFAULT_AMBIENCE_VOLUME = 0.45;
 
 const titleScreen = createTitleScreen({
   renderer,
@@ -2905,6 +2905,7 @@ function applyStagePose(dt) {
     const rap = Math.max(0, Math.sin(rapPhase * Math.PI * 2));
     if (rapPhase > gesture.taps + 0.25 && gesture.taps < KNOCK_TAPS) {
       gesture.taps++;
+      openingAudio.playKnock();
       gesture.onTap?.(gesture.taps);
     }
     bendBone(pomniBones.RightArm, pomni, SIDEWAYS, -1.25 * raise);
