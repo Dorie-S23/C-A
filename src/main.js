@@ -1471,9 +1471,9 @@ function applyLoadedRoom({
   // GLB rooms' meshes: the wall probes and floor raycast only test the
   // few entries whose boxes the query overlaps, padded by the player
   // radius so a mesh the player is touching is never skipped.
-  collisionMeshes = (roomCollisionMeshes ?? []).map((entry) => ({
-    mesh: entry.mesh,
-    box: entry.box,
+  // The room's own entries, not copies: her bedroom's wall cut-out swaps
+  // an entry's mesh when the door's opened, and that has to reach here.
+  collisionMeshes = (roomCollisionMeshes ?? []).map((entry) => Object.assign(entry, {
     paddedBox: entry.box.clone().expandByScalar(PLAYER_RADIUS),
     dynamic: entry.dynamic ?? false,
   }));
