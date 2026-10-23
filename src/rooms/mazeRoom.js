@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { generateMaze } from '../maze/generateMaze.js';
+import { createSeededRandom } from '../maze/seededRandom.js';
+import { getReachableCells, selectMazeCell } from '../maze/mazePlacements.js';
 import { loadJax } from '../characters/jax.js';
 import { createBowlingBall, createHotChocolateMug, placeMazeFindable, pulseGlow } from '../props/mazeFindables.js';
 
@@ -44,7 +46,11 @@ function createCheckerTexture() {
  * the Pre-Level-1 hallway cutscene uses) before building, replacing what
  * used to be a placeholder cylinder marking his spot.
  *
- * @returns {Promise<{ group: THREE.Group, bounds: THREE.Box3, spawn: THREE.Vector3,
+ * @param {Function} [onProgress]
+ * @param {{ mazeItems?: object, seed?: number }} [options] Omit seed for a fresh
+ *   random maze; pass the returned mazeSeed to reproduce it on a fresh run.
+ * @returns {Promise<{ mazeSeed: number, maze: object, mazePlacement: object,
+ *   group: THREE.Group, bounds: THREE.Box3, spawn: THREE.Vector3,
  *   spawnFacing: number, colliders: THREE.Box3[],
  *   triggers: { jax: THREE.Box3, exit: THREE.Box3 },
  *   movers: Array<{ mesh: THREE.Object3D, waypoints: THREE.Vector3[], speed: number,
@@ -53,16 +59,20 @@ function createCheckerTexture() {
  *   interactables: Array,
  *   update: (deltaSeconds: number, playerPosition: THREE.Vector3) => void }>}
  */
-export function loadMazeRoom(onProgress, { mazeItems } = {}) {
-  return loadJax().then((jaxApi) => {
-    onProgress?.(1);
-    return buildMaze(jaxApi, mazeItems);
-  });
+export async function loadMazeRoom(onProgress, {
+  mazeItems, seed = Math.floor(Math.random() * 0x100000000),
+} = {}) {
+  // Resolve the seed before loading assets. All layout/prop randomness uses
+  // this private stream, independent of other rooms and Three.js internals.
+  const rng = createSeededRandom(seed);
+  const jaxApi = await loadJax();
+  onProgress?.(1);
+  return buildMaze(jaxApi, mazeItems, seed, rng);
 }
 
-function buildMaze(jaxApi, mazeItems) {
+function buildMaze(jaxApi, mazeItems, seed, rng) {
   const { cols, rows, cellSize, wallHeight, wallThickness } = MAZE;
-  const maze = generateMaze(cols, rows);
+  const maze = generateMaze(cols, rows, rng);
 
   const group = new THREE.Group();
   group.name = 'MazeRoom';
@@ -240,35 +250,46 @@ function buildMaze(jaxApi, mazeItems) {
   // the hazard's patrol segment — so finding them never means walking
   // into immediate danger or them sitting right where the player already
   // has to go anyway.
+  const reservedCells = [maze.start, maze.jax, maze.jaxNeighbor, maze.exit, ...patrolCells];
+  const itemCells = [];
+  // Bound to this room's final corridor graph and seeded stream. Future search
+  // phases can select a safe cell from the player's current cell and get its
+  // floor position without duplicating world/grid conversion or exclusions.
+  const mazePlacement = {
+    cellAt(position) {
+      if (!Number.isFinite(position?.x) || !Number.isFinite(position?.z)) return null;
+      const r = Math.floor((position.z + depth / 2) / cellSize);
+      const c = Math.floor((position.x + width / 2) / cellSize);
+      return maze.cells[r]?.[c] ?? null;
+    },
+    reachableFrom: from => getReachableCells(maze, from),
+    selectCell(from, { excludedCells = [], ...limits } = {}) {
+      const selected = selectMazeCell(maze, from, {
+        ...limits, rng,
+        excludedCells: [...reservedCells, ...itemCells, from, ...excludedCells],
+      });
+      return selected ? {
+        ...selected, position: cellCenter(selected.cell.r, selected.cell.c),
+      } : null;
+    },
+  };
+
   const findableRoom = { group, interactables: [] };
   const placedFindables = [];
   if (mazeItems) {
-    const reserved = new Set([
-      `${maze.start.r},${maze.start.c}`,
-      `${maze.jax.r},${maze.jax.c}`,
-      `${maze.jaxNeighbor.r},${maze.jaxNeighbor.c}`,
-      `${maze.exit.r},${maze.exit.c}`,
-      ...patrolCells.map((cell) => `${cell.r},${cell.c}`),
-    ]);
-    const openCells = [];
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (!reserved.has(`${r},${c}`)) openCells.push({ r, c });
-      }
-    }
-    for (let i = openCells.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [openCells[i], openCells[j]] = [openCells[j], openCells[i]];
-    }
     const findables = [
       { id: 'bowling-ball', label: 'bowling ball', createMesh: createBowlingBall },
       { id: 'hot-chocolate-mug', label: 'mug of hot chocolate', createMesh: createHotChocolateMug },
     ];
-    findables.forEach(({ id, label, createMesh }, i) => {
-      const cell = openCells[i];
-      if (!cell) return;
-      const center = cellCenter(cell.r, cell.c);
-      const mesh = placeMazeFindable(findableRoom, mazeItems, id, label, createMesh, new THREE.Vector3(center.x, 0, center.z));
+    findables.forEach(({ id, label, createMesh }) => {
+      const selected = mazePlacement.selectCell(maze.start);
+      if (!selected) throw new Error(`No reachable maze cell is available for ${id}.`);
+      // Reserve both item slots even when an item was already picked up, so
+      // revisits keep the remaining item at the same cell for this seed.
+      itemCells.push(selected.cell);
+      // Consume a rotation for every slot, including collected items.
+      const rotationRandom = rng();
+      const mesh = placeMazeFindable(findableRoom, mazeItems, id, label, createMesh, selected.position, () => rotationRandom);
       if (mesh) placedFindables.push(mesh);
     });
   }
@@ -315,6 +336,7 @@ function buildMaze(jaxApi, mazeItems) {
   );
 
   return {
+    mazeSeed: seed, maze, mazePlacement,
     group, bounds, spawn, spawnFacing, colliders, triggers, movers, hazards, update,
     interactables: findableRoom.interactables,
   };

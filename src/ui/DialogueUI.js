@@ -68,6 +68,7 @@ export function createDialogueUI({ speakers, voice = null }) {
   // While set, engine.current is already the reply — not yet rendered, so
   // its onNode hasn't fired.
   let echo = null;
+  let pendingVoice = null; // an awaited scene revealed this line while paused
 
   /**
    * Fills a portrait slot with whichever speaker last occupied that side.
@@ -197,8 +198,14 @@ export function createDialogueUI({ speakers, voice = null }) {
     }
 
     const spoken = node.type === 'line' || (node.type === 'choice' && node.speaker && node.text);
-    if (spoken && !skipping) voice?.play(node.speaker, node.voiceText ?? node.text);
-    else voice?.stop();
+    pendingVoice = null;
+    if (spoken && !skipping) {
+      const text = node.voiceText ?? node.text;
+      if (paused) {
+        voice?.stop();
+        pendingVoice = { speaker: node.speaker, text };
+      } else voice?.play(node.speaker, text);
+    } else voice?.stop();
 
     if (node.type === 'line' && node.side) {
       if (node.side === 'left') {
@@ -292,7 +299,7 @@ export function createDialogueUI({ speakers, voice = null }) {
   }
 
   function finish() {
-    nodeGeneration++; awaitingNode = false; echo = null;
+    nodeGeneration++; awaitingNode = false; echo = null; pendingVoice = null;
     paused = false; root.style.visibility = '';
     root.classList.add('hidden');
     stopTyping();
@@ -318,7 +325,7 @@ export function createDialogueUI({ speakers, voice = null }) {
    */
   function cancelDialogue() {
     if (!engine) return;
-    nodeGeneration++; awaitingNode = false; echo = null;
+    nodeGeneration++; awaitingNode = false; echo = null; pendingVoice = null;
     paused = false; root.style.visibility = '';
     root.classList.add('hidden');
     stopTyping();
@@ -420,7 +427,7 @@ export function createDialogueUI({ speakers, voice = null }) {
       onComplete: complete, onChoice: choice, onCancel: cancel, distressFor: distress, onNode: node, lineFor: transform,
       startAt, stopAt,
     } = {}) {
-      nodeGeneration++; awaitingNode = false; echo = null;
+      nodeGeneration++; awaitingNode = false; echo = null; pendingVoice = null;
       paused = false; root.style.visibility = '';
       engine = createDialogueEngine(script, { startAt, stopAt });
       onComplete = complete ?? null;
@@ -480,7 +487,11 @@ export function createDialogueUI({ speakers, voice = null }) {
     },
     setPaused(value) {
       paused = value;
-      voice?.setPaused(value);
+      if (!value && pendingVoice) {
+        const { speaker, text } = pendingVoice;
+        pendingVoice = null;
+        voice?.play(speaker, text);
+      } else voice?.setPaused(value);
       root.style.visibility = value || awaitingNode ? 'hidden' : '';
     },
     get isActive() {

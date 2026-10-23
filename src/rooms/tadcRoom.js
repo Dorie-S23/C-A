@@ -8,10 +8,9 @@ import { createStaircase } from '../props/accessStairs.js';
 
 // Level 2's five office photos (see PHOTO_COUNT in level2Items.js),
 // scattered round the lobby rather than sitting in Kaufmo's own room — a
-// real search, not a hand-in on arrival. scatterPictures() picks different
-// wall spots each time this room loads, so a retry (the search timer
-// running out, or just leaving and coming back) doesn't put them back
-// where they were. ca6.png exists alongside these but isn't used.
+// real search, not a hand-in on arrival. scatterPictures() keeps wall spots
+// in the shared item state for the whole attempt. Only a retry or New Game
+// picks new positions. ca6.png exists alongside these but isn't used.
 const PICTURES = [
   { id: 'ca1', url: './models/objects/ca1.png' },
   { id: 'ca2', url: './models/objects/ca2.png' },

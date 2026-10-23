@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-// One of the "real C&A office" reference photos (Level 2's three scattered
+// One of the "real C&A office" reference photos (Level 2's five scattered
 // collectibles). Simple framed-photo prop: a wood box for the frame, a
 // textured plane for the photo, standing proud of the frame face so it
 // never z-fights.
@@ -212,9 +212,9 @@ export function placeOfficePicture(room, items, itemId, imageUrl, position, rota
  * at room load (measured ~400-600ms against the real Lobby), not a
  * per-frame one.
  *
- * Each call starts from a random grid order and a random sweep angle per
- * origin, so a replay (the search timer running out, or just leaving and
- * coming back) doesn't put them back exactly where they were.
+ * The shared item state caches plain placement data for the whole attempt.
+ * Returning after a partial hand-in preserves the remaining photos' spots.
+ * Resetting that state (retry or New Game) generates a fresh random layout.
  *
  * @param {{ group: THREE.Group, interactables?: Array }} room
  * @param {object} items shared item state (see src/state/level2Items.js)
@@ -229,8 +229,29 @@ export function placeOfficePicture(room, items, itemId, imageUrl, position, rota
  */
 export function scatterPictures(room, items, pictures, spawn, keepClear = [], {
   height = 1.5, spacing = 8, keepClearRadius = 1.5, maxDistance = 12,
-  gridStep = 10, gridRadius = 4,
+  gridStep = 10, gridRadius = 4, rng = Math.random,
 } = {}) {
+  const layout = items.getPhotoLayout(() => choosePictureSpots(room, pictures, spawn, keepClear, {
+    height, spacing, keepClearRadius, maxDistance, gridStep, gridRadius, rng,
+  }));
+  const placed = [];
+  for (const { id, url } of pictures) {
+    const spot = layout.find(entry => entry?.id === id);
+    const picture = spot && placeOfficePicture(room, items, id, url, spot.position, spot.rotationY);
+    if (picture) placed.push(picture);
+  }
+  let elapsed = 0;
+  return {
+    update(deltaSeconds) {
+      elapsed += deltaSeconds;
+      pulseGlow(placed, elapsed);
+    },
+  };
+}
+
+function choosePictureSpots(room, pictures, spawn, keepClear, {
+  height, spacing, keepClearRadius, maxDistance, gridStep, gridRadius, rng,
+}) {
   const avoid = keepClear.filter(Boolean).map((point) => new THREE.Vector3(point.x, spawn.y + height, point.z));
 
   const origins = [];
@@ -240,7 +261,7 @@ export function scatterPictures(room, items, pictures, spawn, keepClear = [], {
     }
   }
   for (let i = origins.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rng() * (i + 1));
     [origins[i], origins[j]] = [origins[j], origins[i]];
   }
 
@@ -248,7 +269,7 @@ export function scatterPictures(room, items, pictures, spawn, keepClear = [], {
   const wanted = pictures.length * 3; // a bigger pool than needed, so the spacing/keep-clear filters still have real room to choose from
   for (const origin of origins) {
     if (spots.length >= wanted) break;
-    const startAngle = Math.random() * Math.PI * 2;
+    const startAngle = rng() * Math.PI * 2;
     for (let i = 0; i < 16; i++) {
       const angle = startAngle + (i / 16) * Math.PI * 2;
       const spot = findWallSpot(room.group, origin, new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle)), maxDistance);
@@ -263,20 +284,11 @@ export function scatterPictures(room, items, pictures, spawn, keepClear = [], {
   // itself randomized, not just their search order — otherwise the pictures
   // would always cluster around whichever origins happen first in the grid.
   for (let i = spots.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rng() * (i + 1));
     [spots[i], spots[j]] = [spots[j], spots[i]];
   }
-  const placed = [];
-  pictures.forEach(({ id, url }, i) => {
+  return pictures.map(({ id }, i) => {
     const spot = spots[i];
-    const picture = spot && placeOfficePicture(room, items, id, url, spot.position, spot.rotationY);
-    if (picture) placed.push(picture);
+    return spot ? { id, position: spot.position, rotationY: spot.rotationY } : null;
   });
-  let elapsed = 0;
-  return {
-    update(deltaSeconds) {
-      elapsed += deltaSeconds;
-      pulseGlow(placed, elapsed);
-    },
-  };
 }
