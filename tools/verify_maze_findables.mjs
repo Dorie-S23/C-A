@@ -107,7 +107,7 @@ GLTFLoader.prototype.load = function (url, onLoad, _progress, onError) {
   const revisited = await loadMazeRoom(null, { seed: 1, mazeItems: items });
   assert.equal(revisited.interactables.length, 1);
   assert.deepEqual(layout(revisited).walls, layout(first).walls);
-  assert.deepEqual(layout(revisited).items[0].position, layout(first).items[1].position);
+  assert.deepEqual(layout(revisited).items[0], layout(first).items[1]);
   console.log('PASS different seeds vary the room, and collected items stay absent on a seeded revisit');
 }
 
@@ -115,4 +115,55 @@ GLTFLoader.prototype.load = function (url, onLoad, _progress, onError) {
   await assert.rejects(loadMazeRoom(null, { seed: -1 }), /Maze seed must be an integer/);
   await assert.rejects(loadMazeRoom(null, { seed: '12345' }), /Maze seed must be an integer/);
   console.log('PASS invalid room seeds reject with an actionable error');
+}
+
+{
+  for (let seed = 0; seed < 32; seed++) {
+    const room = await loadMazeRoom(null, { seed, mazeItems: createMazeItems() });
+    const { maze, mazePlacement } = room;
+    const key = cell => `${cell.r},${cell.c}`;
+    const origin = mazePlacement.cellAt(room.spawn);
+    assert.equal(origin, maze.start);
+    const reached = mazePlacement.reachableFrom(origin);
+    assert.equal(reached.length, maze.rows * maze.cols);
+    const distances = new Map(reached.map(({ cell, distance }) => [key(cell), distance]));
+    const reserved = [maze.start, maze.exit, maze.jax, maze.jaxNeighbor,
+      ...room.movers.flatMap(mover => mover.waypoints.map(point => mazePlacement.cellAt(point)))];
+    const excluded = new Set(reserved.map(key));
+    const props = room.group.children.filter(child => child.name === 'MazeFindable');
+    assert.equal(props.length, 2);
+    for (const prop of props) {
+      const cell = mazePlacement.cellAt(prop.position);
+      assert.ok(cell && distances.has(key(cell)), `seed ${seed}: item is unreachable`);
+      assert.ok(!excluded.has(key(cell)), `seed ${seed}: item overlaps a reserved cell`);
+      excluded.add(key(cell)); // also disallow the two items sharing a cell
+      assert.ok(room.colliders.every(wall => !wall.containsPoint(prop.position)), `seed ${seed}: item is inside a wall`);
+    }
+    const jax = room.group.getObjectByName('Jax');
+    assert.equal(mazePlacement.cellAt(jax.position), maze.jax);
+    assert.ok(distances.has(key(maze.jax)));
+    assert.ok(room.colliders.every(wall => !wall.containsPoint(jax.position)));
+
+    const from = maze.cells[seed % maze.rows][seed * 7 % maze.cols];
+    const queryDistances = new Map(mazePlacement.reachableFrom(from).map(({ cell, distance }) => [key(cell), distance]));
+    const target = mazePlacement.selectCell(from, {
+      minDistance: 2, maxDistance: 8, excludedCells: [{ r: from.r, c: from.c }],
+    });
+    assert.ok(target, `seed ${seed}: no safe Jax destination`);
+    assert.ok(target.distance >= 2 && target.distance <= 8);
+    assert.equal(target.distance, queryDistances.get(key(target.cell)));
+    assert.equal(mazePlacement.cellAt(target.position), target.cell);
+    assert.ok(!excluded.has(key(target.cell)), `seed ${seed}: destination overlaps a reserved cell or item`);
+    assert.ok(room.colliders.every(wall => !wall.containsPoint(target.position)));
+    assert.equal(mazePlacement.selectCell(from, { minDistance: maze.rows * maze.cols }), null);
+    assert.equal(mazePlacement.selectCell(from, { excludedCells: maze.cells.flat() }), null);
+
+    assert.equal(mazePlacement.cellAt({ x: room.bounds.max.x, z: 0 }), null);
+    assert.equal(mazePlacement.cellAt({ x: room.bounds.min.x - 1, z: 0 }), null);
+    assert.equal(mazePlacement.cellAt({ x: NaN, z: 0 }), null);
+    room.interactables[0].interact();
+    assert.equal(room.group.children.filter(child => child.name === 'MazeFindable').length, 1);
+    assert.equal(room.interactables.length, 1);
+  }
+  console.log('PASS 32 real-model maze seeds keep items and Jax reachable, honour exclusions, and handle impossible destinations');
 }
