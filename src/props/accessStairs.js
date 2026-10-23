@@ -17,7 +17,10 @@ const PLATFORM_MATERIAL = new THREE.MeshStandardMaterial({ color: 0xb0163f, roug
  *   `base` is where the bottom step starts; `facing` (radians, same
  *   convention as spawnFacing elsewhere — 0 faces -Z) points the climb
  *   "up" direction, with the platform landing beyond the top step.
- * @returns {{ group: THREE.Group, colliders: Array<{ mesh: THREE.Mesh, box: THREE.Box3 }> }}
+ * @returns {{ group: THREE.Group, colliders: Array<{ mesh: THREE.Mesh, box: THREE.Box3 }>,
+ *   zone: { box: THREE.Box3, up: THREE.Vector3 } }}
+ *   `zone` is the steps' world footprint (platform excluded) and the
+ *   horizontal climb direction, for main.js to notice her on the stairs.
  */
 export function createStaircase({
   base, floorY = 0, steps = 6, rise = 0.33, treadDepth = 0.6, width = 2.5, platformDepth = 4, facing = 0,
@@ -51,5 +54,11 @@ export function createStaircase({
     if (child.isMesh) colliders.push({ mesh: child, box: new THREE.Box3().setFromObject(child) });
   });
 
-  return { group, colliders };
+  const zone = {
+    box: new THREE.Box3(),
+    up: new THREE.Vector3(0, 0, 1).applyQuaternion(group.quaternion),
+  };
+  for (const { mesh, box } of colliders) if (mesh.material === STEP_MATERIAL) zone.box.union(box);
+
+  return { group, colliders, zone };
 }

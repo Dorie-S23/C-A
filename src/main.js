@@ -90,9 +90,17 @@ const PLAYER_RADIUS = 0.35;
 // updatePomniWalk speeds the clips up to match, so her feet stay planted.
 const WALK_SPEED = 4.2; // metres per second
 const SPRINT_MULTIPLIER = 2.0; // running speed = WALK_SPEED × this
+// Dev builds only (npm run dev): crosses rooms fast for playtesting. Kept
+// moderate — every frame's step still goes through the wall probes, and a
+// much longer step starts skipping thin geometry.
+const DEV_SPEED_MULTIPLIER = import.meta.env.DEV ? 3 : 1;
 const WALL_MARGIN = 0.4; // keep the camera this far from any wall
 const STEP_HEIGHT = 0.4; // ledges up to this tall are stepped onto; taller ones block
 const PROBE_HEIGHT = STEP_HEIGHT + 0.05; // height of the wall-probe ray above the feet
+// Space jumps: peak height is JUMP_SPEED² / (2 × GRAVITY) ≈ 0.8m, enough to
+// hop up ledges and stairs taller than STEP_HEIGHT.
+const JUMP_SPEED = 4.5; // metres per second, upward at take-off
+const GRAVITY = 13; // metres per second², a little floatier than real
 // Body-overlap rings, above the feet. Only the shin ring lets ramp-like
 // faces through: a ramp the player can really walk up is always further
 // than PLAYER_RADIUS away at chest/head height, so anything that close up
@@ -1811,6 +1819,11 @@ document.addEventListener('keydown', (e) => {
 
 // --- Keyboard movement ---
 const move = { forward: false, back: false, left: false, right: false, sprint: false };
+// Jump state (see applyJump): a press waits here until the next movement
+// frame; airborne stays true until settleOnGround lands her.
+let jumpQueued = false;
+let airborne = false;
+let verticalVelocity = 0;
 
 window.addEventListener('keydown', (e) => {
   if (activeCinematic()?.active) {
@@ -1831,6 +1844,13 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyE' && !e.repeat && isLocked && readyToPlay && !dialogueUI.isActive && focusedInteractable) {
     if (shouldShowObjective(gameplayHUDContext()) && focusedBedroomDoor()) controlsTutorial.interact();
     focusedInteractable.interact(interactionContext);
+  }
+  // A Space that DialogueUI already used (advancing or closing a line) has
+  // been default-prevented, so finishing a conversation doesn't also jump.
+  if (e.code === 'Space' && !e.repeat && !e.defaultPrevented && isLocked && readyToPlay && !paused
+    && !dialogueUI.isActive) {
+    e.preventDefault();
+    jumpQueued = true;
   }
   if (e.code === 'KeyV' && !e.repeat && isLocked && readyToPlay && !paused && !dialogueUI.isActive
     && !activeCutscene && !stageBusy()) {
@@ -1874,6 +1894,10 @@ function resetMoveState() {
   move.left = false;
   move.right = false;
   move.sprint = false;
+  // Called on every teleport too: drop any jump in progress, and the floor
+  // follow snaps her down onto wherever she now stands.
+  jumpQueued = false;
+  land();
 }
 
 function setMove(code, value) {
@@ -2272,7 +2296,8 @@ function findGroundY(x, z, originY, feetY) {
  * Pins the player to the floor directly under them. Returns false when no
  * probe finds any floor at all — the caller then rejects the frame's move,
  * which is exactly what bounds the player to the walkable surface instead
- * of letting them walk off its edge into the void.
+ * of letting them walk off its edge into the void. Mid-jump, a floor still
+ * below her feet leaves her in the air; she lands once she reaches it.
  */
 function settleOnGround(player) {
   const feetY = player.position.y - PLAYER_HEIGHT;
@@ -2280,11 +2305,34 @@ function settleOnGround(player) {
   for (const [dx, dz] of GROUND_PROBES) {
     const groundY = findGroundY(player.position.x + dx, player.position.z + dz, originY, feetY);
     if (groundY !== null) {
+      if (airborne && groundY < feetY) return true;
       player.position.y = groundY + PLAYER_HEIGHT;
+      if (verticalVelocity <= 0) land();
       return true;
     }
   }
   return false;
+}
+
+/**
+ * Starts a queued jump and moves her along the arc. Runs before the
+ * frame's horizontal step: lifting her feet first raises the wall and
+ * body probes with them, which is what lets her clear a ledge mid-air.
+ */
+function applyJump(deltaSeconds) {
+  if (jumpQueued && !airborne) {
+    airborne = true;
+    verticalVelocity = JUMP_SPEED;
+  }
+  jumpQueued = false;
+  if (!airborne) return;
+  verticalVelocity -= GRAVITY * deltaSeconds;
+  player.position.y += verticalVelocity * deltaSeconds;
+}
+
+function land() {
+  airborne = false;
+  verticalVelocity = 0;
 }
 
 /**
@@ -2850,7 +2898,7 @@ function checkTriggers(player) {
 }
 
 function updateMovement(deltaSeconds) {
-  const speed = WALK_SPEED * (move.sprint ? SPRINT_MULTIPLIER : 1);
+  const speed = WALK_SPEED * (move.sprint ? SPRINT_MULTIPLIER : 1) * DEV_SPEED_MULTIPLIER;
 
   velocity.x = Number(move.right) - Number(move.left);
   velocity.z = Number(move.back) - Number(move.forward);
@@ -2872,6 +2920,8 @@ function updateMovement(deltaSeconds) {
 
   const frameStartX = player.position.x;
   const frameStartZ = player.position.z;
+
+  applyJump(deltaSeconds);
 
   if (collisionMeshes.length > 0) {
     // GLB rooms: pass the frame's displacement through the wall probes and
@@ -2907,6 +2957,8 @@ function updateMovement(deltaSeconds) {
         if (!accepted) player.position.copy(moveStart);
       }
     }
+    // Jumping straight up never runs acceptMove, so land her here.
+    if (airborne && !settleOnGround(player)) land();
   } else {
     player.position.addScaledVector(moveRight, velocity.x).addScaledVector(moveForward, -velocity.z);
 
@@ -2915,7 +2967,10 @@ function updateMovement(deltaSeconds) {
     if (bounds) {
       player.position.x = THREE.MathUtils.clamp(player.position.x, bounds.minX, bounds.maxX);
       player.position.z = THREE.MathUtils.clamp(player.position.z, bounds.minZ, bounds.maxZ);
-      player.position.y = floorY + PLAYER_HEIGHT;
+      if (!airborne || player.position.y <= floorY + PLAYER_HEIGHT) {
+        player.position.y = floorY + PLAYER_HEIGHT;
+        land();
+      }
     }
   }
 
