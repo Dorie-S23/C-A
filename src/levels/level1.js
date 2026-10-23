@@ -110,7 +110,7 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
     game.playDialogue('level1Ribbit', {
       ...scoring, startAt: 'l1_inside',
       lineFor: node => node.id === 'l1_recovery' && tally.correct < 2
-        ? { ...node, text: 'I’m still a mess. But… it helps that you stayed. I think I can sit up for a bit.' }
+        ? { ...node, text: node.altText }
         : node,
       onNode: node => actions[node.action]?.(),
       async onComplete() {

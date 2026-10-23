@@ -1005,6 +1005,10 @@ export const level1RibbitDialogue = [
     speaker: 'ribbit',
     side: 'right',
     text: 'Thanks, Pomni. Really. I feel… less like a puddle.',
+    // Swapped in by level1.js's lineFor when fewer than two picks were
+    // right. Kept here rather than in level1.js so the voice generator
+    // (tools/generateVoices.mjs) finds and records it too.
+    altText: 'I’m still a mess. But… it helps that you stayed. I think I can sit up for a bit.',
   },
   {
     type: 'line',
