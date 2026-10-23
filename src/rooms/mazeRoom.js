@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { generateMaze } from '../maze/generateMaze.js';
 import { loadJax } from '../characters/jax.js';
+import { createBowlingBall, createHotChocolateMug, placeMazeFindable, pulseGlow } from '../props/mazeFindables.js';
 
 // Exported so main.js can size the player's outer bounds without duplicating
 // numbers, the same way room.js exposes ROOM.
@@ -49,16 +50,17 @@ function createCheckerTexture() {
  *   movers: Array<{ mesh: THREE.Object3D, waypoints: THREE.Vector3[], speed: number,
  *     targetIndex: number, direction: number, spin?: boolean }>,
  *   hazards: Array<{ mesh: THREE.Object3D, radius: number }>,
+ *   interactables: Array,
  *   update: (deltaSeconds: number, playerPosition: THREE.Vector3) => void }>}
  */
-export function loadMazeRoom(onProgress) {
+export function loadMazeRoom(onProgress, { mazeItems } = {}) {
   return loadJax().then((jaxApi) => {
     onProgress?.(1);
-    return buildMaze(jaxApi);
+    return buildMaze(jaxApi, mazeItems);
   });
 }
 
-function buildMaze(jaxApi) {
+function buildMaze(jaxApi, mazeItems) {
   const { cols, rows, cellSize, wallHeight, wallThickness } = MAZE;
   const maze = generateMaze(cols, rows);
 
@@ -233,13 +235,54 @@ function buildMaze(jaxApi) {
     group.add(hazardMarker);
   }
 
+  // The two hidden keepsakes (see src/state/mazeItems.js) go in random
+  // cells away from the start, Jax's own spot and approach, the exit, and
+  // the hazard's patrol segment — so finding them never means walking
+  // into immediate danger or them sitting right where the player already
+  // has to go anyway.
+  const findableRoom = { group, interactables: [] };
+  const placedFindables = [];
+  if (mazeItems) {
+    const reserved = new Set([
+      `${maze.start.r},${maze.start.c}`,
+      `${maze.jax.r},${maze.jax.c}`,
+      `${maze.jaxNeighbor.r},${maze.jaxNeighbor.c}`,
+      `${maze.exit.r},${maze.exit.c}`,
+      ...patrolCells.map((cell) => `${cell.r},${cell.c}`),
+    ]);
+    const openCells = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (!reserved.has(`${r},${c}`)) openCells.push({ r, c });
+      }
+    }
+    for (let i = openCells.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [openCells[i], openCells[j]] = [openCells[j], openCells[i]];
+    }
+    const findables = [
+      { id: 'bowling-ball', label: 'bowling ball', createMesh: createBowlingBall },
+      { id: 'hot-chocolate-mug', label: 'mug of hot chocolate', createMesh: createHotChocolateMug },
+    ];
+    findables.forEach(({ id, label, createMesh }, i) => {
+      const cell = openCells[i];
+      if (!cell) return;
+      const center = cellCenter(cell.r, cell.c);
+      const mesh = placeMazeFindable(findableRoom, mazeItems, id, label, createMesh, new THREE.Vector3(center.x, 0, center.z));
+      if (mesh) placedFindables.push(mesh);
+    });
+  }
+
   // Jax breathes/trembles in place all the time (see jax.js's idle
   // branch) and turns to actually look at Pomni once she's close — a
   // little earlier than his found-trigger itself fires, so he's already
   // turning by the time the hint shows rather than snapping to face her.
   const FACE_RADIUS = cellSize * 1.4;
+  let findableElapsed = 0;
   function update(deltaSeconds, playerPosition) {
     jaxApi.update(deltaSeconds);
+    findableElapsed += deltaSeconds;
+    pulseGlow(placedFindables, findableElapsed);
     if (!playerPosition) return;
     const dx = playerPosition.x - jaxCenter.x;
     const dz = playerPosition.z - jaxCenter.z;
@@ -271,5 +314,8 @@ function buildMaze(jaxApi) {
     new THREE.Vector3(width / 2, wallHeight, depth / 2),
   );
 
-  return { group, bounds, spawn, spawnFacing, colliders, triggers, movers, hazards, update };
+  return {
+    group, bounds, spawn, spawnFacing, colliders, triggers, movers, hazards, update,
+    interactables: findableRoom.interactables,
+  };
 }

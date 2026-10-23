@@ -23,6 +23,7 @@ import { resetEscapeThreshold } from './state/escapeThreshold.js';
 import { createStoryProgress } from './game/storyProgress.js';
 import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.js';
 import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT } from './state/level2Items.js';
+import { createMazeItems, MAZE_FINDABLES } from './state/mazeItems.js';
 import { runLevel1 } from './levels/level1.js';
 import { preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
 import { preloadJaxFleeCutscene, playJaxFleeCutscene } from './cutscenes/jaxFleeCutscene.js';
@@ -273,7 +274,7 @@ roomPicker.querySelectorAll('button[data-room]').forEach((button) => {
   });
 });
 
-dialoguePicker.querySelectorAll('button:not(#btn-level2)').forEach((button) => {
+dialoguePicker.querySelectorAll('button:not(#btn-level2):not(#btn-level3)').forEach((button) => {
   button.addEventListener('click', (event) => {
     event.stopPropagation();
     // The story runs for real from the start; levels are played for real
@@ -293,10 +294,36 @@ document.getElementById('btn-level2').addEventListener('click', (event) => {
   openingCompleted = false;
   resetObjectiveSession(true);
   itemState.reset();
+  mazeItems.reset();
   objectives.activate('find-ribbit');
   storyProgress.finishRibbit(4);
   titleScreen.hide();
   selectRoom('dorm', { onReady: () => playKaufmoHallway() });
+});
+
+// Jumps straight to Level 3 for playtesting, skipping Levels 1-2. Primes
+// storyProgress/itemState through the same calls the real flow makes
+// (Ribbit done, Kaufmo introduced, all photos collected and handed in,
+// the one-time "Level 2 Complete" stall already consumed) then runs the
+// real mission from its actual first beat: Jax bolting past Kaufmo's open
+// door, same as finishing the photo search for real triggers. The raw
+// "Maze" room-picker button still exists for jumping straight into the
+// maze room itself with no intro, which is a different, narrower thing.
+document.getElementById('btn-level3').addEventListener('click', (event) => {
+  event.stopPropagation();
+  openingCompleted = false;
+  resetObjectiveSession(true);
+  itemState.reset();
+  mazeItems.reset();
+  objectives.activate('find-ribbit');
+  storyProgress.finishRibbit(4);
+  storyProgress.finishKaufmoIntro();
+  for (let i = 0; i < PHOTO_COUNT; i++) itemState.collect(`dev-level3-priming-${i}`);
+  itemState.presentHeld();
+  storyProgress.presentedPhotos(PHOTO_COUNT);
+  itemState.pickPostHandInScript(); // consumes the stall beat so talkToKaufmo lands straight on the payoff below
+  titleScreen.hide();
+  selectRoom('kaufmo', { onReady: (room) => talkToKaufmo(room.kaufmoApi, loadToken) });
 });
 
 btnResume.addEventListener('click', (event) => {
@@ -552,6 +579,7 @@ function startNewGame() {
   // Hidden score and Level 2's photos start over too.
   resetEscapeThreshold();
   itemState.reset();
+  mazeItems.reset();
   resetObjectiveSession(true);
   openingAudio.unlock();
   if (isLocked) document.exitPointerLock();
@@ -1216,6 +1244,16 @@ const itemState = createLevel2Items({
 });
 const storyProgress = createStoryProgress({ objectives, isStorySession: () => preLevel1Session });
 
+// --- Level 3 maze keepsakes ---------------------------------------------
+// Not scored, just a hint on pickup — same shared-instance-survives-room-
+// changes lifecycle as itemState above.
+const mazeItems = createMazeItems({
+  onCollect: (id, count, total) => {
+    const label = MAZE_FINDABLES.find((findable) => findable.id === id)?.label ?? 'something';
+    showHint(`Found the ${label}. (${count}/${total})`);
+  },
+});
+
 // The photo search times out before all 3 are found and handed in: a
 // "LEVEL 2 FAILED" card (see restartPhotoSearch) and a restart (new spots,
 // same objective, back to Kaufmo's door) — not yet the real "abstraction"
@@ -1322,7 +1360,7 @@ function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
 function roomLoadOptions(roomKey, { from, preview, openingMode }) {
   return {
     from, playDialogue: playRoomDialogue, preview, endLevel, stage, items: itemState, travel: travelTo,
-    objectives, showLevelComplete, playChime: openingAudio.playChime,
+    objectives, showLevelComplete, playChime: openingAudio.playChime, mazeItems,
     ribbitStory: {
       complete: () => storyProgress.ribbitComplete,
       points: () => storyProgress.ribbitPoints,

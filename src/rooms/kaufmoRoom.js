@@ -64,6 +64,11 @@ export function loadKaufmoRoom(onProgress, {
       doorControl?.update?.(deltaSeconds, playerPosition);
     };
 
+    // Exposed so a caller outside this closure (main.js's Level 3 dev-jump
+    // button) can trigger the real talkToKaufmo(kaufmoApi, ...) itself,
+    // the same call kaufmoStory.talk above already makes from in-room E.
+    room.kaufmoApi = kaufmoApi;
+
     return room;
   });
 }
