@@ -19,8 +19,12 @@ The playable sequence is:
 4. Pomni approaches the bed before dialogue resumes. Choosing to sit waits
    for her approach and seating pose. Fixed conversation shots frame both
    characters. The four choices score at most four Escape points; poor
-   choices still advance. Ribbit steadies on every path, with a more guarded
-   recovery line and pose after poor support.
+   choices increase distress by 1 and correct choices reduce it by 1 (minimum 0).
+   Distress starts at 1. Reaching 3 immediately cancels the dialogue and shows
+   **Level 1 Failed** with **Retry Level**. Failure clears Level 1 points and
+   never completes Find Ribbit or enables Find Kaufmo. Retry returns to the
+   door and restarts the conversation with distress 1 and zero Level 1 points.
+   Surviving paths steady Ribbit; successful points carry into Level 2.
 5. Finishing completes **Find Ribbit** and enables **Find Kaufmo**. Pomni stands,
    the conversation camera releases, and the exit opens. There is no scene
    picker in this handoff. A **Level 1 Complete** card pauses for Continue
@@ -68,6 +72,7 @@ Verification:
 
 ```sh
 npm test
+node tools/verify_level1_browser.mjs # Vite on 5173; installed Chrome
 node _verify_objectives.mjs
 node _verify_caine_interaction.mjs
 npm run build
@@ -123,3 +128,17 @@ planned memory searches, final Jax dialogue or branching ending cinematics.
 
 Developer cutscene skipping honours awaited actions and scores each choice once.
 Returning home or changing rooms cancels a pending completion card.
+
+
+Manual Level 1 win/loss check in Chrome:
+
+- Start a New Game and follow Find Caine, then Find Ribbit to her door.
+- To lose quickly, choose B at the first dialogue choice and A at the second.
+  Distress moves 1 -> 2 -> 3. Level 1 Failed must appear immediately, without
+  recovery or Find Kaufmo. Click Retry Level: the door conversation restarts
+  without reloading the browser, at distress 1 and zero Level 1 points.
+- On retry, choose A, B, A, A. Finish the dialogue, confirm Level 1 Complete,
+  click Continue, and follow Find Kaufmo. The successful attempt earns 4 points
+  that stay in the Escape Threshold through the Level 2 transition.
+- A, A, B, B fails on the fourth choice after earning one point; retry must
+  discard that point rather than adding it to the next attempt.

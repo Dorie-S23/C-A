@@ -1,6 +1,7 @@
 // Node verification harness for the dialogue engine's branching logic.
 // Run with `node _verify_dialogue.mjs`.
 import { createDialogueEngine } from './src/dialogue/dialogueEngine.js';
+import { createLevel1Attempt } from './src/state/level1Attempt.js';
 import { createChoiceTally } from './src/dialogue/choiceTally.js';
 import {
   ESCAPE_MAX, ESCAPE_PASS_MARK, LEVEL_MAX_POINTS, getEscapeTotal, getLevelPoints,
@@ -190,8 +191,8 @@ function collectAllReachableNodes(script, maxPaths = 64) {
 }
 
 // Level 1 (Ribbit): walk every combination of answers through the engine
-// with a live tally, the way ribbitRoom.js drives it. Every path must
-// reach the end, pass all four choices, use only known speakers and moods,
+// with a live tally, the way ribbitRoom.js drives it. Successful paths must
+// reach the end; failed paths stop immediately at distress 3,
 // and score exactly the points of the options it picked.
 {
   const script = level1RibbitDialogue;
@@ -215,13 +216,13 @@ function collectAllReachableNodes(script, maxPaths = 64) {
   let failed = null;
   for (const picks of paths) {
     const engine = createDialogueEngine(script);
-    const tally = createChoiceTally(script);
+    const tally = createLevel1Attempt();
     const seen = [];
     let verdicts = [];
     let expected = 0;
     try {
       let c = 0;
-      for (let steps = 0; !engine.done && steps < 500; steps++) {
+      for (let steps = 0; !engine.done && !tally.failed && steps < 500; steps++) {
         const node = engine.current;
         seen.push(node);
         if (node.type === 'choice') {
@@ -237,7 +238,8 @@ function collectAllReachableNodes(script, maxPaths = 64) {
       failed = `${picks.join('')}: threw ${e.message}`;
       break;
     }
-    const problem = !engine.done ? 'never ended'
+    const problem = tally.failed ? (tally.distress !== 3 ? 'wrong failure limit' : null)
+      : !engine.done ? 'never ended'
       : tally.answered !== 4 ? `answered ${tally.answered} choices`
       : tally.points !== expected ? `points ${tally.points} != ${expected}`
       : verdicts.some((v, i) => v !== (picks[i] === key[i])) ? `verdicts ${verdicts.join()}`
@@ -248,7 +250,7 @@ function collectAllReachableNodes(script, maxPaths = 64) {
       : null;
     if (problem) { failed = `${picks.map((p) => 'ABC'[p]).join('')}: ${problem}`; break; }
   }
-  check(`level1Ribbit: all ${paths.length} answer paths play to the same ending and score correctly`, !failed, failed ?? '');
+  check(`level1Ribbit: all ${paths.length} answer paths either fail at distress 3 or finish and score correctly`, !failed, failed ?? '');
 
   const best = createChoiceTally(script);
   choices.forEach((c, i) => best.record(c.options[key[i]]));
