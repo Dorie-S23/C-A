@@ -1306,6 +1306,32 @@ export const level2PayoffDialogue = [
     side: 'right',
     mood: 'neutral',
     text: "Remember that? 'The door that wasn't a door'? I wrote it off as a glitch. I don't think it was.",
+  },
+  {
+    type: 'beat',
+    text: 'A door slams somewhere down the hall. Then footsteps — fast, frantic, getting closer.',
+  },
+  {
+    // The hallway cutaway plays before this beat's own text — see
+    // jaxBurstsPast's handling in main.js's talkToKaufmo, same technique as
+    // Pre-Level-1's jaxPassByText.
+    id: 'jaxBurstsPast',
+    type: 'beat',
+    text: "Jax bolts past the open doorway at a dead sprint. He doesn't even look in.",
+  },
+  {
+    type: 'line',
+    speaker: 'kaufmo',
+    side: 'right',
+    mood: 'shocked',
+    text: "...Okay. That's new.",
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'worried',
+    text: "That's not 'new.' That's 'follow him.'",
     next: null,
   },
 ];

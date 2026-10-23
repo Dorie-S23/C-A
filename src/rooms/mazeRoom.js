@@ -48,7 +48,8 @@ function createCheckerTexture() {
  *   triggers: { jax: THREE.Box3, exit: THREE.Box3 },
  *   movers: Array<{ mesh: THREE.Object3D, waypoints: THREE.Vector3[], speed: number,
  *     targetIndex: number, direction: number, spin?: boolean }>,
- *   hazards: Array<{ mesh: THREE.Object3D, radius: number }> }>}
+ *   hazards: Array<{ mesh: THREE.Object3D, radius: number }>,
+ *   update: (deltaSeconds: number, playerPosition: THREE.Vector3) => void }>}
  */
 export function loadMazeRoom(onProgress) {
   return loadJax().then((jaxApi) => {
@@ -232,6 +233,19 @@ function buildMaze(jaxApi) {
     group.add(hazardMarker);
   }
 
+  // Jax breathes/trembles in place all the time (see jax.js's idle
+  // branch) and turns to actually look at Pomni once she's close — a
+  // little earlier than his found-trigger itself fires, so he's already
+  // turning by the time the hint shows rather than snapping to face her.
+  const FACE_RADIUS = cellSize * 1.4;
+  function update(deltaSeconds, playerPosition) {
+    jaxApi.update(deltaSeconds);
+    if (!playerPosition) return;
+    const dx = playerPosition.x - jaxCenter.x;
+    const dz = playerPosition.z - jaxCenter.z;
+    jaxApi.faceTowards(Math.hypot(dx, dz) < FACE_RADIUS ? playerPosition : null);
+  }
+
   const triggerRadius = cellSize * 0.4;
   const makeTrigger = (center) => new THREE.Box3(
     new THREE.Vector3(center.x - triggerRadius, -1, center.z - triggerRadius),
@@ -257,5 +271,5 @@ function buildMaze(jaxApi) {
     new THREE.Vector3(width / 2, wallHeight, depth / 2),
   );
 
-  return { group, bounds, spawn, spawnFacing, colliders, triggers, movers, hazards };
+  return { group, bounds, spawn, spawnFacing, colliders, triggers, movers, hazards, update };
 }

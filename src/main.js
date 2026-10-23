@@ -25,6 +25,7 @@ import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.
 import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT } from './state/level2Items.js';
 import { runLevel1 } from './levels/level1.js';
 import { preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
+import { preloadJaxFleeCutscene, playJaxFleeCutscene } from './cutscenes/jaxFleeCutscene.js';
 import { createMinimap } from './ui/minimap.js';
 import { createObjectiveController } from './game/objectives.js';
 import { createObjectiveHUD } from './ui/objectiveHUD.js';
@@ -1128,6 +1129,19 @@ function talkToKaufmo(kaufmoApi, token) {
     const speaking = node.speaker === 'kaufmo';
     kaufmoApi.setSpeaking(speaking);
     kaufmoApi.setPose(speaking ? (node.mood || 'neutral') : 'neutral');
+    // Jax bolting past is a wordless cutaway, same technique as Pre-Level
+    // 1's jaxPassByText: returning a promise here hides the dialogue box
+    // and holds this beat until the cutscene resolves, then its own
+    // caption text shows — see withHallwayCutscene for the sibling case.
+    if (node.id === 'jaxBurstsPast') {
+      return preloadJaxFleeCutscene().then((assets) => {
+        if (!assets || !valid()) { if (assets) disposeObject3D(assets.scene); return; }
+        return new Promise((resolve) => {
+          const finish = () => { disposeObject3D(assets.scene); resolve(); };
+          runCutscene({ ...playJaxFleeCutscene(renderer, assets), cancel: finish }, finish);
+        });
+      }).catch((error) => console.warn('Jax flee cutscene unavailable; continuing dialogue.', error));
+    }
   };
   const stopTalking = () => { kaufmoApi.setSpeaking(false); kaufmoApi.setPose('neutral'); };
 
@@ -1173,9 +1187,9 @@ function talkToKaufmo(kaufmoApi, token) {
 
 async function finishKaufmoLevel(token) {
   const title = 'Level 2 Complete';
-  const subtitle = "Five photos, one real room — and a door that isn't what it says it is. More coming soon — thanks for playing!";
+  const subtitle = "Five photos, one real room — and Jax just sprinted off like something's actually chasing him. Better go see.";
   if (!await showLevelComplete(title, subtitle, { resume: false }) || token !== loadToken) return;
-  endLevel(title, subtitle);
+  await missionApi.travel('maze');
 }
 
 /**
@@ -2465,7 +2479,11 @@ function checkTriggers(player) {
 
   if (!foundJax && triggers.jax.containsPoint(triggerProbe)) {
     foundJax = true;
-    showHint('You found Jax. (Dialogue goes here.)');
+    // His own reaction (the real payoff scene/dialogue) is still pending
+    // the team's review — see dialogues.js's level2PayoffDialogue beat
+    // that sent her in here. This is just a placeholder hint in the
+    // meantime, not a stand-in for that scene.
+    showHint("You found Jax — he's shaking, pressed up against the wall.");
   }
 
   if (triggers.exit.containsPoint(triggerProbe)) {
