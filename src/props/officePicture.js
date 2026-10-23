@@ -9,16 +9,19 @@ const FRAME_HEIGHT = 0.42;
 const FRAME_DEPTH = 0.035;
 const FRAME_BORDER = 0.045;
 
-// A found-but-not-yet-collected picture glows softly — a point light plus
-// a bit of emissive warmth on the photo itself, pulsing slowly so it reads
-// as "something's here" from across a big room without looking like a
-// blinking alarm. See pulseGlow(), driven from the owning room's update().
+// A found-but-not-yet-collected picture glows softly — emissive warmth on
+// the photo itself, pulsing slowly so it reads as "something's here"
+// without looking like a blinking alarm. See pulseGlow(), driven from the
+// owning room's update(). This used to also carry its own PointLight, but
+// 5 extra dynamic lights in a room already this large and geometrically
+// heavy (the Lobby, merged with a second big GLB for its castle walls) was
+// a real, measured performance cost — removed in favour of emissive-only,
+// which is weaker from a distance (it lights the picture's own surface,
+// not the wall around it) but costs nothing extra to render.
 const GLOW_COLOR = 0xfff2c0;
-const GLOW_LIGHT_INTENSITY = 1.6;
-const GLOW_LIGHT_RANGE = 3.5;
 const GLOW_PULSE_HZ = 0.6;
-const GLOW_EMISSIVE_BASE = 0.35;
-const GLOW_EMISSIVE_SWING = 0.25;
+const GLOW_EMISSIVE_BASE = 0.4;
+const GLOW_EMISSIVE_SWING = 0.5;
 
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map();
@@ -63,13 +66,7 @@ export function createOfficePicture(imageUrl) {
   photo.position.z = FRAME_DEPTH / 2 + 0.002;
   group.add(photo);
 
-  // Stood out a little further than the photo itself, so the light spills
-  // onto the wall and floor around it rather than just the frame's face.
-  const glow = new THREE.PointLight(GLOW_COLOR, GLOW_LIGHT_INTENSITY, GLOW_LIGHT_RANGE, 2);
-  glow.position.z = FRAME_DEPTH / 2 + 0.3;
-  group.add(glow);
-
-  group.userData.glow = { light: glow, material: photoMaterial };
+  group.userData.glow = { material: photoMaterial };
   return group;
 }
 
@@ -83,9 +80,7 @@ export function pulseGlow(pictures, elapsedSeconds) {
   const wave = 0.5 + 0.5 * Math.sin(elapsedSeconds * GLOW_PULSE_HZ * Math.PI * 2);
   for (const picture of pictures) {
     if (!picture.parent) continue;
-    const { light, material } = picture.userData.glow;
-    light.intensity = GLOW_LIGHT_INTENSITY * (0.6 + 0.4 * wave);
-    material.emissiveIntensity = GLOW_EMISSIVE_BASE + GLOW_EMISSIVE_SWING * wave;
+    picture.userData.glow.material.emissiveIntensity = GLOW_EMISSIVE_BASE + GLOW_EMISSIVE_SWING * wave;
   }
 }
 
@@ -207,11 +202,15 @@ export function placeOfficePicture(room, items, itemId, imageUrl, position, rota
  * mounting distance (it's a large, mostly-open room, not a tight one), so
  * one origin alone can't reliably find enough spots for 5 pictures. A grid
  * (origins spread `gridStep` apart out to `gridRadius` steps from spawn,
- * swept in a random order) pools far more candidates — the same check
- * found 26 usable, well-spaced spots that way. Spots too close to another
- * picture or to anything in `keepClear` are passed over; this is a one-time
- * cost at room load (measured ~140ms for a 5x5 grid against the real
- * Lobby), not a per-frame one.
+ * swept in a random order) pools far more candidates than needed, and
+ * which of them actually get used is itself randomized — measured against
+ * the real Lobby, these defaults reliably spread the 5 picked spots 10m+
+ * apart, often 50m+ end to end, instead of landing in one cluster (an
+ * earlier, tighter grid technically found enough candidates but they were
+ * all close together, which read as "neatly scattered" rather than
+ * actually scattered around the room). The wider sweep is a one-time cost
+ * at room load (measured ~400-600ms against the real Lobby), not a
+ * per-frame one.
  *
  * Each call starts from a random grid order and a random sweep angle per
  * origin, so a replay (the search timer running out, or just leaving and
@@ -229,8 +228,8 @@ export function placeOfficePicture(room, items, itemId, imageUrl, position, rota
  *   loaded, same as any other room.update
  */
 export function scatterPictures(room, items, pictures, spawn, keepClear = [], {
-  height = 1.5, spacing = 2, keepClearRadius = 1.5, maxDistance = 12,
-  gridStep = 7, gridRadius = 2,
+  height = 1.5, spacing = 8, keepClearRadius = 1.5, maxDistance = 12,
+  gridStep = 10, gridRadius = 4,
 } = {}) {
   const avoid = keepClear.filter(Boolean).map((point) => new THREE.Vector3(point.x, spawn.y + height, point.z));
 

@@ -24,7 +24,7 @@ GLTFLoader.prototype.load = function (url, onLoad, _progress, onError) {
   } catch (error) { onError(error); }
 };
 
-const TRIALS = 15;
+const TRIALS = 8; // each trial reloads both real GLBs from scratch; the wider scatter grid (see officePicture.js) also costs more per trial than the old one did
 const counts = [];
 for (let i = 0; i < TRIALS; i++) {
   const items = createLevel2Items();
