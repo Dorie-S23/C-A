@@ -9,6 +9,19 @@ import {
 
 const PICTURES = Array.from({ length: PHOTO_COUNT }, (_, i) => `ca${i + 1}`);
 
+test('attempt placement data survives deliveries without retaining mutable scene positions', () => {
+  const items = createLevel2Items();
+  const source = [{ id: 'ca1', position: { x: 1, y: 2, z: 3 }, rotationY: 0.5 }];
+  const layout = items.getPhotoLayout(() => source);
+  source[0].position.x = 999;
+  assert.equal(layout[0].position.x, 1);
+  assert.ok(Object.isFrozen(layout[0].position));
+  items.collect('ca1'); items.presentHeld();
+  assert.equal(items.getPhotoLayout(() => assert.fail('Unexpected reroll')), layout);
+  items.reset();
+  assert.notDeepEqual(items.getPhotoLayout(() => source), layout);
+});
+
 beforeEach(() => resetEscapeThreshold());
 
 test('no pictures: repeated Kaufmo conversations stay at zero points', () => {

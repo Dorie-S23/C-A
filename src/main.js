@@ -1043,9 +1043,9 @@ const MISSIONS = {
 
 const missionApi = {
   /** Loads a room from the menus (Click to Play); resolves with the loaded room. */
-  enterRoom(roomKey) {
+  enterRoom(roomKey, { from = currentRoomKey } = {}) {
     return selectRoom(roomKey, {
-        from: currentRoomKey,
+        from,
         onReady: (room) => {
           if (isLocked) {
             overlay.classList.add('hidden');
@@ -1057,9 +1057,9 @@ const missionApi = {
       });
   },
   /** Moves to another room mid-mission, keeping the mouse captured (like a portal). */
-  travel(roomKey) {
+  travel(roomKey, options) {
     overlay.classList.remove('hidden');
-    return missionApi.enterRoom(roomKey);
+    return missionApi.enterRoom(roomKey, options);
   },
   /** Adds an E-interaction to the current room (cleared on the next room change). */
   addInteractable(interactable) {
@@ -1200,7 +1200,7 @@ function talkToKaufmo(kaufmoApi, token) {
         // where the search actually happens instead of making her walk
         // there herself. missionApi.travel already shows the normal
         // "Loading…" overlay while the room comes in.
-        await missionApi.travel('tadc');
+        await missionApi.travel('tadc', { from: null });
       },
       onCancel: stopTalking,
     });
@@ -1247,10 +1247,9 @@ function turnPomniTowards(point, cameraOffset = 0) {
 // One shared instance survives room changes and menu visits; PLAY resets it.
 const itemState = createLevel2Items({
   onCollect: (count) => {
-    showHint(`Picked up a photo. (${count}/${PHOTO_COUNT})`);
-    // The clock is for finding them, not for the walk back to hand them
-    // in — once all of them are actually in hand, stop it right there.
-    if (count >= PHOTO_COUNT) searchTimeLeft = null;
+    showHint(count >= PHOTO_COUNT
+      ? 'All photos found — return to Kaufmo before time runs out!'
+      : `Picked up a photo. (${count}/${PHOTO_COUNT})`, 6000);
   },
 });
 const storyProgress = createStoryProgress({ objectives, isStorySession: () => preLevel1Session });
@@ -1265,12 +1264,13 @@ const mazeItems = createMazeItems({
   },
 });
 
-// The photo search times out before all five photos are found: a
+// The photo search times out before all five photos are delivered: a
 // "LEVEL 2 FAILED" card (see restartPhotoSearch) and a restart (new spots,
-// same objective, back to Kaufmo's door) — not yet the real "abstraction"
+// same objective, back to the Lobby) — not yet the real "abstraction"
 // fail effect, which is a later pass. Objective changes arm/disarm the
 // clock; a retry resets it explicitly because the objective stays active.
-const SEARCH_TIMER_SECONDS = 180;
+// Includes delivery through Dorm Hall; see docs/story-flow.md for timing checks.
+const SEARCH_TIMER_SECONDS = 240;
 let searchTimeLeft = null; // seconds left, or null while it isn't the active objective
 objectives.subscribe((active) => {
   searchTimeLeft = active?.id === 'collect-photos' ? SEARCH_TIMER_SECONDS : null;
@@ -1278,7 +1278,7 @@ objectives.subscribe((active) => {
 
 function updateSearchTimer(deltaSeconds) {
   if (searchTimeLeft === null) return;
-  if (!isLocked || !readyToPlay || paused || dialogueUI.isActive || activeCutscene || stageBusy()) return;
+  if (!isLocked || !readyToPlay || paused || dialogueUI.isActive || activeCutscene || activeCinematic()?.active || stageBusy()) return;
   searchTimeLeft -= deltaSeconds;
   if (searchTimeLeft <= 0) {
     searchTimeLeft = null;
@@ -1290,21 +1290,22 @@ async function restartPhotoSearch() {
   const token = loadToken;
   const continued = await showLevelComplete(
     'LEVEL 2 FAILED',
-    "Time's up — the photos are still out there, and Kaufmo's done waiting. The search starts over.",
+    "Time's up — you didn't get all five photos back to Kaufmo in time. Try again from the Lobby.",
     { resume: false, chime: 'fail' },
   );
   if (!continued || token !== loadToken) return; // the player had already moved on by the time this landed
   itemState.reset();
   searchTimeLeft = SEARCH_TIMER_SECONDS;
-  await missionApi.travel('kaufmo');
+  // Use the same default Lobby spawn as the introduction, even when the
+  // failed attempt ended in Dorm Hall (whose normal arrival uses the arch).
+  await missionApi.travel('tadc', { from: null });
 }
 
 function updatePictureCounter() {
-  // Only the two rooms the photo search actually happens in — otherwise
-  // this kept showing "Pictures found: 5/5" forever afterward, including
-  // in the maze, since kaufmoIntroduced never goes back to false once
-  // Level 2's started.
-  const visible = (currentRoomKey === 'tadc' || currentRoomKey === 'kaufmo')
+  // Keep the countdown visible wherever the player can spend search time,
+  // including the Dorm Hall and any detours. Hide the Level 2 HUD afterward.
+  const searchActive = objectives.active?.id === 'collect-photos';
+  const visible = (searchActive || currentRoomKey === 'tadc' || currentRoomKey === 'kaufmo')
     && (!preLevel1Session || storyProgress.kaufmoIntroduced)
     && isLocked && readyToPlay && !paused && !dialogueUI.isActive
     && !activeCutscene && !activeCinematic()?.active && !stageBusy() && !titleScreen.active
@@ -1314,7 +1315,7 @@ function updatePictureCounter() {
 
   // Handed-in pictures still count as found. Only update the live region
   // when its text changes, rather than announcing it every animation frame.
-  const text = `Pictures found: ${itemState.totalFound()}/${PHOTO_COUNT}`;
+  const text = `Photos found: ${itemState.totalFound()}/${PHOTO_COUNT} · Delivered: ${itemState.totalPresented()}/${PHOTO_COUNT}`;
   if (pictureCounter.textContent !== text) pictureCounter.textContent = text;
 
   const timerVisible = visible && searchTimeLeft !== null;
@@ -3109,7 +3110,10 @@ function animate() {
   const hudContext = gameplayHUDContext();
   actionCaptions.update({ opening: activeOpening, jaxPass: activeJaxPass,
     hidden: hudContext.paused || hudContext.menu || dialogueUI.isActive });
-  objectiveHUD.update(hudContext, currentRoomKey === 'dorm' && portals.length > 0);
+  const photoReturn = objectives.active?.id === 'collect-photos' && itemState.totalFound() >= PHOTO_COUNT
+    ? { title: 'Return to Kaufmo', detail: 'Go through the Dorm Hall to his room. Press E on Kaufmo to deliver the photos before time runs out.' }
+    : objectives.active;
+  objectiveHUD.update(hudContext, currentRoomKey === 'dorm' && portals.length > 0, photoReturn);
   tutorialHUD.update(hudContext, focusedBedroomDoor());
   updatePictureCounter();
   if (activeCutscene) {

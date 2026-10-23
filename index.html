@@ -145,10 +145,6 @@
                 pointer-events: none;
                 z-index: 5;
             }
-            @media (max-width: 400px) {
-                #picture-counter { top: calc(180px + 2em); }
-                #search-timer { top: calc(180px + 2em + 2.6em); }
-            }
 
             #hint {
                 position: fixed;
@@ -617,6 +613,16 @@
             @media (max-width: 600px) {
                 #objective-hud.objective-hud--with-minimap { top: calc(180px + 2rem); right: 1rem; }
             }
+            /* The delivery HUD stays readable alongside the hall minimap. */
+            @media (max-width: 760px) {
+                body:has(#picture-counter:not([hidden])) #objective-hud { top: 6.75rem; right: 1rem; }
+                body:has(#picture-counter:not([hidden])) #objective-hud.objective-hud--with-minimap { top: calc(180px + 2rem); }
+            }
+            @media (max-width: 480px) {
+                body:has(.objective-hud--with-minimap) #picture-counter { top: calc(180px + 2rem); }
+                body:has(.objective-hud--with-minimap) #search-timer { top: calc(180px + 2rem + 2.6em); }
+                body:has(#picture-counter:not([hidden])) #objective-hud.objective-hud--with-minimap { top: calc(180px + 8rem); }
+            }
 
             /* --- Speaker distress (DialogueUI setDistress, levels 1-3) ---
        A line said by someone shaken: the box trembles and the name,
@@ -760,8 +766,8 @@
             <div data-tutorial-lines></div>
             <small>X &middot; Dismiss tips</small>
         </aside>
-        <div id="picture-counter" role="status" hidden>Pictures found: 0/3</div>
-        <div id="search-timer" role="status" hidden>Time left: 3:00</div>
+        <div id="picture-counter" role="status" hidden>Photos found: 0/5 · Delivered: 0/5</div>
+        <div id="search-timer" role="status" hidden>Time left: 4:00</div>
         <div id="hint"></div>
         <div id="prompt" hidden></div>
         <button id="controls-btn">Controls</button>

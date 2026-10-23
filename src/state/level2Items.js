@@ -14,6 +14,7 @@ export function createLevel2Items({ onCollect = () => {} } = {}) {
   const presentedItems = new Set();
   let stallSeen = false;
   let done = false; // the payoff has actually been heard once already
+  let photoLayout = null;
 
   const items = {
     hasCollected: (id) => collectedItems.has(id) || presentedItems.has(id),
@@ -25,6 +26,19 @@ export function createLevel2Items({ onCollect = () => {} } = {}) {
     heldCount: () => collectedItems.size,
     totalPresented: () => presentedItems.size,
     totalFound: () => collectedItems.size + presentedItems.size,
+    /** Cache plain placement data for this attempt, independent of room meshes.
+     * The factory runs once; room revisits reuse the same slots, even after
+     * pickups or partial deliveries. reset() starts a new random layout. */
+    getPhotoLayout(createLayout) {
+      if (photoLayout === null) {
+        photoLayout = Object.freeze(createLayout().map(spot => spot && Object.freeze({
+          id: spot.id,
+          position: Object.freeze({ x: spot.position.x, y: spot.position.y, z: spot.position.z }),
+          rotationY: spot.rotationY,
+        })));
+      }
+      return photoLayout;
+    },
     /** Hands over everything held; returns the running total, not this batch. */
     presentHeld() {
       for (const id of collectedItems) presentedItems.add(id);
@@ -52,6 +66,7 @@ export function createLevel2Items({ onCollect = () => {} } = {}) {
       presentedItems.clear();
       stallSeen = false;
       done = false;
+      photoLayout = null;
       setLevelPoints('level2', 0);
     },
   };

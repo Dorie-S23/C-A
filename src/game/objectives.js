@@ -2,7 +2,7 @@ export const OBJECTIVES = Object.freeze({
   'find-caine': Object.freeze({ id: 'find-caine', title: 'Find Caine', detail: 'Look for him in the Dorm Hall.' }),
   'find-ribbit': Object.freeze({ id: 'find-ribbit', title: 'Find Ribbit', detail: 'Knock on her door at the far end of the hall, on the left.' }),
   'find-kaufmo': Object.freeze({ id: 'find-kaufmo', title: 'Find Kaufmo', detail: 'His room is a few doors down the hall — go find him there.' }),
-  'collect-photos': Object.freeze({ id: 'collect-photos', title: 'Find the office photos', detail: 'Search the circus for five office photos and bring them to Kaufmo.' }),
+  'collect-photos': Object.freeze({ id: 'collect-photos', title: 'Find and deliver the photos', detail: 'Find five office photos in the Lobby and give them to Kaufmo before time runs out.' }),
   'check-kaufmo': Object.freeze({ id: 'check-kaufmo', title: 'Hear Kaufmo’s Theory', detail: 'Talk to him again about what the photos reveal.' }),
 });
 
