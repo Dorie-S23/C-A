@@ -122,7 +122,9 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
         setDistress(tally.correct >= 2 ? 0 : 1);
         setPose('sitting');
         stage.frame(shots.seated);
-        await stage.wait(1.5);
+        // Long enough to watch her stir, roll over and push herself up
+        // (ribbit.js passes through its 'waking' pose on the way).
+        await stage.wait(2.8);
       },
     };
 

@@ -189,8 +189,8 @@ try {
   });
   await travel('dorm');
   assert.equal((await state()).dialogueActive, false);
-  const kaufmoRoom = await travel('kaufmo');
-  const kaufmo = kaufmoRoom.interactables.find(i => i.prompt === 'Talk to Kaufmo').anchor;
+  const revisitedKaufmoRoom = await travel('kaufmo');
+  const kaufmo = revisitedKaufmoRoom.interactables.find(i => i.prompt === 'Talk to Kaufmo').anchor;
   await place(kaufmo[0], kaufmo[2] + 1.8, {x:kaufmo[0],z:kaufmo[2]});
   await page.evaluate(() => window.__storyReview.itemState.collect('ca1'));
   await until(async () => (await state()).focusedPrompt === 'Give photos to Kaufmo');

@@ -19,6 +19,7 @@ import { preloadJaxHallwayCutscene, playJaxHallwayCutscene } from './cutscenes/j
 import { createCaineApproachCutscene } from './cutscenes/caineApproachCutscene.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
 import { createVoicePlayer } from './audio/voicePlayer.js';
+import { createAmbience } from './audio/ambience.js';
 import { createTitleScreen } from './ui/titleScreen.js';
 import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold } from './state/escapeThreshold.js';
 import { createStoryProgress } from './game/storyProgress.js';
@@ -28,7 +29,7 @@ import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.
 import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT } from './state/level2Items.js';
 import { createMazeItems, MAZE_FINDABLES } from './state/mazeItems.js';
 import { runLevel1 } from './levels/level1.js';
-import { preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
+import { kaufmoHallwayPlan, preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
 import { preloadJaxFleeCutscene, playJaxFleeCutscene } from './cutscenes/jaxFleeCutscene.js';
 import { createMinimap } from './ui/minimap.js';
 import { nearestLandmark } from './rooms/lobbyLandmarks.js';
@@ -140,6 +141,8 @@ const camera = new THREE.PerspectiveCamera(
   500,
 );
 const openingAudio = createOpeningAudio(camera);
+// Each room's looping background bed; shares the opening audio's context.
+const ambience = createAmbience(() => openingAudio.context);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -381,6 +384,10 @@ const SENSITIVITY_KEY = 'tadc.mouseSensitivity';
 const voiceVolumeInput = document.getElementById('voice-volume');
 const voiceVolumeValue = document.getElementById('voice-volume-value');
 const VOICE_VOLUME_KEY = 'tadc.voiceVolume';
+const ambienceVolumeInput = document.getElementById('ambience-volume');
+const ambienceVolumeValue = document.getElementById('ambience-volume-value');
+const AMBIENCE_VOLUME_KEY = 'tadc.ambienceVolume';
+const DEFAULT_AMBIENCE_VOLUME = 0.45;
 
 const titleScreen = createTitleScreen({
   renderer,
@@ -439,6 +446,27 @@ voiceVolumeInput.addEventListener('input', () => {
   setVoiceVolume(Number(voiceVolumeInput.value));
   try {
     localStorage.setItem(VOICE_VOLUME_KEY, voiceVolumeInput.value);
+  } catch {
+    // Storage blocked — the setting just won't persist.
+  }
+});
+
+// Room ambience volume, 0 (off) to 1, persisted the same way.
+function setAmbienceVolume(value) {
+  ambience.setVolume(value);
+  ambienceVolumeInput.value = value;
+  ambienceVolumeValue.textContent = value === 0 ? 'off' : `${Math.round(value * 100)}%`;
+}
+try {
+  const stored = Number(localStorage.getItem(AMBIENCE_VOLUME_KEY) ?? DEFAULT_AMBIENCE_VOLUME);
+  setAmbienceVolume(Number.isFinite(stored) ? Math.max(0, Math.min(1, stored)) : DEFAULT_AMBIENCE_VOLUME);
+} catch {
+  setAmbienceVolume(DEFAULT_AMBIENCE_VOLUME);
+}
+ambienceVolumeInput.addEventListener('input', () => {
+  setAmbienceVolume(Number(ambienceVolumeInput.value));
+  try {
+    localStorage.setItem(AMBIENCE_VOLUME_KEY, ambienceVolumeInput.value);
   } catch {
     // Storage blocked — the setting just won't persist.
   }
@@ -591,6 +619,8 @@ function returnToHome({ toRoomPicker = false } = {}) {
   if (dialogueUI.isActive) dialogueUI.cancel();
   minimap.hide();
   paused = false;
+  ambience.setRoom(null);
+  ambience.setPaused(false);
   caineArrivalIn = null;
   resetMoveState();
   resetStage();
@@ -718,6 +748,7 @@ function pauseOpening(value) {
   activeOpening?.setPaused(value);
   activeEntrance?.setPaused(value);
   activeJaxPass?.setPaused(value);
+  ambience.setPaused(value);
   dialogueUI.setPaused(value);
   if (!value) clock.getDelta(); // a background-tab pause must not fast-forward on resume
   resetMoveState();
@@ -900,7 +931,7 @@ function cancelCutscene() {
 /**
  * An awaited hallway cutaway, cancelled with its owning dialogue or room.
  * Jax's silent pre-Level-1 pass-by only — Kaufmo's equivalent beat now
- * plays as its own live, in-scene cutscene (see kaufmoHallwayEncounter.js
+ * plays as its own live, in-scene cutscene (see kaufmoHallwayCutscene.js
  * and playKaufmoHallway), not a cutaway to a separate backdrop.
  */
 function withHallwayCutscene(key, baseOnNode) {
@@ -1167,49 +1198,81 @@ function attachStoryInteractions(room, roomKey, token) {
   });
 }
 
-/**
- * Just the pass-by: a fake-backdrop cutaway (see kaufmoHallwayCutscene.js)
- * plays underneath the real dialogue box — triggered as a side effect the
- * moment the mumbled line's node is shown, not awaited by it, so the text
- * displays live instead of being hidden until the cutaway finishes. He
- * runs off toward his own room and the script ends there; the real
- * catch-up conversation (pacing, Choice 1, Choice 2) isn't part of this at
- * all — it happens later, for real, whenever the player actually walks to
- * his room and talks to him (see talkToKaufmo's own
- * !storyProgress.kaufmoIntroduced branch, which already plays
- * level2RoomOpening and calls finishKaufmoIntro() once that's done).
- */
-function playKaufmoHallway() {
+/** A once-only, win-gated shot in the real hall, followed by the existing room talk. */
+async function playKaufmoHallway() {
+  if (currentRoomKey !== 'dorm' || dialogueUI.isActive || !storyProgress.finishHallway()) return false;
   const token = loadToken;
+  const room = currentRoomInfo;
   overlay.classList.add('hidden');
-  // Counts as "started" the moment this actually runs — once the cutaway's
-  // live there's no going back to a from-scratch retrigger.
-  storyProgress.finishHallway();
-
+  resetMoveState();
+  stage.hold(true);
+  let assets;
+  let plan;
+  try {
+    plan = kaufmoHallwayPlan(room);
+    assets = await preloadKaufmoHallwayCutscene();
+  } catch (error) {
+    console.warn('Kaufmo hallway run unavailable; continuing dialogue.', error);
+  }
+  if (token !== loadToken) {
+    if (assets) disposeObject3D(assets.kaufmoApi.kaufmo);
+    return false;
+  }
+  if (plan) stage.place(plan.pomni);
+  let cutscene;
+  let cleaned = false;
+  let runDone = Promise.resolve();
   let triggered = false;
-  let cutsceneDone = Promise.resolve();
-
-  playRoomDialogue('level2Hallway', {
-    onNode: (node) => {
-      if (triggered || node.id !== 'kaufmoHurriesBy') return;
-      triggered = true;
-      cutsceneDone = preloadKaufmoHallwayCutscene().then((assets) => {
-        if (!assets) return;
-        if (token !== loadToken) { disposeObject3D(assets.scene); return; }
-        return new Promise((resolve) => {
-          const finish = () => { disposeObject3D(assets.scene); resolve(); };
-          runCutscene({ ...playKaufmoHallwayCutscene(renderer, assets), cancel: finish }, finish);
+  function cancelRunOnEscape(event) {
+    if (event.code !== 'Escape' || token !== loadToken) return;
+    // This short intro can be dismissed; other conversations keep their
+    // existing Escape-to-pause behavior. Own the key only while he runs.
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    dialogueUI.cancel();
+  }
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    window.removeEventListener('keydown', cancelRunOnEscape, true);
+    cutscene?.cleanup();
+    if (assets) disposeObject3D(assets.kaufmoApi.kaufmo);
+    if (token === loadToken) {
+      stage.hold(false);
+      // Room entry checkpointed before finishHallway claimed this encounter.
+      // Persist its seen flag at this stable handoff, including cancellation.
+      takeCheckpoint();
+    }
+  };
+  const started = playRoomDialogue('level2Hallway', {
+    onNode(node) {
+      if (node.id === 'kaufmoHurriesBy' && !triggered && assets) {
+        triggered = true;
+        cutscene = playKaufmoHallwayCutscene(renderer, { scene, room, ...assets, plan });
+        runDone = new Promise(resolve => {
+          const finish = () => {
+            window.removeEventListener('keydown', cancelRunOnEscape, true);
+            cutscene.cleanup();
+            if (token !== loadToken) cleanup();
+            resolve();
+          };
+          window.addEventListener('keydown', cancelRunOnEscape, true);
+          runCutscene({ ...cutscene, cancel: finish }, finish);
         });
-      }).catch((error) => console.warn('Kaufmo hallway cutscene unavailable; continuing dialogue.', error));
+      } else if (triggered) {
+        // Keep the mumble live during the run, but don't let fast advance
+        // finish the conversation (and cancel the run) before he reaches his door.
+        return runDone;
+      }
     },
-    onComplete: async () => { await cutsceneDone; },
-    onCancel: async () => {
-      cancelCutscene();
-      await cutsceneDone;
-      if (token !== loadToken) return;
-      showHint('Find Kaufmo in his room to continue.', 6500);
+    onComplete: cleanup,
+    onCancel() {
+      cleanup();
+      if (token === loadToken) showHint('Find Kaufmo in his room to continue.', 6500);
     },
   });
+  if (!started) cleanup();
+  return started;
 }
 
 function talkToKaufmo(kaufmoApi, token) {
@@ -1825,6 +1888,7 @@ function applyLoadedRoom({
   roomInteractables = currentRoomInfo.interactables;
   currentRoom = group;
   currentRoomKey = roomKey;
+  ambience.setRoom(roomKey);
   controlsTutorial.enterRoom(roomKey);
   player.visible = true;
   scene.add(group);
@@ -2175,6 +2239,7 @@ document.addEventListener('pointerlockchange', () => {
     // Unfreeze a conversation the pause below froze, so its voice clip
     // picks up where it stopped.
     if (paused) dialogueUI.setPaused(false);
+    ambience.setPaused(false);
     paused = false;
     return;
   }
@@ -2191,6 +2256,7 @@ document.addEventListener('pointerlockchange', () => {
   // Left running, its voice clip played out unheard and the player came back
   // to silent text.
   dialogueUI.setPaused(true);
+  ambience.setPaused(true);
   overlay.classList.remove('hidden');
   overlayTitle.textContent = 'Paused';
   overlaySubtitle.textContent = 'Press Esc or click Resume to continue';
@@ -3407,6 +3473,7 @@ function applyStagePose(dt) {
     const rap = Math.max(0, Math.sin(rapPhase * Math.PI * 2));
     if (rapPhase > gesture.taps + 0.25 && gesture.taps < KNOCK_TAPS) {
       gesture.taps++;
+      openingAudio.playKnock();
       gesture.onTap?.(gesture.taps);
     }
     bendBone(pomniBones.RightArm, pomni, SIDEWAYS, -1.25 * raise);
