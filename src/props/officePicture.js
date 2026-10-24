@@ -91,7 +91,8 @@ const UP = new THREE.Vector3(0, 1, 0);
  * Finds a spot flush against whatever wall is hit casting from `origin`
  * toward `direction`, facing back out into the room — a quick way to hang
  * a picture without needing to know a room's exact furniture layout.
- * Returns null if nothing is hit within `maxDistance`.
+ * Returns null if nothing is hit within `maxDistance`. `object` is the mesh
+ * the spot is on.
  */
 export function findWallSpot(group, origin, direction, maxDistance = 6) {
   wallRaycaster.set(origin, direction);
@@ -105,7 +106,7 @@ export function findWallSpot(group, origin, direction, maxDistance = 6) {
     .normalize();
   const position = hit.point.clone().addScaledVector(normal, FRAME_DEPTH);
   const rotationY = Math.atan2(normal.x, normal.z);
-  return { position, rotationY };
+  return { position, rotationY, object: hit.object };
 }
 
 /**
@@ -212,6 +213,17 @@ export function placeOfficePicture(room, items, itemId, imageUrl, position, rota
  * at room load (measured ~400-600ms against the real Lobby), not a
  * per-frame one.
  *
+ * Spacing alone doesn't keep the pictures apart in the Lobby: its toy
+ * blocks are 16m cubes stacked into walls, so spots 8m+ apart could still
+ * all be on the same block wall. At most one picture goes on each `zoneOf`
+ * zone (by default the mesh it hangs on; the Lobby maps spots to its named
+ * landmarks), unless there are fewer zones than pictures.
+ *
+ * A room that knows where the player can walk passes `isOpen` and
+ * `isReachable`: grid origins off that floor are skipped (some land sealed
+ * inside props, and sweep their insides), and so are spots no walkable
+ * floor can see and reach.
+ *
  * The shared item state caches plain placement data for the whole attempt.
  * Returning after a partial hand-in preserves the remaining photos' spots.
  * Resetting that state (retry or New Game) generates a fresh random layout.
@@ -223,16 +235,18 @@ export function placeOfficePicture(room, items, itemId, imageUrl, position, rota
  *   inside the room, usually its own spawn)
  * @param {Array<{ x: number, z: number } | null | undefined>} [keepClear]
  *   points to stay clear of (doors, NPCs) — nullish entries are skipped
- * @returns {{ update: (deltaSeconds: number) => void }} advances the
- *   placed pictures' glow (see pulseGlow) — call every frame the room's
- *   loaded, same as any other room.update
+ * @returns {{ update: (deltaSeconds: number) => void, remaining: () => THREE.Vector3[] }}
+ *   update advances the placed pictures' glow (see pulseGlow) — call every
+ *   frame the room's loaded, same as any other room.update. remaining lists
+ *   where the pictures not yet picked up are (for hints).
  */
 export function scatterPictures(room, items, pictures, spawn, keepClear = [], {
   height = 1.5, spacing = 8, keepClearRadius = 1.5, maxDistance = 12,
-  gridStep = 10, gridRadius = 4, rng = Math.random,
+  gridStep = 10, gridRadius = 4, rng = Math.random, zoneOf = (spot) => spot.object,
+  isOpen = () => true, isReachable = () => true,
 } = {}) {
   const layout = items.getPhotoLayout(() => choosePictureSpots(room, pictures, spawn, keepClear, {
-    height, spacing, keepClearRadius, maxDistance, gridStep, gridRadius, rng,
+    height, spacing, keepClearRadius, maxDistance, gridStep, gridRadius, rng, zoneOf, isOpen, isReachable,
   }));
   const placed = [];
   for (const { id, url } of pictures) {
@@ -246,18 +260,20 @@ export function scatterPictures(room, items, pictures, spawn, keepClear = [], {
       elapsed += deltaSeconds;
       pulseGlow(placed, elapsed);
     },
+    remaining: () => placed.filter((picture) => picture.parent).map((picture) => picture.position),
   };
 }
 
 function choosePictureSpots(room, pictures, spawn, keepClear, {
-  height, spacing, keepClearRadius, maxDistance, gridStep, gridRadius, rng,
+  height, spacing, keepClearRadius, maxDistance, gridStep, gridRadius, rng, zoneOf, isOpen, isReachable,
 }) {
   const avoid = keepClear.filter(Boolean).map((point) => new THREE.Vector3(point.x, spawn.y + height, point.z));
 
   const origins = [];
   for (let gx = -gridRadius; gx <= gridRadius; gx++) {
     for (let gz = -gridRadius; gz <= gridRadius; gz++) {
-      origins.push(new THREE.Vector3(spawn.x + gx * gridStep, spawn.y + height, spawn.z + gz * gridStep));
+      const origin = new THREE.Vector3(spawn.x + gx * gridStep, spawn.y + height, spawn.z + gz * gridStep);
+      if (isOpen(origin)) origins.push(origin);
     }
   }
   for (let i = origins.length - 1; i > 0; i--) {
@@ -266,9 +282,10 @@ function choosePictureSpots(room, pictures, spawn, keepClear, {
   }
 
   const spots = [];
+  const zones = new Set();
   const wanted = pictures.length * 3; // a bigger pool than needed, so the spacing/keep-clear filters still have real room to choose from
   for (const origin of origins) {
-    if (spots.length >= wanted) break;
+    if (spots.length >= wanted && zones.size >= pictures.length) break;
     const startAngle = rng() * Math.PI * 2;
     for (let i = 0; i < 16; i++) {
       const angle = startAngle + (i / 16) * Math.PI * 2;
@@ -277,6 +294,9 @@ function choosePictureSpots(room, pictures, spawn, keepClear, {
       const flat = new THREE.Vector3(spot.position.x, spawn.y + height, spot.position.z);
       if (avoid.some((point) => point.distanceTo(flat) < keepClearRadius)) continue;
       if (spots.some((other) => other.position.distanceTo(spot.position) < spacing)) continue;
+      if (!isReachable(spot)) continue;
+      spot.zone = zoneOf(spot);
+      zones.add(spot.zone);
       spots.push(spot);
     }
   }
@@ -287,8 +307,21 @@ function choosePictureSpots(room, pictures, spawn, keepClear, {
     const j = Math.floor(rng() * (i + 1));
     [spots[i], spots[j]] = [spots[j], spots[i]];
   }
+  const chosen = [];
+  const usedZones = new Set();
+  for (const spot of spots) {
+    if (chosen.length >= pictures.length) break;
+    if (usedZones.has(spot.zone)) continue;
+    usedZones.add(spot.zone);
+    chosen.push(spot);
+  }
+  // Fewer zones than pictures (a small room): doubling up beats a missing photo.
+  for (const spot of spots) {
+    if (chosen.length >= pictures.length) break;
+    if (!chosen.includes(spot)) chosen.push(spot);
+  }
   return pictures.map(({ id }, i) => {
-    const spot = spots[i];
+    const spot = chosen[i];
     return spot ? { id, position: spot.position, rotationY: spot.rotationY } : null;
   });
 }

@@ -6,6 +6,8 @@ import * as THREE from 'three';
 // height), and each frame just draws a window of that plan centred on her,
 // north-up, with the known doors (from the room's portals and map markers)
 // on top. Doors outside the window are pinned to the rim, pointing the way.
+// A room can also name its landmarks (the Lobby's, see lobbyLandmarks.js),
+// drawn as plain labels, and a hint can ping a spot for a few seconds.
 
 const SIZE = 180;              // CSS px; index.html's objective HUD makes room for this
 const PX_PER_METRE = 1.7;      // map zoom: the window spans ~105 m
@@ -22,6 +24,9 @@ const LABEL_HEIGHT = 14;
 const LABEL_PAD_X = 4;
 const LABEL_GAP = 8;            // px between a marker and its label
 const LABEL_FONT = '600 10px system-ui, sans-serif';
+const LANDMARK_FONT = '600 9px system-ui, sans-serif';
+const LANDMARK_EDGE_PX = 22;    // landmark labels nearer the rim than this are left off
+const PING_PULSE_HZ = 1.5;
 
 const COLORS = {
   background: '#140f1f',
@@ -35,6 +40,9 @@ const COLORS = {
   player: '#ff5a7a',
   playerEdge: '#fff8e9',
   view: 'rgba(255, 210, 122, 0.16)',
+  landmark: 'rgba(255, 248, 233, 0.8)',
+  landmarkEdge: 'rgba(20, 15, 31, 0.9)',
+  ping: '#7af0ff',
 };
 
 const ROOM_LABELS = {
@@ -129,18 +137,20 @@ function traceFloorPlan(group, floorY) {
   return { canvas: baked, minX: minX - offset, minZ: minZ - offset, pxPerMetre };
 }
 
-/**
- * @returns {{
- *   show: (portals: Array, room?: { group: THREE.Object3D, floorY: number }) => void,
- *   hide: () => void,
- *   update: (x: number, z: number, yaw: number) => void,
- * }}
- */
 function planFor(group, floorY) {
   if (!planCache.has(group)) planCache.set(group, traceFloorPlan(group, floorY));
   return planCache.get(group);
 }
 
+/**
+ * @returns {{
+ *   show: (portals: Array, room?: { group: THREE.Object3D, floorY: number },
+ *     options?: { landmarks?: Array<{ label: string, minX: number, maxX: number, minZ: number, maxZ: number }> }) => void,
+ *   hide: () => void,
+ *   ping: (x: number, z: number, label: string, durationMs: number) => void,
+ *   update: (x: number, z: number, yaw: number) => void,
+ * }}
+ */
 export function createMinimap() {
   const canvas = document.createElement('canvas');
   canvas.id = 'minimap';
@@ -159,9 +169,11 @@ export function createMinimap() {
   });
   document.body.appendChild(canvas);
   const ctx = canvas.getContext('2d');
-  let pixelRatio = 1;
+  let pixelRatio = 0; // not 1: on a 1x screen fitToScreen would then never size the canvas off its 300x150 default
 
   let doors = [];
+  let landmarks = [];
+  let ping = null; // { x, z, label, until }
   let plan = null;
 
   function fitToScreen() {
@@ -246,8 +258,9 @@ export function createMinimap() {
     /**
      * @param {Array<{ to: string, box: { min: {x,z}, max: {x,z} } }>} portals
      * @param {{ group: THREE.Object3D, floorY: number }} [room] whose floor to draw
+     * @param {{ landmarks?: Array }} [options] landmarks: named footprints to label
      */
-    show(portals, room) {
+    show(portals, room, { landmarks: roomLandmarks = [] } = {}) {
       const seen = new Set();
       doors = [];
       for (const portal of portals) {
@@ -261,6 +274,11 @@ export function createMinimap() {
         });
       }
 
+      landmarks = roomLandmarks.map(({ label, minX, maxX, minZ, maxZ }) => ({
+        label, x: (minX + maxX) / 2, z: (minZ + maxZ) / 2,
+      }));
+      ping = null;
+
       plan = room?.group ? planFor(room.group, room.floorY) : null;
 
       fitToScreen();
@@ -269,6 +287,11 @@ export function createMinimap() {
 
     hide() {
       canvas.style.display = 'none';
+    },
+
+    /** Marks a spot (a hinted photo) for `durationMs`, pinned to the rim when off the map. */
+    ping(x, z, label, durationMs) {
+      ping = { x, z, label, until: performance.now() + durationMs };
     },
 
     /**
@@ -330,30 +353,58 @@ export function createMinimap() {
       ctx.closePath();
       ctx.fill();
 
+      // Landmarks: just their names, under the doors. Ones too near the rim
+      // are left off rather than cut by it, and any that would overlap an
+      // earlier one give way.
+      ctx.font = LANDMARK_FONT;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineJoin = 'round';
+      const landmarkBoxes = [];
+      for (const landmark of landmarks) {
+        const { x, y } = toMap(landmark.x, landmark.z);
+        if (Math.hypot(x - centre, y - centre) > radius - LANDMARK_EDGE_PX) continue;
+        const half = ctx.measureText(landmark.label).width / 2 + 2;
+        const box = { left: x - half, right: x + half, top: y - 6, bottom: y + 6 };
+        if (landmarkBoxes.some((q) => box.left < q.right && q.left < box.right && box.top < q.bottom && q.top < box.bottom)) continue;
+        landmarkBoxes.push(box);
+        ctx.strokeStyle = COLORS.landmarkEdge;
+        ctx.lineWidth = 3;
+        ctx.strokeText(landmark.label, x, y);
+        ctx.fillStyle = COLORS.landmark;
+        ctx.fillText(landmark.label, x, y);
+      }
+
       // Doors: on the map where they are, or pinned to the rim pointing the
       // way when they're further off than the map shows. Doors further along
       // the same corridor pin to the same spot, so they share one pin.
+      // A hint's ping goes through the same placement, in its own colour.
       const rimRadius = radius - RIM_INSET;
       const labels = [];
-      for (const door of doors) {
+      const now = performance.now();
+      if (ping && now > ping.until) ping = null;
+      const markers = ping ? [...doors, { ...ping, kind: 'ping' }] : doors;
+      for (const door of markers) {
+        const kind = door.kind ?? 'door';
         let { x, y } = toMap(door.x, door.z);
         const dx = x - centre;
         const dy = y - centre;
         const distance = Math.hypot(dx, dy);
         if (distance <= rimRadius) {
-          labels.push({ lines: [door.label], x, y, pinned: false });
+          labels.push({ lines: [door.label], x, y, pinned: false, kind });
           continue;
         }
         x = centre + (dx / distance) * rimRadius;
         y = centre + (dy / distance) * rimRadius;
         const metres = Math.round(Math.hypot(door.x - playerX, door.z - playerZ));
         const line = `${door.label} · ${metres} m`;
-        const shared = labels.find((other) => other.pinned && Math.hypot(other.x - x, other.y - y) < PIN_MERGE_PX);
+        const shared = labels.find((other) => other.pinned && other.kind === kind
+          && Math.hypot(other.x - x, other.y - y) < PIN_MERGE_PX);
         if (shared) {
           shared.lines.push(line);
           shared.order.push(metres);
         } else {
-          labels.push({ lines: [line], order: [metres], x, y, pinned: true, angle: Math.atan2(dy, dx) });
+          labels.push({ lines: [line], order: [metres], x, y, pinned: true, angle: Math.atan2(dy, dx), kind });
         }
       }
       for (const label of labels) {
@@ -370,10 +421,21 @@ export function createMinimap() {
           ctx.closePath();
           ctx.restore();
         } else {
+          if (label.kind === 'ping') {
+            // A ring swelling out from the spot, so it catches the eye.
+            const wave = (now / 1000 * PING_PULSE_HZ) % 1;
+            ctx.beginPath();
+            ctx.arc(label.x, label.y, DOOR_RADIUS + wave * 10, 0, Math.PI * 2);
+            ctx.strokeStyle = COLORS.ping;
+            ctx.globalAlpha = 1 - wave;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+          }
           ctx.beginPath();
           ctx.arc(label.x, label.y, DOOR_RADIUS, 0, Math.PI * 2);
         }
-        ctx.fillStyle = COLORS.door;
+        ctx.fillStyle = label.kind === 'ping' ? COLORS.ping : COLORS.door;
         ctx.strokeStyle = COLORS.doorRing;
         ctx.lineWidth = 1.5;
         ctx.stroke();

@@ -14,7 +14,7 @@ import { createOpeningAudio } from './cinematics/openingAudio.js';
 import { createRagathaEntrance } from './cinematics/ragathaEntrance.js';
 import { createJaxBedroomPass, JAX_PASS_BEAT, JAX_PASS_RESUME } from './cinematics/jaxBedroomPass.js';
 import { POMNI_INVITATION, POMNI_SEATED_DIALOGUE, RAGATHA_ENTRANCE_EVENT } from './cinematics/pomniInvitation.js';
-import { bendBone, SIDEWAYS } from './characters/bendBone.js';
+import { bendBone, SIDEWAYS, UP } from './characters/bendBone.js';
 import { preloadJaxHallwayCutscene, playJaxHallwayCutscene } from './cutscenes/jaxHallwayCutscene.js';
 import { createCaineApproachCutscene } from './cutscenes/caineApproachCutscene.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
@@ -23,6 +23,7 @@ import { createTitleScreen } from './ui/titleScreen.js';
 import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold } from './state/escapeThreshold.js';
 import { createStoryProgress } from './game/storyProgress.js';
 import { createSaveSlots } from './game/saveGame.js';
+import { createLoadingBackgrounds } from './ui/loadingBackgrounds.js';
 import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.js';
 import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT } from './state/level2Items.js';
 import { createMazeItems, MAZE_FINDABLES } from './state/mazeItems.js';
@@ -30,6 +31,7 @@ import { runLevel1 } from './levels/level1.js';
 import { preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
 import { preloadJaxFleeCutscene, playJaxFleeCutscene } from './cutscenes/jaxFleeCutscene.js';
 import { createMinimap } from './ui/minimap.js';
+import { nearestLandmark } from './rooms/lobbyLandmarks.js';
 import { createObjectiveController } from './game/objectives.js';
 import { createObjectiveHUD } from './ui/objectiveHUD.js';
 import { shouldShowObjective } from './ui/objectiveHUD.js';
@@ -190,12 +192,14 @@ const pomniReady = loadPomni().then(({ pomni: model, animations }) => {
 const pomniBones = {
   Hips: null, RightArm: null, RightForeArm: null,
   LeftUpLeg: null, RightUpLeg: null, LeftLeg: null, RightLeg: null,
+  Neck: null, Head: null,
 };
 let pomniHipsHeight = 0.8; // hips above her feet when standing; measured on load
 
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlaySubtitle = document.getElementById('overlay-subtitle');
+createLoadingBackgrounds(overlay); // (the cast's sprites, ui/loadingSprites.js, are off for now)
 const roomPicker = document.getElementById('room-picker');
 const dialoguePicker = document.getElementById('dialogue-picker');
 const pauseMenu = document.getElementById('pause-menu');
@@ -213,6 +217,7 @@ const btnLevelCompleteContinue = document.getElementById('btn-level-complete-con
 
 const pictureCounter = document.getElementById('picture-counter');
 const searchTimer = document.getElementById('search-timer');
+const hintKey = document.getElementById('hint-key');
 const dialogueVoice = createVoicePlayer();
 // Escape mid-game pauses (it frees the mouse) rather than backing out of a
 // conversation; it only cancels on the menu screens (dialogue previews).
@@ -1234,15 +1239,46 @@ function talkToKaufmo(kaufmoApi, token) {
     }
   };
   const stopTalking = () => { kaufmoApi.setSpeaking(false); kaufmoApi.setPose('neutral'); };
+  // The conversation has its own shot: the room's staging if it has one
+  // (Pomni put on her mark, the camera at the bed's corner — see
+  // kaufmoRoom.js talkShot), else a two-shot (see twoShotCamera). The
+  // follow camera comes back when it ends, however it ends.
+  const talk = (key, { onComplete, onCancel }) => {
+    if (dialogueUI.isActive) return false;
+    const staging = currentRoomInfo?.talkShot;
+    let faceThis = lookAt;
+    if (staging) {
+      // Both onto their marks (kaufmoRoom.js talkShot), angled so the
+      // camera sees both their faces.
+      kaufmoApi.kaufmo.position.x = staging.kaufmo.x;
+      kaufmoApi.kaufmo.position.z = staging.kaufmo.z;
+      kaufmoApi.kaufmo.updateMatrixWorld(true);
+      stage.place({ x: staging.pomni.x, z: staging.pomni.z, lookAt: staging.pomniLooksAt });
+      kaufmoApi.faceTowards(staging.kaufmoLooksAt);
+      faceThis = staging.pomniLooksAt;
+      stage.lookWithHead(staging.pomniHeadAt);
+    }
+    const shot = staging ? { position: staging.camera.clone(), target: staging.target.clone() } : twoShotCamera(lookAt);
+    const release = () => {
+      if (stageCamera === shot) stageCamera = null;
+      if (staging) stage.lookWithHead(null);
+    };
+    const started = playRoomDialogue(key, {
+      lookAt: faceThis,
+      onNode,
+      onComplete() { release(); return onComplete(); },
+      onCancel() { release(); onCancel(); },
+    });
+    if (started) stageCamera = shot;
+    return started;
+  };
 
   if (preLevel1Session && !storyProgress.ribbitComplete) {
     showHint('Check on Ribbit first. Kaufmo can wait here.', 4500);
     return false;
   }
   if (preLevel1Session && !storyProgress.kaufmoIntroduced) {
-    return playRoomDialogue('level2RoomOpening', {
-      lookAt,
-      onNode,
+    return talk('level2RoomOpening', {
       async onComplete() {
         stopTalking();
         if (!valid() || !storyProgress.finishKaufmoIntro()) return;
@@ -1259,9 +1295,7 @@ function talkToKaufmo(kaufmoApi, token) {
   const key = pickKaufmoScript(itemState);
   storyProgress.presentedPhotos(itemState.totalPresented());
   if (key.startsWith('level2HandIn')) openingAudio.playChime('handIn');
-  return playRoomDialogue(key === 'level2Opening' ? 'level2RoomOpening' : key, {
-    lookAt,
-    onNode,
+  return talk(key === 'level2Opening' ? 'level2RoomOpening' : key, {
     onComplete() {
       stopTalking();
       if (!valid()) return;
@@ -1273,6 +1307,56 @@ function talkToKaufmo(kaufmoApi, token) {
     },
     onCancel: stopTalking,
   });
+}
+
+// Talking to someone frames them both: the camera stands off Pomni's right
+// shoulder, a little behind her, aimed between them, so she's left of
+// centre and they're right of it (the follow camera would sit right behind
+// her head, hiding them). Pulled in if a wall's in the way. Rooms are full
+// of props, so a few angles are tried, best first, and the first that
+// sees both of them clearly wins (else the one pulled in least).
+const TWO_SHOT_DISTANCE = 3.2;    // metres from the point between them, at the least
+const TWO_SHOT_ANGLES = [         // behind: how far round behind her, as a share of that distance
+  { behind: 0.45, height: 2.2 }, { behind: 0.25, height: 2.2 }, { behind: 0.7, height: 2.2 },
+  { behind: 0.45, height: 2.9 }, { behind: 0.1, height: 2.9 }, { behind: 0.8, height: 2.9 },
+];
+const TWO_SHOT_AIM_HEIGHT = 1.05; // aimed at about chest height
+const twoShotRaycaster = new THREE.Raycaster();
+
+function twoShotCamera(partner) {
+  const feetY = player.position.y - PLAYER_HEIGHT;
+  const ahead = new THREE.Vector3(partner.x - player.position.x, 0, partner.z - player.position.z);
+  const apart = Math.max(ahead.length(), 0.5);
+  ahead.divideScalar(apart);
+  const right = new THREE.Vector3(-ahead.z, 0, ahead.x); // her right, facing them
+  const target = new THREE.Vector3(
+    (player.position.x + partner.x) / 2, feetY + TWO_SHOT_AIM_HEIGHT, (player.position.z + partner.z) / 2,
+  );
+  const distance = Math.max(TWO_SHOT_DISTANCE, apart * 1.4);
+  const chests = [player.position, partner].map((p) => new THREE.Vector3(p.x, feetY + TWO_SHOT_AIM_HEIGHT, p.z));
+  let fallback = null;
+  for (const { behind, height } of TWO_SHOT_ANGLES) {
+    const desired = target.clone()
+      .addScaledVector(right, distance)
+      .addScaledVector(ahead, -distance * behind)
+      .setY(feetY + height);
+    const position = resolveOpeningCamera(target, desired);
+    if (chests.every((chest) => clearView(position, chest))) return { position, target };
+    const reach = position.distanceTo(target);
+    if (!fallback || reach > fallback.reach) fallback = { position, reach };
+  }
+  return { position: fallback.position, target };
+}
+
+/** Whether nothing solid in the room sits between the camera and a point. */
+function clearView(from, to) {
+  const toward = to.clone().sub(from);
+  const far = toward.length() - 0.4; // stop short of the character's own body
+  if (far <= 0) return true;
+  twoShotRaycaster.set(from, toward.normalize());
+  twoShotRaycaster.far = far;
+  const candidates = collisionMeshes.filter((entry) => twoShotRaycaster.ray.intersectsBox(entry.box)).map((entry) => entry.mesh);
+  return twoShotRaycaster.intersectObjects(candidates, false).length === 0;
 }
 
 async function finishKaufmoLevel(token) {
@@ -1468,13 +1552,19 @@ document.getElementById('btn-save-slots-back').addEventListener('click', (event)
 // Includes delivery through Dorm Hall; see docs/story-flow.md for timing checks.
 const SEARCH_TIMER_SECONDS = 240;
 let searchTimeLeft = null; // seconds left, or null while it isn't the active objective
+let hintCooldown = 0; // seconds until H gives another photo hint (see givePhotoHint)
+let hintsLeft = 0;
+const HINT_LIMIT = 3; // hints per photo-search attempt (see givePhotoHint); here, not below, as the subscribe call right after uses it
 objectives.subscribe((active) => {
   searchTimeLeft = active?.id === 'collect-photos' ? SEARCH_TIMER_SECONDS : null;
+  hintCooldown = 0;
+  hintsLeft = HINT_LIMIT;
 });
 
 function updateSearchTimer(deltaSeconds) {
   if (searchTimeLeft === null) return;
   if (!isLocked || !readyToPlay || paused || dialogueUI.isActive || activeCutscene || activeCinematic()?.active || stageBusy()) return;
+  hintCooldown = Math.max(0, hintCooldown - deltaSeconds);
   searchTimeLeft -= deltaSeconds;
   if (searchTimeLeft <= 0) {
     searchTimeLeft = null;
@@ -1492,9 +1582,62 @@ async function restartPhotoSearch() {
   if (!continued || token !== loadToken) return; // the player had already moved on by the time this landed
   itemState.reset();
   searchTimeLeft = SEARCH_TIMER_SECONDS;
+  hintCooldown = 0;
+  hintsLeft = HINT_LIMIT;
   // Use the same default Lobby spawn as the introduction, even when the
   // failed attempt ended in Dorm Hall (whose normal arrival uses the arch).
   await missionApi.travel('tadc', { from: null });
+}
+
+// --- Photo hints (H) -----------------------------------------------------
+// During the photo search, H names the nearest photo still in the Lobby by
+// the landmark it's on (see rooms/lobbyLandmarks.js), says which way it is
+// and pings it on the minimap. Only HINT_LIMIT per attempt (a retry gets a
+// fresh set), and the cooldown runs on the search clock, so hints stay a
+// nudge rather than a trail to follow.
+const HINT_COOLDOWN_SECONDS = 20;
+const HINT_PING_MS = 8000;
+const HINT_LANDMARK_REACH = 12; // metres: further from any landmark, the hint just gives the way
+
+function photoHintsActive() {
+  return searchTimeLeft !== null && itemState.totalFound() < PHOTO_COUNT;
+}
+
+function givePhotoHint() {
+  if (!photoHintsActive()) return;
+  if (currentRoomKey !== 'tadc') {
+    showHint('The photos are hidden around the Circus Lobby.', 4000);
+    return;
+  }
+  if (hintsLeft <= 0) {
+    showHint('No hints left.', 2500);
+    return;
+  }
+  if (hintCooldown > 0) {
+    showHint(`Next hint in ${Math.ceil(hintCooldown)}s.`, 2500);
+    return;
+  }
+  const photos = currentRoomInfo?.photoPositions?.() ?? [];
+  if (!photos.length) return;
+  const { x, z } = player.position;
+  const distance = (photo) => Math.hypot(photo.x - x, photo.z - z);
+  const nearest = photos.reduce((best, photo) => (distance(photo) < distance(best) ? photo : best));
+  const landmark = nearestLandmark(nearest.x, nearest.z, HINT_LANDMARK_REACH);
+  const where = landmark ? ` by the ${landmark.label}` : '';
+  showHint(`A photo is${where}, ${Math.round(distance(nearest))} m ${directionTo(nearest.x - x, nearest.z - z)}.`, 6000);
+  minimap.ping(nearest.x, nearest.z, 'Photo', HINT_PING_MS);
+  hintCooldown = HINT_COOLDOWN_SECONDS;
+  hintsLeft--;
+}
+
+/** "ahead", "to your left"... for a world-space offset, from the camera's view. */
+function directionTo(dx, dz) {
+  const ahead = -dx * Math.sin(cameraYaw) - dz * Math.cos(cameraYaw); // same axes as moveForward/moveRight
+  const right = dx * Math.cos(cameraYaw) - dz * Math.sin(cameraYaw);
+  const angle = Math.abs(Math.atan2(right, ahead));
+  if (angle <= Math.PI / 4) return 'ahead';
+  if (angle >= Math.PI * 3 / 4) return 'behind you';
+  return right > 0 ? 'to your right' : 'to your left';
 }
 
 function updatePictureCounter() {
@@ -1520,6 +1663,16 @@ function updatePictureCounter() {
     const seconds = Math.max(0, Math.ceil(searchTimeLeft));
     const timerText = `Time left: ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
     if (searchTimer.textContent !== timerText) searchTimer.textContent = timerText;
+  }
+
+  const hintKeyVisible = timerVisible && photoHintsActive();
+  if (hintKey.hidden === hintKeyVisible) hintKey.hidden = !hintKeyVisible;
+  if (hintKeyVisible) {
+    const left = `${hintsLeft} hint${hintsLeft === 1 ? '' : 's'} left`;
+    const hintText = hintsLeft <= 0 ? 'No hints left'
+      : hintCooldown > 0 ? `Next hint in ${Math.ceil(hintCooldown)}s · ${left}`
+        : `Press H for a hint · ${left}`;
+    if (hintKey.textContent !== hintText) hintKey.textContent = hintText;
   }
 }
 
@@ -1661,6 +1814,7 @@ function applyLoadedRoom({
   interactables: roomInteractables,
   portals: roomPortals,
   mapMarkers,
+  mapLandmarks,
   warmUp,
   environment: wantsEnvironment,
   lighting: roomLighting,
@@ -1708,12 +1862,13 @@ function applyLoadedRoom({
   interactables = roomInteractables ?? [];
   portals = roomPortals ?? [];
   scene.environment = wantsEnvironment ? environmentMap : null;
-  // Only meaningful in the hub with multiple unmarked doors — every other
-  // room either has no portals or just the one obvious way back.
+  // Only meaningful in the hub with multiple unmarked doors, and the huge
+  // Lobby (labelled landmarks, for the photo search) — every other room
+  // either has no portals or just the one obvious way back.
   // Rooms built onto the hall (see rooms/connectRooms.js) have no portal,
   // just a marker.
-  if (roomKey === 'dorm' && portals.length > 0) {
-    minimap.show([...portals, ...(mapMarkers ?? [])], { group, floorY: spawn.y });
+  if (roomShowsMinimap(roomKey)) {
+    minimap.show([...portals, ...(mapMarkers ?? [])], { group, floorY: spawn.y }, { landmarks: mapLandmarks });
   }
   else minimap.hide();
   roomLighting?.attach(scene);
@@ -1856,6 +2011,10 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyV' && !e.repeat && isLocked && readyToPlay && !paused && !dialogueUI.isActive
     && !activeCutscene && !stageBusy()) {
     firstPerson = !firstPerson;
+  }
+  if (e.code === 'KeyH' && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey && isLocked && readyToPlay
+    && !paused && !dialogueUI.isActive && !activeCutscene && !stageBusy()) {
+    givePhotoHint();
   }
 });
 window.addEventListener('keyup', (e) => setMove(e.code, false));
@@ -3056,6 +3215,9 @@ let stageSeatY = null;   // world height of the seat she's sitting on, or null
 let stageDelay = null;
 let stageCamera = null;
 let stageHold = false;   // a room asked to keep control frozen (between beats)
+let stageHeadAt = null;  // a world point she turns her head to (see stage.lookWithHead), or null
+const headLookPoint = new THREE.Vector3(); // the last one, so the head eases back from it
+let headLookAmount = 0;  // 0 head on the animation .. 1 fully turned, eased
 let sitAmount = 0;       // 0 standing .. 1 seated, eased
 const stageHeading = new THREE.Vector3();
 
@@ -3130,6 +3292,11 @@ const stage = {
   lookAt(point) {
     facePomni(point.x, point.z);
   },
+
+  /** Turns just her head (and neck) toward a world point, easing in; null eases back. */
+  lookWithHead(point) {
+    stageHeadAt = point ? headLookPoint.copy(point) : null;
+  },
 };
 
 /** Cancels anything staged; on room change and when a room resets its scene. */
@@ -3144,6 +3311,8 @@ function resetStage() {
   stageDelay = null;
   stageCamera = null;
   stageHold = false;
+  stageHeadAt = null;
+  headLookAmount = 0;
   sitAmount = 0;
 }
 stage.reset = resetStage;
@@ -3177,6 +3346,35 @@ function updateStageWalk(dt) {
   }
 }
 
+// stage.lookWithHead: how far her head turns, and how fast it gets there.
+const HEAD_LOOK_SHARPNESS = 4;
+const HEAD_MAX_TURN = 1.0;  // radians either side of where her body faces
+const HEAD_MAX_TILT = 0.35; // radians up (and a little less down)
+const headPosition = new THREE.Vector3();
+const headLookLocal = new THREE.Vector3();
+const headTiltAxis = new THREE.Vector3();
+const pomniInverse = new THREE.Quaternion();
+
+/**
+ * Turns her head toward stageHeadAt on top of the clip pose: the turn
+ * split between neck and head, the tilt on the head alone, about her
+ * head's own (turned) left-right axis so it nods rather than rolls.
+ */
+function applyHeadLook(dt) {
+  headLookAmount = THREE.MathUtils.damp(headLookAmount, stageHeadAt ? 1 : 0, HEAD_LOOK_SHARPNESS, dt);
+  if (headLookAmount < 0.001 || !pomniBones.Head) return;
+  pomniBones.Head.getWorldPosition(headPosition);
+  pomni.getWorldQuaternion(pomniInverse).invert();
+  headLookLocal.subVectors(headLookPoint, headPosition).applyQuaternion(pomniInverse); // her frame: +Z ahead
+  const turn = THREE.MathUtils.clamp(Math.atan2(headLookLocal.x, headLookLocal.z), -HEAD_MAX_TURN, HEAD_MAX_TURN);
+  const up = Math.atan2(headLookLocal.y, Math.hypot(headLookLocal.x, headLookLocal.z));
+  const tilt = THREE.MathUtils.clamp(up, -HEAD_MAX_TILT * 0.6, HEAD_MAX_TILT);
+  bendBone(pomniBones.Neck, pomni, UP, turn * 0.4 * headLookAmount);
+  bendBone(pomniBones.Head, pomni, UP, turn * 0.6 * headLookAmount);
+  headTiltAxis.set(Math.cos(turn), 0, -Math.sin(turn)); // SIDEWAYS, turned with the head
+  bendBone(pomniBones.Head, pomni, headTiltAxis, -tilt * headLookAmount); // -: top back, looking up
+}
+
 /**
  * Layers the staged gesture/seat on the clip pose updatePomniWalk just
  * played (see bendBone for the axes). Knock: right arm raised forward,
@@ -3195,6 +3393,8 @@ function applyStagePose(dt) {
     bendBone(pomniBones.LeftLeg, pomni, SIDEWAYS, -thigh);
     bendBone(pomniBones.RightLeg, pomni, SIDEWAYS, -thigh);
   }
+
+  applyHeadLook(dt);
 
   const gesture = stageGesture;
   if (!gesture) return;
@@ -3362,8 +3562,10 @@ function nearestInRange(available = interactables) {
 
 /** Chest-height ray from Pomni to anchorPosition, ignoring the target's own meshes. */
 function hasLineOfSight(interactable) {
-  sightOrigin.set(player.position.x, player.position.y - 0.5, player.position.z);
-  sightTarget.set(anchorPosition.x, anchorPosition.y + PLAYER_HEIGHT - 0.5, anchorPosition.z);
+  // Head to head height: furniture between them (a desk, a rocking horse)
+  // shouldn't hide someone standing right there; walls still do.
+  sightOrigin.set(player.position.x, player.position.y - 0.1, player.position.z);
+  sightTarget.set(anchorPosition.x, anchorPosition.y + PLAYER_HEIGHT - 0.1, anchorPosition.z);
   sightDirection.subVectors(sightTarget, sightOrigin);
   const distance = sightDirection.length();
   if (distance < 1e-6) return true;
@@ -3460,7 +3662,7 @@ function animate() {
   const photoReturn = objectives.active?.id === 'collect-photos' && itemState.totalFound() >= PHOTO_COUNT
     ? { title: 'Return to Kaufmo', detail: 'Go through the Dorm Hall to his room. Press E on Kaufmo to deliver the photos before time runs out.' }
     : objectives.active;
-  objectiveHUD.update(hudContext, currentRoomKey === 'dorm' && portals.length > 0, photoReturn);
+  objectiveHUD.update(hudContext, roomShowsMinimap(currentRoomKey), photoReturn);
   tutorialHUD.update(hudContext, focusedBedroomDoor());
   updatePictureCounter();
   if (activeCutscene) {
@@ -3489,6 +3691,10 @@ function gameplayHUDContext() {
     menu: titleScreen.active || !overlay.classList.contains('hidden') || !controlsPanel.hidden
       || !creditsPanel.classList.contains('hidden') || !titleOptions.hidden || !titleQuit.hidden,
   };
+}
+
+function roomShowsMinimap(roomKey) {
+  return roomKey === 'tadc' || (roomKey === 'dorm' && portals.length > 0);
 }
 
 function focusedBedroomDoor() {

@@ -117,6 +117,21 @@ rotations, without retaining meshes or textures. `scatterPictures()` reconstruct
 only uncollected props from those slots. `reset()` clears both inventory and
 layout for retries and New Game. No saved-game persistence is added.
 
+Each Lobby landmark (`src/rooms/lobbyLandmarks.js`: hand-measured footprints
+such as the Gumball Tower or Toy Block Wall) holds at most one photo, so they
+can't all end up on one wall of 16 m toy blocks. The same landmarks label the
+Lobby minimap, and during the search **H** names the nearest photo's landmark,
+distance and direction and pings it on the minimap: 3 hints per attempt
+(`HINT_LIMIT`), at least 20 seconds of search time apart
+(`HINT_COOLDOWN_SECONDS`, both in `main.js`).
+
+Photos only go where Pomni can walk up and see them. The scatter's sweep
+origins can land sealed inside props (a pocket in the Toy Block Wall, the poles'
+hollow bases), so the Lobby checks spots against `src/rooms/lobbyReach.js`, a
+walkable-floor map flood-filled from the spawn. It's generated: rerun
+`node tools/buildLobbyReach.mjs` after changing the Lobby model, castle walls
+or staircase.
+
 Room/cutscene cleanup releases unique geometries, skeletons, shadow targets,
 textures and decoded bitmap sources. A loading-manager hook also releases the
 actual embedded-image blob URLs after decoding, working around the r169

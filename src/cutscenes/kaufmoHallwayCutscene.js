@@ -32,8 +32,8 @@ const RUN_FROM = new THREE.Vector3(-0.5, 0, -7);
 const RUN_TO = new THREE.Vector3(-0.5, 0, -22);
 const RUN_DURATION = 2.8;
 
-const CAMERA_POSITION = new THREE.Vector3(-1.9, 1.4, -6.2);
-const CAMERA_LOOK_AT = new THREE.Vector3(-0.7, 0.9, -19);
+const CAMERA_POSITION = new THREE.Vector3(-1.9, 1.6, -6.2);
+const CAMERA_LOOK_AT = new THREE.Vector3(-0.7, 1.3, -19); // about his chest, as he runs off
 
 const HOLD_AFTER = 0.35;
 

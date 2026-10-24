@@ -5,6 +5,9 @@ import { setupLobbyDoors } from './lobbyDoors.js';
 import { createCurtainPortal } from './portals.js';
 import { scatterPictures } from '../props/officePicture.js';
 import { createStaircase } from '../props/accessStairs.js';
+import { LOBBY_LANDMARKS, nearestLandmark } from './lobbyLandmarks.js';
+import { LOBBY_REACH } from './lobbyReach.js';
+import { decodeReachMap } from './reachMap.js';
 
 // Level 2's five office photos (see PHOTO_COUNT in level2Items.js),
 // scattered round the lobby rather than sitting in Kaufmo's own room — a
@@ -39,6 +42,14 @@ const DORM_ARCH_CURTAIN = 'Plane081';
 const STAIRS_BASE = { x: 2, z: 3 };
 const STAIRS_FLOOR_Y = 0.26;
 
+// A photo spot this close to a landmark counts as on it: one photo each.
+const LANDMARK_REACH = 6;
+// Where Pomni can walk (tools/buildLobbyReach.mjs). A photo has to be in
+// plain view from walkable floor this close, well inside E's 4.5 m reach.
+const lobbyReach = decodeReachMap(LOBBY_REACH);
+const PHOTO_VIEW_DISTANCE = 2.5;
+const EYE_HEIGHT = 1.5;
+
 export function loadTadcRoom(onProgress, { from, items } = {}) {
   return Promise.all([
     loadRoomModel('./models/world/Circus%20Lobby%20V10%20colored.glb', onProgress),
@@ -50,6 +61,8 @@ export function loadTadcRoom(onProgress, { from, items } = {}) {
     const defaultSpawn = room.spawn;
     replaceCastleWalls(room, castleWalls.scene);
     fixExportedPlastics(room.group);
+    useRealVertexColours(room.group);
+    tidyStageEdge(room.group);
     singleSided(room.group, SINGLE_SIDED);
     const doors = setupLobbyDoors(room.group, room.spawn, room.collisionMeshes);
     room.interactables = doors.interactables;
@@ -66,7 +79,12 @@ export function loadTadcRoom(onProgress, { from, items } = {}) {
       }
     }
     if (items) {
-      const pictures = scatterPictures(room, items, PICTURES, defaultSpawn, [dormArch?.box.getCenter(new THREE.Vector3())]);
+      const pictures = scatterPictures(room, items, PICTURES, defaultSpawn, [dormArch?.box.getCenter(new THREE.Vector3())], {
+        zoneOf: (spot) => nearestLandmark(spot.position.x, spot.position.z, LANDMARK_REACH) ?? spot.object,
+        isOpen: (origin) => lobbyReach.has(origin.x, origin.z),
+        isReachable: (spot) => photoInView(room.group, spot, defaultSpawn.y),
+      });
+      room.photoPositions = pictures.remaining;
       const doorsUpdate = room.update;
       room.update = (deltaSeconds, playerPosition) => {
         doorsUpdate(deltaSeconds, playerPosition);
@@ -80,8 +98,42 @@ export function loadTadcRoom(onProgress, { from, items } = {}) {
     room.group.add(stairs.group);
     room.collisionMeshes.push(...stairs.colliders);
     room.stairs = stairs.zone; // main.js hints the backwards long jump here
+    room.mapLandmarks = LOBBY_LANDMARKS;
     return room;
   });
+}
+
+const viewRaycaster = new THREE.Raycaster();
+
+/**
+ * Whether some walkable floor within PHOTO_VIEW_DISTANCE of a photo spot
+ * sees it unobstructed, trying the floor straight out in front of it
+ * first. Without this a spot could be on the inside of a sealed gap in
+ * the toy blocks: near the floor plan's walkable cells, but out of sight.
+ */
+function photoInView(group, { position, rotationY }, floorY) {
+  const front = { x: position.x + Math.sin(rotationY) * 1.5, z: position.z + Math.cos(rotationY) * 1.5 };
+  const cells = [];
+  const step = lobbyReach.step;
+  for (let dx = -PHOTO_VIEW_DISTANCE; dx <= PHOTO_VIEW_DISTANCE; dx += step) {
+    for (let dz = -PHOTO_VIEW_DISTANCE; dz <= PHOTO_VIEW_DISTANCE; dz += step) {
+      if (Math.hypot(dx, dz) > PHOTO_VIEW_DISTANCE) continue;
+      const x = position.x + dx, z = position.z + dz;
+      if (lobbyReach.has(x, z)) cells.push({ x, z, order: Math.hypot(x - front.x, z - front.z) });
+    }
+  }
+  cells.sort((a, b) => a.order - b.order);
+  const eye = new THREE.Vector3();
+  const toPhoto = new THREE.Vector3();
+  for (const { x, z } of cells) {
+    eye.set(x, floorY + EYE_HEIGHT, z);
+    toPhoto.subVectors(position, eye);
+    const distance = toPhoto.length();
+    viewRaycaster.set(eye, toPhoto.normalize());
+    viewRaycaster.far = distance - 0.05;
+    if (viewRaycaster.intersectObject(group, true).length === 0) return true;
+  }
+  return false;
 }
 
 /** Swaps the lobby's stub castle walls for the full ones, collision included. */
@@ -129,6 +181,51 @@ function singleSided(group, names) {
 }
 
 const TRANSMISSION_IGNORED = 0.1; // below this, a material's see-through look isn't worth it
+
+// The stage's gold edge band sits a little inside the wooden stage at its
+// ends, so the wood pokes through, and a second, lower gold strip shows in
+// patches underneath it at floor level. Widen the band just past the wood
+// (about the stage's centre) and drop the strip it already covers.
+const STAGE_TRIM = 'Plane002';
+const STAGE_UNDER_STRIP = 'Plane006';
+const STAGE_TRIM_GROWTH = 1.015;
+
+function tidyStageEdge(group) {
+  const trim = group.getObjectByName(STAGE_TRIM);
+  const floor = group.getObjectByName('Stage_Floor');
+  group.getObjectByName(STAGE_UNDER_STRIP)?.removeFromParent();
+  if (!trim || !floor) return;
+  // Scale in the trim's parent space about the stage's centre there.
+  group.updateMatrixWorld(true);
+  const centre = new THREE.Box3().setFromObject(floor).getCenter(new THREE.Vector3());
+  trim.parent.worldToLocal(centre);
+  trim.position.sub(centre).multiply(new THREE.Vector3(STAGE_TRIM_GROWTH, 1, STAGE_TRIM_GROWTH)).add(centre);
+  trim.scale.multiply(new THREE.Vector3(STAGE_TRIM_GROWTH, 1, STAGE_TRIM_GROWTH));
+  trim.updateMatrixWorld(true);
+}
+
+/**
+ * A few of the lobby's vertex-coloured pieces (the hanging pot by the
+ * castle) exported their colours into the second colour layer, with the
+ * first left plain white — and three.js only reads the first, so they came
+ * out untextured white. Where an untextured piece's first layer is all
+ * white and its second isn't, use the second. (Textured pieces — floors,
+ * frames, rugs — keep white first layers on purpose, under their textures.)
+ */
+function useRealVertexColours(group) {
+  group.traverse((child) => {
+    const { color, color_1: second } = child.geometry?.attributes ?? {};
+    if (!child.isMesh || !color || !second) return;
+    if ([child.material].flat().some((material) => material.map)) return;
+    const allWhite = (attribute) => {
+      for (let i = 0; i < attribute.count; i++) {
+        if (attribute.getX(i) < 0.99 || attribute.getY(i) < 0.99 || attribute.getZ(i) < 0.99) return false;
+      }
+      return true;
+    };
+    if (allWhite(color) && !allWhite(second)) child.geometry.setAttribute('color', second);
+  });
+}
 
 /**
  * Most of the lobby (doors, buildings, props) uses vertex-coloured

@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 const KAUFMO_URL = './models/characters/kaufmo/kaufmo_the_amazing_digital_circus.glb';
-// Short and round next to the cast (Caine is scaled to 2.6m the same way).
-const KAUFMO_HEIGHT = 1.3;
+// A tall clown, hat included: a head taller than Pomni (1.6m), about
+// Ragatha's height (Caine is scaled to 2.6m the same way).
+export const KAUFMO_HEIGHT = 2.1;
 // The Sketchfab source scene still has its default new-file Cube and
 // Icosphere in it alongside the actual character — including them in the
 // bounding box would badly skew the normalization below.
@@ -11,7 +12,7 @@ const JUNK_OBJECT_NAMES = new Set(['Cube', 'Icosphere']);
 // Same approach as Caine's collider: his actual mesh is too fine-grained
 // (and, for Kaufmo, rigged with no walkable-vs-decorative distinction) to
 // collide against directly, so stand a simple invisible cylinder in for him.
-const COLLIDER_RADIUS = 0.35;
+const COLLIDER_RADIUS = 0.45;
 
 /**
  * Loads Kaufmo and normalizes him the same way loadCaine() does: rescaled

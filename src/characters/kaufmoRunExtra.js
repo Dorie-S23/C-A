@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { loadKaufmo } from './kaufmo.js';
+import { KAUFMO_HEIGHT, loadKaufmo } from './kaufmo.js';
 import { bendBone, SIDEWAYS } from './bendBone.js';
 
 // An actual run: quick cadence, a bounce, a forward lean — matches jax.js's
@@ -14,17 +14,17 @@ const STRIDE_HZ = 3.3;
 const LEG_SWING = THREE.MathUtils.degToRad(26);
 const KNEE_BEND = THREE.MathUtils.degToRad(34);
 const ARM_SWING = THREE.MathUtils.degToRad(30);
-const BOB_HEIGHT = 0.06; // he's shorter than Jax — a smaller bounce reads right at his scale
+const BOB_HEIGHT = 0.03 * KAUFMO_HEIGHT; // in proportion to his height
 const LEAN_ANGLE = THREE.MathUtils.degToRad(16); // a little more than Jax's — he's shorter, so it needs to read at a glance
 const LEAN_IN_SECONDS = 0.25;
 
 // Same reasoning as Jax's: a light of his own so he isn't just however lit
 // the backdrop happens to leave him, positioned clear of his own mesh
-// (scaled down from Jax's offset — he's roughly 1.3m to Jax's ~1.8m).
+// (in proportion to his height, like Jax's).
 const KEY_LIGHT_COLOR = 0xfff4e0;
 const KEY_LIGHT_INTENSITY = 5;
 const KEY_LIGHT_RANGE = 4;
-const KEY_LIGHT_OFFSET = new THREE.Vector3(0.65, 1.1, 0.8);
+const KEY_LIGHT_OFFSET = new THREE.Vector3(0.5, 0.85, 0.62).multiplyScalar(KAUFMO_HEIGHT);
 
 /**
  * Finds a bone by a loose, punctuation-insensitive match on its name.
