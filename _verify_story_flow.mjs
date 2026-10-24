@@ -35,12 +35,12 @@ test('Caine → Ribbit → hallway → Kaufmo → photos advances once and survi
   assert.equal(objectives.active.id, 'check-kaufmo');
 });
 
-test('poor Ribbit choices still advance, and previews cannot award story milestones', () => {
+test('surviving lower-score completion advances, and previews cannot award story milestones', () => {
   const { objectives, progress, preview } = fixture();
   objectives.activate('find-ribbit');
-  assert.equal(progress.finishRibbit(0), true);
+  assert.equal(progress.finishRibbit(2), true);
   assert.equal(progress.ribbitComplete, true);
-  assert.equal(progress.ribbitPoints, 0);
+  assert.equal(progress.ribbitPoints, 2);
   preview();
   assert.equal(progress.finishKaufmoIntro(), false);
   assert.equal(progress.ribbitComplete, false);
@@ -58,10 +58,18 @@ test('new run clears completed encounters and Kaufmo introduction eligibility', 
   assert.equal(progress.finishKaufmoIntro(), false);
 });
 
-// Kaufmo's hallway encounter used to be a mission function (runLevel2)
-// driving two sequential playDialogue calls around a game.travel('kaufmo').
-// It's now a live cutscene staged entirely in the Dorm Hall
-// (src/cutscenes/kaufmoHallwayEncounter.js, driven from main.js's
-// playKaufmoHallway) — no second room, so no travel step and nothing left
-// here to unit-test without a browser. See
-// tools/verify_story_flow_browser.mjs for the real, running-game check.
+// Real-hall geometry/animation checks: _verify_kaufmo_hallway.mjs.
+// Browser win/failure/cancellation checks: tools/verify_level1_browser.mjs.
+
+test('Kaufmo pass-by is unavailable before a win and can be claimed only once', () => {
+  const { objectives, progress } = fixture();
+  objectives.activate('find-ribbit');
+  assert.equal(progress.hallwayPending, false);
+  assert.equal(progress.finishHallway(), false);
+  assert.equal(objectives.active.id, 'find-ribbit');
+  assert.equal(progress.finishRibbit(2), true);
+  assert.equal(progress.finishHallway(), true);
+  assert.equal(progress.finishHallway(), false);
+  assert.equal(objectives.active.id, 'find-kaufmo');
+  assert.equal(progress.ribbitPoints, 2);
+});

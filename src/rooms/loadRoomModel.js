@@ -135,6 +135,8 @@ function collectCollisionMeshes(group, bounds, spawn) {
  * for the same reason spawn placement uses the vertex centroid — a large
  * enclosing mesh would otherwise pull the light away from the walkable room.
  */
+const SHADOW_NORMAL_BIAS = 0.006; // per metre of room height
+
 function createRoomLighting(group, bounds, spawn) {
   const lights = new THREE.Group();
   lights.name = 'RoomLighting';
@@ -155,6 +157,13 @@ function createRoomLighting(group, bounds, spawn) {
   pendant.shadow.mapSize.set(1024, 1024);
   pendant.shadow.camera.near = 0.1;
   pendant.shadow.camera.far = roomHeight * 6;
+  // Without a bias, surfaces shade themselves in their own shadow ("shadow
+  // acne"): stripes, rings and speckles that crawl as the camera moves —
+  // worst in big rooms like the lobby, where each shadow-map texel spans a
+  // lot of wall. normalBias pushes the lookup off the surface along its
+  // normal, scaled to the room (a texel's width grows with it).
+  pendant.shadow.bias = -0.0005;
+  pendant.shadow.normalBias = SHADOW_NORMAL_BIAS * roomHeight;
   lights.add(pendant);
 
   return lights;

@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import * as THREE from 'three';
 import { scatterPictures } from './src/props/officePicture.js';
 import { createLevel2Items } from './src/state/level2Items.js';
+import { createSeededRandom } from './src/maze/seededRandom.js';
 
 const PICTURES = [
   { id: 'ca1', url: './models/objects/ca1.png' },
@@ -82,4 +83,34 @@ test('an already-collected picture is not placed again', () => {
   items.collect('ca1');
   scatterPictures(room, items, PICTURES, SPAWN, [], SMALL_ROOM_OPTIONS);
   assert.equal(placedPictures(room).length, 2, 'only the two not-yet-collected pictures get hung');
+});
+
+test('partial pickups and deliveries preserve every remaining slot across room reloads', () => {
+  const items = createLevel2Items();
+  const first = buildRoom();
+  scatterPictures(first, items, PICTURES, SPAWN, [], { ...SMALL_ROOM_OPTIONS, rng: createSeededRandom(17) });
+  const snapshot = picture => ({ position: picture.position.toArray(), rotation: picture.rotation.toArray() });
+  const original = placedPictures(first).map(snapshot);
+  const pickup = first.interactables[0];
+  pickup.interact();
+  pickup.interact(); // repeated input cannot collect or score twice
+  assert.equal(items.totalFound(), 1);
+  assert.equal(first.interactables.length, 2);
+  items.presentHeld();
+
+  for (let revisit = 0; revisit < 3; revisit++) {
+    const room = buildRoom();
+    scatterPictures(room, items, PICTURES, SPAWN, [], {
+      ...SMALL_ROOM_OPTIONS,
+      rng: () => assert.fail('A revisit must not roll a new layout'),
+    });
+    assert.deepEqual(placedPictures(room).map(snapshot), original.slice(1));
+    assert.equal(items.totalPresented(), 1);
+  }
+
+  items.reset();
+  const retry = buildRoom();
+  scatterPictures(retry, items, PICTURES, SPAWN, [], { ...SMALL_ROOM_OPTIONS, rng: createSeededRandom(99) });
+  assert.equal(placedPictures(retry).length, 3);
+  assert.notDeepEqual(placedPictures(retry).map(snapshot), original);
 });

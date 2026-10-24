@@ -18,15 +18,14 @@ The playable sequence is:
    plays through the closed door; consent moves the scene into her room.
 4. Pomni approaches the bed before dialogue resumes. Choosing to sit waits
    for her approach and seating pose. Fixed conversation shots frame both
-   characters. The four choices score at most four Escape points. Each pick
-   also moves Ribbit's distress (starts at 1, good −1, poor +1, max 3; see
-   `src/dialogue/distressMeter.js`).
-   - **Win:** finish the conversation before distress hits 3 — Ribbit
-     steadies (step 5).
-   - **Lose:** distress hits 3 (two poor picks from the start, or three in
-     all) — after her reply she throws Pomni out (`l1_shut_out`), a
-     **LEVEL 1 FAILED** card shows, the attempt's points are dropped, and
-     Pomni is back in the hall to knock again (same objective).
+   characters. The four choices score at most four Escape points; poor
+   choices increase distress by 1 and correct choices reduce it by 1 (minimum 0).
+   Distress starts at 1. Reaching 3 (two poor picks from the start, or three
+   in all) immediately cancels the dialogue and shows
+   **Level 1 Failed** with **Retry Level**. Failure clears Level 1 points and
+   never completes Find Ribbit or enables Find Kaufmo. Retry returns to the
+   door and restarts the conversation with distress 1 and zero Level 1 points.
+   Surviving paths steady Ribbit; successful points carry into Level 2.
 5. Finishing completes **Find Ribbit** and enables **Find Kaufmo**. Pomni stands,
    the conversation camera releases, and the exit opens. There is no scene
    picker in this handoff. A **Level 1 Complete** card pauses for Continue
@@ -34,19 +33,25 @@ The playable sequence is:
 6. Leaving for Dorm Hall plays Kaufmo's hallway encounter. Its completion is
    remembered, then Pomni travels into his room for the introduction. If
    interrupted, E on Kaufmo retries the room conversation.
-7. Completing the introduction enables **Find the office photos**, the photo
-   counter, and a 3-minute search timer (visible countdown, stops the moment
-   all 5 are picked up — not when they're handed in). Pomni auto-travels to
-   the Dorm Hall so the search starts there rather than inside his room.
-   All 5 photos (`PHOTO_COUNT` in `level2Items.js`) are scattered round the
-   Circus Lobby, each with a soft pulsing glow, not sitting in Kaufmo's room.
-   Early pickups are retained, but do not bypass his introduction. E then
-   presents held photos. All 5 presented photos enable **Hear Kaufmo’s
-   Theory**; his stall/payoff conversations resolve that objective and show
-   **Level 2 Complete** once per run. Running out of time before all 5 are
-   found shows a **LEVEL 2 FAILED** card and restarts the search (new photo
-   spots, same objective, fresh 3-minute countdown on every retry) — not yet
-   the real "abstraction" fail effect.
+7. Completing the introduction enables **Find and deliver the photos** and a
+   **4-minute countdown covering both search and delivery**. Pomni auto-travels
+   to the Lobby's default spawn; time advances only during active play, with
+   loading, pause, dialogue and cinematics excluded. All 5 photos (`PHOTO_COUNT`
+   in `level2Items.js`) glow softly around the Circus Lobby. Their positions and
+   rotations stay fixed for this attempt, including visits after partial delivery.
+   The HUD shows found and delivered totals separately and keeps the countdown
+   visible throughout the return route, including Dorm Hall and detours.
+   Finding the fifth photo changes the instruction to **Return to Kaufmo**;
+   the remaining time continues without resetting. E presents all held photos
+   immediately. Partial deliveries pause for dialogue and then resume the same
+   clock; reaching 5 delivered stops it before Kaufmo's reaction, even with one
+   second left. Early pickups are retained but do not bypass his introduction.
+   All 5 delivered enable **Hear Kaufmo’s Theory**; his stall/payoff conversations
+   resolve that objective and show **Level 2 Complete** once per run. Expiring
+   with fewer than 5 delivered fails even if all photos have been found. Continue
+   clears held/delivered photos and Level 2 points, chooses new spots, and restarts
+   at the same default Lobby spawn with 4 minutes. Level 1 points are preserved.
+   This remains a retry card, not the later "abstraction" effect.
 
 `src/game/storyProgress.js` owns the post-Caine milestones. Objectives and
 milestones survive room changes. Ribbit's completed pose and an unscored
@@ -68,6 +73,7 @@ Verification:
 
 ```sh
 npm test
+node tools/verify_level1_browser.mjs # Vite on 5173; installed Chrome
 node _verify_objectives.mjs
 node _verify_caine_interaction.mjs
 npm run build
@@ -83,9 +89,34 @@ review-only browser instrumentation positions the player between encounters.
 Screenshots and the report are written to ignored `artifacts/story-flow/`.
 
 `node tools/verify_photo_search_timer_browser.mjs` checks the initial countdown,
-two consecutive timeout/retry cycles, pause, stopping after five pickups, and
-cancelling a failure card by returning home. Its report is written to
-`artifacts/photo-search-timer/`.
+two consecutive timeout/retry cycles and equal start positions, pause/loading/
+dialogue exclusion, actual photo pickup and Kaufmo interaction callbacks,
+stable positions after partial delivery, visible timing in Dorm Hall, failure
+with all photos held, immediate last-second final delivery, and cancellation
+of a pending retry by returning home. Its report and desktop/narrow-screen
+screenshots are written to `artifacts/photo-search-timer/`. The bridge skips
+walking distances and advances the game clock for deadline tests; these are
+functional checks, not human difficulty measurements.
+
+`node tools/verify_lobby_picture_scatter.mjs` checks all five placements across
+8 real Lobby loads and a partial-delivery revisit. It also measures straight-line
+travel distances for all 120 pickup orders per layout, ending at the Lobby exit,
+through the real Dorm Hall and within Kaufmo's interaction radius. The report
+is written to `artifacts/photo-search-timing/routes.json`. The first 8-layout
+sample after this change estimated **70.7–147.8 seconds at walking speed**
+(35.4–73.9 sprinting), excluding spotting, obstacle detours and interaction delays.
+The longest order left only about 32 seconds of the old 180-second budget for
+those costs. **240 seconds is the initial tuning choice**, adding a minute for
+delivery and navigation. This estimate does not establish human completion rates
+or guarantee every route fits: playtest unfamiliar layouts and partial-delivery
+trips before final difficulty tuning. Adjust `SEARCH_TIMER_SECONDS` in `main.js`
+and the initial timer text in `index.html` together.
+
+Photo layout data is owned by `createLevel2Items().getPhotoLayout(factory)`:
+the factory runs once per attempt and stores immutable plain coordinates and
+rotations, without retaining meshes or textures. `scatterPictures()` reconstructs
+only uncollected props from those slots. `reset()` clears both inventory and
+layout for retries and New Game. No saved-game persistence is added.
 
 Room/cutscene cleanup releases unique geometries, skeletons, shadow targets,
 textures and decoded bitmap sources. A loading-manager hook also releases the
@@ -98,3 +129,17 @@ planned memory searches, final Jax dialogue or branching ending cinematics.
 
 Developer cutscene skipping honours awaited actions and scores each choice once.
 Returning home or changing rooms cancels a pending completion card.
+
+
+Manual Level 1 win/loss check in Chrome:
+
+- Start a New Game and follow Find Caine, then Find Ribbit to her door.
+- To lose quickly, choose B at the first dialogue choice and A at the second.
+  Distress moves 1 -> 2 -> 3. Level 1 Failed must appear immediately, without
+  recovery or Find Kaufmo. Click Retry Level: the door conversation restarts
+  without reloading the browser, at distress 1 and zero Level 1 points.
+- On retry, choose A, B, A, A. Finish the dialogue, confirm Level 1 Complete,
+  click Continue, and follow Find Kaufmo. The successful attempt earns 4 points
+  that stay in the Escape Threshold through the Level 2 transition.
+- A, A, B, B fails on the fourth choice after earning one point; retry must
+  discard that point rather than adding it to the next attempt.

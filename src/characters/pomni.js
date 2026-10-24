@@ -9,8 +9,8 @@ const POMNI_HEIGHT = 1.6; // Caine is 2.6; agree on this with the team
 // of Pomni (one is ~18 m wide); both use this material, so drop them.
 const STRAY_MATERIAL = 'mat21';
 
-// Her look, restyled to the show's: warm pinkish-white skin, maroon-brown
-// hair, periwinkle and coral fabric. The export only has flat colours,
+// Her look, restyled to the show's: warm pinkish-white skin, dark grey
+// hair (her 2D dialogue icon's), saturated red and blue fabric. The export only has flat colours,
 // keyed here by its material names (sRGB hex; roughness 0 = glossy, 1 =
 // matte). The rooms light her with a bright reflection environment, which
 // washes saturated colour out toward white, so the fabric and skin take
@@ -18,10 +18,11 @@ const STRAY_MATERIAL = 'mat21';
 // keep their own.
 const LOOK = {
   mat9: { color: '#f7ece9', roughness: 0.7, env: 0.35 },   // face (and her neck)
+  Pomni_ClosedLid_White: { color: '#f7ece9', roughness: 0.7, env: 0.35 }, // the opening's shut eyelids
   mat0: { color: '#f3e2de', roughness: 0.65, env: 0.35 },  // arms and legs
   mat5: { color: '#fdfdfd', roughness: 0.25, env: 0.6 },   // eye whites
   mat7: { color: '#fdfdfd', roughness: 0.25, env: 0.6 },
-  mat8: { color: '#7e2b25', roughness: 0.75, env: 0.25 },  // hair
+  mat8: { color: '#4d4d4d', roughness: 0.75, env: 0.25 },  // hair: the 2D icon's grey
   mat1: { color: '#3036f2', roughness: 0.65, env: 0.15 },  // blue: hat, suit, glove, shoe
   mat2: { color: '#f01f2b', roughness: 0.65, env: 0.15 },  // red: hat, suit, glove, shoe
   mat3: { color: '#ffc21f', roughness: 0.6, env: 0.3 },    // yellow trim, buttons, bells
@@ -46,6 +47,10 @@ const NECK_RADIUS = { top: 12, bottom: 14 };
 // shared with her suit (fabric, trim), the parts above her collar: higher
 // than this over the neck joint, in the rig's units.
 const BODY_MATERIALS = ['mat0', 'mat1', 'mat2', 'mat3'];
+const HEAD_MATERIALS = [
+  'mat4', 'mat5', 'mat7', 'mat8', 'mat9', 'mat10', 'mat11', 'mat12', 'mat13', 'mat14',
+  'mat15', 'mat16', 'mat17', 'mat18', 'mat19', 'mat20', 'Pomni_ClosedLid_White',
+];
 const COLLAR_TOP = 33;
 
 // The show draws a pink blush under each eye; the model has none, so two
@@ -94,8 +99,8 @@ export function loadPomni() {
     .then((gltf) => {
       trimIdleTPose(gltf.animations);
       naturalArms(gltf.animations, gltf.scene);
-      addNeck(gltf.animations, gltf.scene);
       relaxFingers(gltf.animations);
+      restylePomni(gltf.scene, gltf.animations);
       return { pomni: normalize(gltf.scene), animations: gltf.animations };
     })
     .catch((err) => {
@@ -250,18 +255,36 @@ function relaxFingers(clips) {
   }
 }
 
-function normalize(model) {
-  const strays = [];
+/**
+ * Her look, on any copy of her model (the game's, and the bedroom
+ * opening's, which is the same rig and materials): LOOK's colours, the
+ * hidden parts, her neck, and the cheek blush. `clips` are the animations
+ * that will play on it, so the neck holds in them too. Call it once, in her
+ * rest pose, before anything plays.
+ * @param {THREE.Object3D} model
+ * @param {THREE.AnimationClip[]} [clips]
+ */
+export function restylePomni(model, clips = []) {
   model.traverse((child) => {
     if (!child.isMesh) return;
-    if (child.material.name === STRAY_MATERIAL) strays.push(child);
-    if (HIDDEN_MATERIALS.includes(child.material.name)) strays.push(child);
+    if (HIDDEN_MATERIALS.includes(child.material.name)) child.visible = false;
     const look = LOOK[child.material.name];
     if (look) {
       child.material.color.set(look.color);
       child.material.roughness = look.roughness;
       child.material.envMapIntensity = look.env;
     }
+  });
+  addNeck(clips, model);
+  updateSkeletons(model);
+  addBlush(model);
+}
+
+function normalize(model) {
+  const strays = [];
+  model.traverse((child) => {
+    if (!child.isMesh) return;
+    if (child.material.name === STRAY_MATERIAL) strays.push(child);
     child.castShadow = true;
     child.receiveShadow = true;
     // Skinned bounds are computed once in the bind pose, so an animated
@@ -270,7 +293,6 @@ function normalize(model) {
   });
   for (const stray of strays) stray.removeFromParent();
   updateSkeletons(model);
-  addBlush(model);
 
   const box = new THREE.Box3().setFromObject(model);
   const size = box.getSize(new THREE.Vector3());
@@ -296,7 +318,6 @@ function addNeck(clips, model) {
   if (!neck || !head) return;
   model.updateMatrixWorld(true);
   model.traverse((child) => { if (child.isSkinnedMesh) child.skeleton.update(); });
-  const collarTop = neck.localToWorld(new THREE.Vector3(0, COLLAR_TOP, 0)).y;
   const vertex = new THREE.Vector3();
   model.traverse((mesh) => {
     if (!mesh.isSkinnedMesh) return;
@@ -307,11 +328,12 @@ function addNeck(clips, model) {
     // were only on the upper spine.
     const isHead = (index) => bones[index] === neck || bones[index] === head || bones[index].parent === head;
     const shared = BODY_MATERIALS.includes(mesh.material.name);
+    if (!shared && !HEAD_MATERIALS.includes(mesh.material.name)) return; // e.g. the opening's blanket
     const { skinIndex, skinWeight } = mesh.geometry.attributes;
     for (let i = 0; i < skinIndex.count; i++) {
       let onHead = false;
       for (let k = 0; k < 4; k++) if (skinWeight.getComponent(i, k) > 0 && isHead(skinIndex.getComponent(i, k))) onHead = true;
-      if (shared && (!onHead || mesh.getVertexPosition(i, vertex).applyMatrix4(mesh.matrixWorld).y < collarTop)) continue;
+      if (shared && (!onHead || neck.worldToLocal(mesh.getVertexPosition(i, vertex).applyMatrix4(mesh.matrixWorld)).y < COLLAR_TOP)) continue;
       skinIndex.setXYZW(i, headIndex, 0, 0, 0);
       skinWeight.setXYZW(i, 1, 0, 0, 0);
     }
@@ -358,7 +380,7 @@ function addBlush(model) {
     if (!child.isMesh) return;
     // (Her neck shares the face's material, but isn't skinned.)
     if (child.isSkinnedMesh && child.material.name === FACE_MATERIAL) face = child;
-    if (EYE_WHITE_MATERIALS.includes(child.material.name)) eyes.push(new THREE.Box3().setFromObject(child));
+    if (EYE_WHITE_MATERIALS.includes(child.material.name)) eyes.push(child);
   });
   const head = model.getObjectByName('mixamorigHead');
   if (!face || !head || eyes.length !== 2) return;
@@ -379,28 +401,43 @@ function addBlush(model) {
     polygonOffset: true, polygonOffsetFactor: -4,
   });
 
+  // Worked out in the model's own frame, where she stands upright facing
+  // +Z, whatever the scene has done with her (the opening lays her in bed).
+  model.updateMatrixWorld(true);
+  const toModel = model.matrixWorld.clone().invert();
+  const vertex = new THREE.Vector3();
+  const inModel = (mesh, i) => mesh.getVertexPosition(i, vertex).applyMatrix4(mesh.matrixWorld).applyMatrix4(toModel);
+
   // DecalGeometry reads raw vertices, but her face is skinned: project onto
   // a stand-in holding the face where it actually is, in the rest pose.
   const shape = face.geometry.clone();
-  const vertex = new THREE.Vector3();
   for (let i = 0; i < shape.attributes.position.count; i++) {
-    face.getVertexPosition(i, vertex).applyMatrix4(face.matrixWorld);
-    shape.attributes.position.setXYZ(i, vertex.x, vertex.y, vertex.z);
+    const v = inModel(face, i);
+    shape.attributes.position.setXYZ(i, v.x, v.y, v.z);
   }
   shape.computeVertexNormals();
   const surface = new THREE.Mesh(shape);
 
-  const middle = (eyes[0].getCenter(new THREE.Vector3()).x + eyes[1].getCenter(new THREE.Vector3()).x) / 2;
-  for (const eye of eyes) {
+  const eyeBoxes = eyes.map((eye) => {
+    const box = new THREE.Box3();
+    for (let i = 0; i < eye.geometry.attributes.position.count; i++) box.expandByPoint(inModel(eye, i));
+    return box;
+  });
+  const middle = (eyeBoxes[0].getCenter(new THREE.Vector3()).x + eyeBoxes[1].getCenter(new THREE.Vector3()).x) / 2;
+  for (const eye of eyeBoxes) {
     const centre = eye.getCenter(new THREE.Vector3());
     const width = eye.max.x - eye.min.x;
     const out = Math.sign(centre.x - middle);
-    // She faces +Z: the decal projects straight back onto her cheek.
+    // The decal projects straight back (along -Z) onto her cheek.
     const position = new THREE.Vector3(centre.x + out * BLUSH.outward * width, centre.y - BLUSH.below * width, centre.z);
     // Deep enough to reach back from the bulging eyes to the cheek.
     const size = new THREE.Vector3(BLUSH.width * width, BLUSH.height * width, width * 4);
     const decal = new THREE.Mesh(new DecalGeometry(surface, position, new THREE.Euler(), size), material);
     decal.name = 'PomniBlush';
+    // Its vertices are in the model's frame: place it there, then hang it
+    // on her head bone keeping that place.
+    model.add(decal);
+    decal.updateMatrixWorld(true);
     head.attach(decal);
   }
   shape.dispose();

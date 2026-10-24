@@ -25,10 +25,11 @@ const RELEASE = path.join(ROOT, 'release');
 const SITE = path.join(RELEASE, 'site');
 const ZIP = path.join(RELEASE, 'cgv-game-deploy.zip');
 
-// Relative asset URLs as they appear in the bundle: './models/...' strings,
-// possibly %-encoded, ending at the closing quote. A trailing '/' is a
-// directory the code builds file names in (e.g. the dialogue icons).
-const ASSET_URL = /\.\/models\/[^"'`)\s]+/g;
+// Relative asset URLs as they appear in the bundle: './models/...' and
+// './audio/...' strings, possibly %-encoded, ending at the closing quote. A
+// trailing '/' is a directory the code builds file names in (e.g. the
+// dialogue icons, or the voice clips named by hashing each line).
+const ASSET_URL = /\.\/(?:models|audio)\/[^"'`)\s]+/g;
 
 function main() {
   if (!process.argv.includes('--skip-build')) {

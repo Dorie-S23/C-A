@@ -85,15 +85,16 @@ export function pulseGlow(findables, elapsedSeconds) {
  * @param {string} label shown in the pickup prompt ("Pick up <label>")
  * @param {() => THREE.Group} createMesh
  * @param {THREE.Vector3} position floor position; the mesh sits a little above it
+ * @param {() => number} [rng] Optional seeded stream for repeatable prop rotation.
  * @returns {THREE.Group | null} the placed mesh (for pulseGlow), or null
  *   if it was already collected and nothing was placed
  */
-export function placeMazeFindable(room, items, itemId, label, createMesh, position) {
+export function placeMazeFindable(room, items, itemId, label, createMesh, position, rng = Math.random) {
   if (items.hasCollected(itemId)) return null;
 
   const mesh = createMesh();
   mesh.position.copy(position);
-  mesh.rotation.y = Math.random() * Math.PI * 2;
+  mesh.rotation.y = rng() * Math.PI * 2;
   room.group.add(mesh);
   mesh.updateMatrixWorld(true);
 

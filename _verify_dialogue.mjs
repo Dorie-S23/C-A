@@ -1,8 +1,8 @@
 // Node verification harness for the dialogue engine's branching logic.
 // Run with `node _verify_dialogue.mjs`.
 import { createDialogueEngine } from './src/dialogue/dialogueEngine.js';
+import { createLevel1Attempt } from './src/state/level1Attempt.js';
 import { createChoiceTally } from './src/dialogue/choiceTally.js';
-import { createDistressMeter } from './src/dialogue/distressMeter.js';
 import {
   ESCAPE_MAX, ESCAPE_PASS_MARK, LEVEL_MAX_POINTS, getEscapeTotal, getLevelPoints,
   passesEscapeGate, resetEscapeThreshold, setLevelPoints,
@@ -191,11 +191,11 @@ function collectAllReachableNodes(script, maxPaths = 64) {
 }
 
 // Level 1 (Ribbit): walk every combination of answers through the engine
-// with a live tally and distress meter, the way level1.js drives it. A
-// path that never breaks Ribbit must pass all four choices and win; one
-// that does must jump to 'l1_shut_out' right after her reply and lose.
-// Every path must use only known speakers and moods, and score exactly
-// the points of the options it picked.
+// with a live attempt, the way level1.js drives it. A path that never
+// reaches distress 3 must pass all four choices and end on the win line;
+// one that does stops right on that pick (Level 1 Failed). Every path must
+// use only known speakers and moods, and score exactly the points of the
+// options it picked.
 {
   const script = level1RibbitDialogue;
   const choices = script.filter((n) => n.type === 'choice');
@@ -211,7 +211,7 @@ function collectAllReachableNodes(script, maxPaths = 64) {
   const shutOutAt = script.findIndex((n) => n.id === 'l1_shut_out');
   const winEnd = script[shutOutAt - 1];
   const loseEnd = script[script.length - 1];
-  check('level1Ribbit: win and lose endings are separate and both close the script',
+  check('level1Ribbit: win and shut-out endings are separate and both close the script',
     shutOutAt > 0 && winEnd.next === null && loseEnd.next === null && script[shutOutAt].speaker === 'ribbit');
 
   const paths = [];
@@ -225,28 +225,20 @@ function collectAllReachableNodes(script, maxPaths = 64) {
   let losses = 0;
   for (const picks of paths) {
     const engine = createDialogueEngine(script);
-    const tally = createChoiceTally(script);
-    const mood = createDistressMeter();
+    const tally = createLevel1Attempt();
     const seen = [];
     let verdicts = [];
     let expected = 0;
-    let shutOutAfterLine = false;
     try {
       let c = 0;
-      for (let steps = 0; !engine.done && steps < 500; steps++) {
+      for (let steps = 0; !engine.done && !tally.failed && steps < 500; steps++) {
         const node = engine.current;
         seen.push(node);
         if (node.type === 'choice') {
           const option = engine.choose(picks[c]);
           expected += option.points;
-          const correct = tally.record(option);
-          verdicts.push(correct);
-          mood.record(correct);
-          shutOutAfterLine = mood.brokeDown;
+          verdicts.push(tally.record(option));
           c++;
-        } else if (shutOutAfterLine && node.speaker === 'ribbit') {
-          shutOutAfterLine = false;
-          engine.jump('l1_shut_out');
         } else {
           engine.advance();
         }
@@ -255,32 +247,25 @@ function collectAllReachableNodes(script, maxPaths = 64) {
       failed = `${picks.join('')}: threw ${e.message}`;
       break;
     }
-    // Independent of the meter: 2 wrong from the start, or 3 wrong in all.
+    // Independent of the attempt: 2 wrong from the start, or 3 wrong in all.
     const wrong = picks.map((p, i) => p !== key[i]);
     const shouldLose = (wrong[0] && wrong[1]) || wrong.filter(Boolean).length >= 3;
     if (shouldLose) losses++;
-    const breakingChoice = shouldLose ? tally.answered - 1 : -1;
-    const problem = !engine.done ? 'never ended'
-      : mood.brokeDown !== shouldLose ? `brokeDown=${mood.brokeDown}, expected ${shouldLose}`
-      : !shouldLose && tally.answered !== 4 ? `answered ${tally.answered} choices`
-      : shouldLose && !wrong[breakingChoice] ? 'broke on a correct answer'
-      : shouldLose && seen.some((n) => n.type === 'choice' && seen.indexOf(n) > seen.indexOf(script[shutOutAt])) ? 'choice after shut-out'
+    const problem = tally.failed !== shouldLose ? `failed=${tally.failed}, expected ${shouldLose}`
+      : tally.failed ? (tally.distress !== 3 ? 'wrong failure limit' : !wrong[tally.answered - 1] ? 'failed on a correct answer' : null)
+      : !engine.done ? 'never ended'
+      : tally.answered !== 4 ? `answered ${tally.answered} choices`
       : tally.points !== expected ? `points ${tally.points} != ${expected}`
       : verdicts.some((v, i) => v !== (picks[i] === key[i])) ? `verdicts ${verdicts.join()}`
       : seen.find((n) => n.type === 'line' && !SPEAKERS[n.speaker]) ? 'unknown speaker'
       : seen.find((n) => n.type === 'line' && SPRITES[n.speaker] && !MOODS.includes(n.mood)) ? 'missing/unknown mood'
       : seen.find((n) => (n.type === 'line' || n.type === 'beat') && !n.text?.trim()) ? 'empty text'
-      : seen[seen.length - 1] !== (shouldLose ? loseEnd : winEnd) ? 'ends somewhere else'
-      : shouldLose && seen[seen.indexOf(script[shutOutAt]) - 1]?.speaker !== 'ribbit' ? 'shut-out not right after her reply'
+      : seen[seen.length - 1] !== winEnd ? 'ends somewhere else'
       : null;
     if (problem) { failed = `${picks.map((p) => 'ABC'[p]).join('')}: ${problem}`; break; }
   }
-  check(`level1Ribbit: all ${paths.length} answer paths win or lose as the distress meter says and score correctly`, !failed, failed ?? '');
+  check(`level1Ribbit: all ${paths.length} answer paths either fail at distress 3 or finish and score correctly`, !failed, failed ?? '');
   check('level1Ribbit: 52 of 81 paths lose, 29 win', losses === 52, `losses=${losses}`);
-  {
-    const m = createDistressMeter();
-    check('distressMeter: one slip and a recovery never breaks her', [false, true, true, true].every((c) => !(m.record(c), m.brokeDown)));
-  }
 
   const best = createChoiceTally(script);
   choices.forEach((c, i) => best.record(c.options[key[i]]));

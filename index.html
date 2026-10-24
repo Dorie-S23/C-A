@@ -91,6 +91,41 @@
             #btn-home {
                 background: rgba(200, 60, 60, 0.25);
             }
+            #btn-save,
+            #btn-pause-load {
+                background: rgba(26, 86, 232, 0.25);
+            }
+            #btn-save:hover,
+            #btn-pause-load:hover {
+                background: rgba(26, 86, 232, 0.45);
+            }
+            /* Over the pause menu, so a darker backdrop than other panels. */
+            #save-slots {
+                background: rgba(0, 0, 0, 0.85);
+            }
+            #save-slot-list {
+                display: flex;
+                flex-direction: column;
+                gap: 0.6em;
+            }
+            #save-slot-list button {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.2em;
+                text-align: left;
+            }
+            #save-slot-list button:disabled {
+                opacity: 0.45;
+                cursor: default;
+            }
+            .save-slot-name {
+                font-weight: 700;
+            }
+            .save-slot-detail {
+                font-size: 0.8em;
+                opacity: 0.75;
+            }
             #btn-home:hover {
                 background: rgba(200, 60, 60, 0.45);
             }
@@ -144,10 +179,6 @@
                 font-size: 0.9em;
                 pointer-events: none;
                 z-index: 5;
-            }
-            @media (max-width: 400px) {
-                #picture-counter { top: calc(180px + 2em); }
-                #search-timer { top: calc(180px + 2em + 2.6em); }
             }
 
             #hint {
@@ -411,7 +442,7 @@
             #dialogue {
                 position: fixed;
                 inset: 0;
-                z-index: 15;
+                z-index: 15; /* paused, it hides (DialogueUI.setPaused) so the menus show */
                 pointer-events: none;
                 font-family: sans-serif;
             }
@@ -617,6 +648,16 @@
             @media (max-width: 600px) {
                 #objective-hud.objective-hud--with-minimap { top: calc(180px + 2rem); right: 1rem; }
             }
+            /* The delivery HUD stays readable alongside the hall minimap. */
+            @media (max-width: 760px) {
+                body:has(#picture-counter:not([hidden])) #objective-hud { top: 6.75rem; right: 1rem; }
+                body:has(#picture-counter:not([hidden])) #objective-hud.objective-hud--with-minimap { top: calc(180px + 2rem); }
+            }
+            @media (max-width: 480px) {
+                body:has(.objective-hud--with-minimap) #picture-counter { top: calc(180px + 2rem); }
+                body:has(.objective-hud--with-minimap) #search-timer { top: calc(180px + 2rem + 2.6em); }
+                body:has(#picture-counter:not([hidden])) #objective-hud.objective-hud--with-minimap { top: calc(180px + 8rem); }
+            }
 
             /* --- Speaker distress (DialogueUI setDistress, levels 1-3) ---
        A line said by someone shaken: the box trembles and the name,
@@ -678,7 +719,7 @@
         <div id="overlay">
             <h1 id="overlay-title">Choose a room</h1>
             <p id="overlay-subtitle">
-                WASD / Arrow keys to move, mouse to look, Shift to sprint, E to
+                WASD / Arrow keys to move, mouse to look, Shift to sprint, Space to jump, E to
                 interact &mdash; Esc to release the mouse
             </p>
             <div id="room-picker">
@@ -703,6 +744,8 @@
             <button id="btn-title">&larr; Title screen</button>
             <div id="pause-menu" hidden>
                 <button id="btn-resume">&#9654; Resume</button>
+                <button id="btn-save">&#128190; Save Game</button>
+                <button id="btn-pause-load">Load Game</button>
                 <button id="btn-home">&#8962; Back to Home</button>
             </div>
         </div>
@@ -726,6 +769,26 @@
                         step="0.1"
                     />
                 </label>
+                <label>
+                    <span>Voice volume: <span id="voice-volume-value"></span></span>
+                    <input
+                        id="voice-volume"
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                    />
+                </label>
+                <label>
+                    <span>Ambience volume: <span id="ambience-volume-value"></span></span>
+                    <input
+                        id="ambience-volume"
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                    />
+                </label>
                 <label class="title-toggle">
                     <input id="dev-skip-intro" type="checkbox" />
                     <span>Dev mode: open on room selection</span>
@@ -735,10 +798,19 @@
                     <span>Dev mode: skip cutscenes and dialogue</span>
                 </label>
                 <button id="btn-new-game">New Game</button>
+                <button id="btn-load-game">Load Game</button>
                 <button id="btn-replay-intro">&#9654; Replay intro</button>
                 <button id="btn-room-previews">Room previews</button>
                 <button id="btn-options-credits">Credits</button>
                 <button id="btn-options-back">Back</button>
+            </div>
+        </div>
+        <div id="save-slots" class="title-panel" hidden>
+            <div class="title-panel-box">
+                <h2 id="save-slots-title">Save Game</h2>
+                <p id="save-slots-note"></p>
+                <div id="save-slot-list"></div>
+                <button id="btn-save-slots-back">Back</button>
             </div>
         </div>
         <div id="title-quit" class="title-panel" hidden>
@@ -760,8 +832,8 @@
             <div data-tutorial-lines></div>
             <small>X &middot; Dismiss tips</small>
         </aside>
-        <div id="picture-counter" role="status" hidden>Pictures found: 0/3</div>
-        <div id="search-timer" role="status" hidden>Time left: 3:00</div>
+        <div id="picture-counter" role="status" hidden>Photos found: 0/5 · Delivered: 0/5</div>
+        <div id="search-timer" role="status" hidden>Time left: 4:00</div>
         <div id="hint"></div>
         <div id="prompt" hidden></div>
         <button id="controls-btn">Controls</button>
@@ -780,6 +852,8 @@
                     <dd>Move</dd>
                     <dt><kbd>Shift</kbd><span class="plus">+</span>move</dt>
                     <dd>Run</dd>
+                    <dt><kbd>Space</kbd></dt>
+                    <dd>Jump</dd>
                     <dt><kbd>E</kbd></dt>
                     <dd>Interact</dd>
                     <dt><kbd>T</kbd></dt>
@@ -859,6 +933,28 @@
                         rel="noopener"
                         >CC BY 4.0</a
                     >
+                </li>
+                <li>
+                    Character voices, room ambience, snore and door knock
+                    &mdash; AI-generated with
+                    <a
+                        href="https://elevenlabs.io/"
+                        target="_blank"
+                        rel="noopener"
+                        >ElevenLabs</a
+                    >
+                    (free plan, non-commercial use)
+                </li>
+                <li>
+                    Earlier character voices &mdash; Microsoft Edge neural
+                    text-to-speech via
+                    <a
+                        href="https://github.com/Migushthe2nd/MsEdgeTTS"
+                        target="_blank"
+                        rel="noopener"
+                        >msedge-tts</a
+                    >
+                    &mdash; MIT License
                 </li>
             </ul>
         </div>

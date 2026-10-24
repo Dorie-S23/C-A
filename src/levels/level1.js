@@ -1,70 +1,65 @@
 import * as THREE from 'three';
-import { createChoiceTally } from '../dialogue/choiceTally.js';
-import { createDistressMeter } from '../dialogue/distressMeter.js';
-import { level1RibbitDialogue } from '../data/dialogues.js';
+import { createLevel1Attempt } from '../state/level1Attempt.js';
 import { getLevelPoints, setLevelPoints } from '../state/escapeThreshold.js';
 
-/**
- * A door/bedroom encounter. Session and room tokens guard every async handoff.
- *
- * Win: finish the conversation before Ribbit's distress peaks — she's
- * steadied, Level 1 Complete. Lose: let it peak (see distressMeter.js) —
- * after her reply to that pick she throws Pomni out ('l1_shut_out'),
- * LEVEL 1 FAILED, the attempt's points are dropped and it's back to her
- * door to knock again.
- */
+/** A door/bedroom encounter. Session and room tokens guard every async handoff. */
 export async function runLevel1(game, { hall, onComplete, story = false } = {}) {
   const { stage } = game;
   const session = game.session;
-  const pointsBefore = getLevelPoints('level1');
+  let pointsBefore = getLevelPoints('level1');
   let token = game.token;
-  let tally = createChoiceTally(level1RibbitDialogue);
-  let mood = createDistressMeter();
+  let tally = createLevel1Attempt();
   let reactNextLine = false;
-  let shutOutAfterLine = false;
   let ribbitScene = null;
   const live = () => game.session === session && game.token === token;
 
   const scoring = {
     onChoice(option) {
-      if (!live()) return;
+      if (!live() || tally.failed) return;
       const correct = tally.record(option);
       if (correct === null) return;
       setLevelPoints('level1', tally.points);
-      mood.record(correct);
       reactNextLine = !correct;
-      shutOutAfterLine = mood.brokeDown;
-      ribbitScene?.setDistress(mood.level);
+      ribbitScene?.setDistress(tally.distress);
+      if (tally.failed) void failAttempt();
     },
     distressFor(line) {
-      if (line.speaker !== 'ribbit') return 0;
-      if (mood.brokeDown) return mood.level;
-      if (!reactNextLine) return 0;
+      if (!reactNextLine || line.speaker !== 'ribbit') return 0;
       reactNextLine = false;
-      return mood.level;
-    },
-    // The lose branch: her reply to the pick that broke her is the last
-    // line of the main conversation before she throws Pomni out.
-    nextFor(node) {
-      if (!shutOutAfterLine || node.speaker !== 'ribbit') return;
-      shutOutAfterLine = false;
-      return 'l1_shut_out';
+      return tally.distress;
     },
     onCancel() {
-      if (!live()) return;
-      tryAgain('Conversation interrupted. Knock on Ribbit’s door to try again.');
+      if (!live() || tally.failed) return;
+      setLevelPoints('level1', pointsBefore);
+      stage.reset();
+      if (story) {
+        game.showHint('Conversation interrupted. Knock on Ribbit’s door to try again.', 6000);
+        if (ribbitScene) game.travel('dorm');
+      } else {
+        atTheDoor();
+      }
     },
   };
 
-  function tryAgain(hint) {
-    setLevelPoints('level1', pointsBefore);
+  async function failAttempt() {
+    // Cancel synchronously before the choice callback can render another line.
+    game.cancelDialogue();
+    setLevelPoints('level1', 0);
+    pointsBefore = 0;
     stage.reset();
-    if (story) {
-      game.showHint(hint, 6000);
-      if (ribbitScene) game.travel('dorm');
-    } else {
-      atTheDoor();
-    }
+    const retry = await game.showLevelComplete(
+      'Level 1 Failed',
+      'Ribbit is too distressed to continue. Try again and help her stay calm.',
+      { chime: 'fail', buttonLabel: 'Retry Level' },
+    );
+    if (!retry || !live()) return;
+    const room = await game.travel('dorm');
+    if (!room || game.session !== session || !game.isRoom(room)) return;
+    token = game.token;
+    ribbitScene = null;
+    room.hallDoors?.ribbit?.shut();
+    stage.place({ ...KNOCK_SPOT, lookAt: RIBBIT_DOOR });
+    knock(ribbitsDormDoor(room.group));
   }
 
   async function atTheDoor() {
@@ -83,10 +78,9 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
 
   function knock(door) {
     if (!live()) return;
-    tally = createChoiceTally(level1RibbitDialogue);
-    mood = createDistressMeter();
+    tally = createLevel1Attempt();
+    setLevelPoints('level1', 0);
     reactNextLine = false;
-    shutOutAfterLine = false;
     game.playDialogue('level1Ribbit', {
       ...scoring, stopAt: 'l1_inside', lookAt: RIBBIT_DOOR,
       onNode(node) {
@@ -101,13 +95,13 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
   }
 
   async function goInside() {
-    if (!live()) return;
+    if (!live() || tally.failed) return;
     const room = await game.travel('ribbit');
     if (!room || game.session !== session || !game.isRoom(room)) return;
     token = game.token;
     ribbitScene = room.ribbitScene;
     const { door, points, seatY, setPose, setDistress, shots } = ribbitScene;
-    setDistress(mood.level);
+    setDistress(tally.distress);
     door.open({ immediate: true });
     stage.place({ ...points.DOORWAY, lookAt: points.BEDSIDE });
 
@@ -128,26 +122,20 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
         setDistress(tally.correct >= 2 ? 0 : 1);
         setPose('sitting');
         stage.frame(shots.seated);
-        await stage.wait(1.5);
+        // Long enough to watch her stir, roll over and push herself up
+        // (ribbit.js passes through its 'waking' pose on the way).
+        await stage.wait(2.8);
       },
     };
 
     game.playDialogue('level1Ribbit', {
       ...scoring, startAt: 'l1_inside',
       lineFor: node => node.id === 'l1_recovery' && tally.correct < 2
-        ? { ...node, text: 'I’m still a mess. But… it helps that you stayed. I think I can sit up for a bit.' }
+        ? { ...node, text: node.altText }
         : node,
       onNode: node => actions[node.action]?.(),
       async onComplete() {
-        if (!live()) return;
-        if (mood.brokeDown) {
-          if (!await standAndTurnToGo()) return;
-          if (game.showLevelComplete) {
-            if (!await game.showLevelComplete('LEVEL 1 FAILED', LEVEL1_FAILED, { resume: false, chime: 'fail' }) || !live()) return;
-          }
-          tryAgain('Ribbit shut you out. Knock on her door to try again.');
-          return;
-        }
+        if (!live() || tally.failed) return;
         onComplete?.(tally.points);
         if (!await standAndTurnToGo()) return;
         if (game.showLevelComplete) {
@@ -204,8 +192,6 @@ function ribbitsDormDoor(group) {
     },
   };
 }
-
-const LEVEL1_FAILED = 'Ribbit’s had enough. She’s shut you out — and she’s closer to the edge than when you knocked.';
 
 const LEVEL1_OUTCOME = [
   'Ribbit is holding on — but only just.',

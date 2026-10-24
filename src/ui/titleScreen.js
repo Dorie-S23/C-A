@@ -47,6 +47,7 @@ const GLOVE_LEAN_SHARPNESS = 10;  // per second; how quickly the tilt follows (a
 const GLOVE_BOB = 0.04;           // resting bob height, in spacings
 const GLOVE_BOB_PERIOD = 1.6;     // seconds
 const GLOVE_FOLLOW_SHARPNESS = 30; // per second; how tightly the glove trails the mouse
+const GLOVE_LAYER = 1;             // drawn in its own pass, over the buttons (see render())
 
 // Once the menu is live the sky drifts sideways and its clouds billow a
 // little (see createSkyBackdrop). The intro keeps the still, authored shot.
@@ -75,10 +76,14 @@ const AMBIENT_STRENGTH = 0.07 * Math.PI;
  */
 export function createTitleScreen({ renderer, onAction, isBlocked = () => false }) {
   const scene = new THREE.Scene();
-  scene.add(new THREE.AmbientLight(0xffffff, AMBIENT_STRENGTH));
+  const ambient = new THREE.AmbientLight(0xffffff, AMBIENT_STRENGTH);
+  scene.add(ambient);
   const sun = new THREE.DirectionalLight(0xffffff, SUN_STRENGTH);
   sun.position.copy(SUN_DIRECTION).multiplyScalar(-100);
   scene.add(sun);
+  // Lit the same in the glove's own pass (see render()).
+  ambient.layers.enable(GLOVE_LAYER);
+  sun.layers.enable(GLOVE_LAYER);
 
   // Replaced by the GLB's own camera once loaded.
   let camera = new THREE.PerspectiveCamera(31.4, 4 / 3, 0.1, 1000);
@@ -91,6 +96,8 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
   let skyMotion = 0; // 0 = the authored still sky, 1 = drifting at full speed
   let skyTime = 0;
   const fade = createFade();
+  // Drawn in the glove's pass, the last one, so the fade covers it too.
+  fade.layers.set(GLOVE_LAYER);
   scene.add(fade);
 
   const raycaster = new THREE.Raycaster();
@@ -170,6 +177,8 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
       hover: 0,
     })).filter((button) => button.block);
     glove = gltf.scene.getObjectByName(GLOVE);
+    // Also on its own layer, for the pass that keeps it over the buttons.
+    glove?.traverse((part) => part.layers.enable(GLOVE_LAYER));
     doorway = gltf.scene.getObjectByName(DOORWAY);
 
     for (const button of buttons) {
@@ -540,8 +549,19 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
     render() {
       sky.material.uniforms.inverseProjection.value.copy(camera.projectionMatrixInverse);
       const toneMapping = renderer.toneMapping;
+      const autoClear = renderer.autoClear;
       renderer.toneMapping = THREE.NeutralToneMapping;
       renderer.render(scene, camera);
+      // The glove is the cursor, so it goes over the buttons: the buttons'
+      // raised lettering would otherwise poke through the hand. A second
+      // pass with the depth cleared draws it (and the fade) on top, while
+      // its fingers still hide each other properly.
+      renderer.autoClear = false;
+      renderer.clearDepth();
+      camera.layers.set(GLOVE_LAYER);
+      renderer.render(scene, camera);
+      camera.layers.set(0);
+      renderer.autoClear = autoClear;
       renderer.toneMapping = toneMapping;
     },
 

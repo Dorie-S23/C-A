@@ -7,14 +7,20 @@ export function createObjectiveHUD({ objectives, root }) {
   const title = root.querySelector('[data-objective-title]');
   const detail = root.querySelector('[data-objective-detail]');
   let gameplayVisible = false;
-  const unsubscribe = objectives.subscribe(objective => {
-    title.textContent = objective?.title ?? '';
-    detail.textContent = objective?.detail ?? '';
+  const render = objective => {
+    if (title.textContent !== (objective?.title ?? '')) title.textContent = objective?.title ?? '';
+    if (detail.textContent !== (objective?.detail ?? '')) detail.textContent = objective?.detail ?? '';
     detail.hidden = !objective?.detail;
+  };
+  const unsubscribe = objectives.subscribe(objective => {
+    render(objective);
     root.hidden = !gameplayVisible || !objective;
   });
   return {
-    update(context, minimapVisible = false) {
+    // A presentation override changes instructions without reactivating the
+    // objective (which would reset subscribers such as the search timer).
+    update(context, minimapVisible = false, presentation = objectives.active) {
+      render(objectives.active && presentation);
       gameplayVisible = shouldShowObjective(context);
       root.hidden = !gameplayVisible || !objectives.active;
       root.classList.toggle('objective-hud--with-minimap', minimapVisible);
