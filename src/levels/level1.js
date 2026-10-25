@@ -21,7 +21,6 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
       setLevelPoints('level1', tally.points);
       reactNextLine = !correct;
       ribbitScene?.setDistress(tally.distress);
-      if (tally.failed) void failAttempt();
     },
     distressFor(line) {
       if (!reactNextLine || line.speaker !== 'ribbit') return 0;
@@ -41,15 +40,27 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
     },
   };
 
-  async function failAttempt() {
-    // Cancel synchronously before the choice callback can render another line.
+  /**
+   * A choice's "game over" option played out to its `gameOver` beat
+   * (dialogues.js): that beat's text is the card's message. Returns true
+   * when it handled the node, so the caller doesn't act on it as well.
+   */
+  function gameOverAt(node) {
+    if (!node?.gameOver || !live() || tally.failed) return false;
+    tally.fail();
+    void failAttempt(node.text);
+    return true;
+  }
+
+  async function failAttempt(message) {
+    // Cancel synchronously before the dialogue can move on (or complete).
     game.cancelDialogue();
     setLevelPoints('level1', 0);
     pointsBefore = 0;
     stage.reset();
     const retry = await game.showLevelComplete(
-      'Level 1 Failed',
-      'Ribbit is too distressed to continue. Try again and help her stay calm.',
+      'Game Over',
+      message,
       { chime: 'fail', buttonLabel: 'Retry Level' },
     );
     if (!retry || !live()) return;
@@ -84,6 +95,7 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
     game.playDialogue('level1Ribbit', {
       ...scoring, stopAt: 'l1_inside', lookAt: RIBBIT_DOOR,
       onNode(node) {
+        if (gameOverAt(node)) return;
         if (node.action !== 'knock') return;
         stage.setCamera({ yaw: Math.atan2(0.6, -0.8), pitch: 0.15 });
         return stage.gesture('knock', { onTap: door.rattle }).then(() => {
@@ -133,7 +145,7 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
       lineFor: node => node.id === 'l1_recovery' && tally.correct < 2
         ? { ...node, text: node.altText }
         : node,
-      onNode: node => actions[node.action]?.(),
+      onNode: node => (gameOverAt(node) ? undefined : actions[node.action]?.()),
       async onComplete() {
         if (!live() || tally.failed) return;
         onComplete?.(tally.points);

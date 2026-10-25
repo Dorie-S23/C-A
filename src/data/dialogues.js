@@ -11,6 +11,7 @@ export const SPEAKERS = {
   caine: { name: 'Caine', initials: 'C', color: '#b0163f' },
   kaufmo: { name: 'Kaufmo', initials: 'K', color: '#e0a868' },
   ribbit: { name: 'Ribbit', initials: 'R', color: '#5d9b3c' },
+  jax: { name: 'Jax', initials: 'J', color: '#9b7fd4' },
 };
 
 // --- Pre-Level 1: "Business as Usual" ---------------------------------
@@ -234,7 +235,7 @@ export const level2HallwayDialogue = [
     side: 'right',
     direction: 'mumbling, hurrying past, not really talking to her',
     mood: 'worried',
-    text: "—three on the left wall, one by the stage, and the door that wasn't a door… no, no, that one counts, that one has to count…",
+    text: "—five on the left wall, one by the stage, and the door that wasn't a door… no, no, that one counts, that one has to count…",
   },
   {
     type: 'line',
@@ -262,7 +263,7 @@ export const level2RoomOpeningDialogue = [
     speaker: 'pomni',
     side: 'left',
     mood: 'neutral',
-    text: 'Kaufmo? Hey. You just ran past me like I was furniture.',
+    text: "Kaufmo? Hey. Are you alright? You've been mumbling things to yourself lately.",
   },
   {
     type: 'line',
@@ -313,7 +314,7 @@ export const level2RoomOpeningDialogue = [
     options: [
       { text: "Sounds like you've been thinking about this a lot.", next: 'c1_a' },
       { text: 'Kaufmo, slow down. Breathe.', next: 'c1_b' },
-      { text: "You think there's a way out.", next: 'c1_c' },
+      { text: 'Uhh, what?', next: 'c1_c' },
     ],
   },
   {
@@ -340,7 +341,7 @@ export const level2RoomOpeningDialogue = [
     speaker: 'kaufmo',
     side: 'right',
     mood: 'annoyed',
-    text: "I don't think. I know.",
+    text: "Haven't you been listening?!",
     next: 'converge1',
   },
   {
@@ -363,7 +364,7 @@ export const level2RoomOpeningDialogue = [
     speaker: 'kaufmo',
     side: 'right',
     mood: 'sad',
-    text: "Because if I'm wrong… (beat) then I'm just the guy walking in circles talking to himself.",
+    text: "Because if I'm wrong… then I'm just the guy walking in circles talking to himself.",
   },
   {
     type: 'line',
@@ -391,14 +392,14 @@ export const level2RoomOpeningDialogue = [
     speaker: 'kaufmo',
     side: 'right',
     mood: 'sad',
-    text: 'And he laughed. Called me crazy. Said I should go lie down before I glitch out in front of everyone.',
+    text: 'And he laughed. Called me crazy. Said I should go lie down before I abstract in front of everyone.',
   },
   {
     type: 'line',
     speaker: 'pomni',
     side: 'left',
     mood: 'annoyed',
-    text: '…That is a very Jax thing to say.',
+    text: "…That's a very Jax thing to say.",
   },
   {
     type: 'line',
@@ -413,7 +414,7 @@ export const level2RoomOpeningDialogue = [
     speaker: 'pomni',
     options: [
       { text: "He's been taking it out on everyone. It's not about you.", next: 'c2_a1' },
-      { text: "You're not crazy.", next: 'c2_b' },
+      { text: 'You are crazy.', next: 'c2_b' },
       { text: 'Honestly? You do sound a bit crazy right now.', next: 'c2_c1' },
     ],
   },
@@ -441,8 +442,8 @@ export const level2RoomOpeningDialogue = [
     type: 'line',
     speaker: 'kaufmo',
     side: 'right',
-    mood: 'sad',
-    text: "You don't know that. I don't even know that. (beat) …But thanks.",
+    mood: 'annoyed',
+    text: "Excuse me?? You don't know that. I don't even know that…",
     next: 'converge2',
   },
   {
@@ -483,8 +484,8 @@ export const level2RoomOpeningDialogue = [
     type: 'line',
     speaker: 'pomni',
     side: 'left',
-    mood: 'annoyed',
-    text: 'I\'ve got nothing better to do. Literally. Caine scheduled my afternoon as "free."',
+    mood: 'neutral',
+    text: "Of course, Kaufmo. I don't like seeing you so stressed out.",
   },
   {
     type: 'line',
@@ -499,7 +500,7 @@ export const level2RoomOpeningDialogue = [
     speaker: 'pomni',
     side: 'left',
     mood: 'annoyed',
-    text: 'Of course you don\'t.',
+    text: 'Great.',
   },
   {
     type: 'line',
@@ -520,7 +521,7 @@ export const level2RoomOpeningDialogue = [
     speaker: 'kaufmo',
     side: 'right',
     mood: 'happy',
-    text: 'So I got Ribbit in on it. She jumped out, gave him a scare, and he dropped them. It worked! Perfectly!',
+    text: 'So I got Zooble in on it. She jumped out, gave him a scare, and he dropped them. It worked! Perfectly!',
   },
   {
     type: 'line',
@@ -534,7 +535,7 @@ export const level2RoomOpeningDialogue = [
     speaker: 'kaufmo',
     side: 'right',
     mood: 'sad',
-    text: "But Ribbit had to keep him busy so I could grab them, so she's running all over the circus, Caine's chasing her, the pictures are getting kicked everywhere, and by the time it calmed down — gone. Scattered.",
+    text: "But Zooble had to keep him busy so I could grab them, so she's running all over the circus, Caine's chasing her, the pictures are getting kicked everywhere, and by the time it calmed down — gone. Scattered.",
   },
   {
     type: 'line',
@@ -598,13 +599,14 @@ export const level2OpeningDialogue = [
 
 // --- Level 1: "Talk Her Down" (Ribbit) ---------------------------------
 // Script by Dorsa Shahrokh. Starts with E at her hallway door, then
-// continues inside. Four graded choices: the best answer earns 1 Escape
-// point (`points: 1`), the others 0 — they still advance, but change
-// Ribbit's reply and Pomni has to walk it back. Every option's branch
-// rejoins the main line. The Level 1 controller stops the conversation if
-// distress reaches 3; surviving paths steady Ribbit (the score feeds
-// the ending, not this level). Choice-checking lives in
-// src/dialogue/choiceTally.js; src/levels/level1.js owns the encounter.
+// continues inside. Four graded choices, each with four options: the button
+// shows a short label, then Pomni says the line in full. The best answer
+// earns 1 Escape point (`points: 1`); two others score 0 — they still
+// advance, but change Ribbit's reply and Pomni has to walk it back — and
+// the fourth (`points: -1`) ends the level on the spot: its branch ends in
+// a `gameOver` beat whose text is the Game Over card's message (see
+// src/levels/level1.js). Every other branch rejoins the main line.
+// Choice-checking lives in src/dialogue/choiceTally.js.
 // `action` on a node names a stage direction the mission acts out in 3D
 // when that node is shown (knock, enterRoom, sitBesideRibbit,
 // ribbitSitsUp) — the text stays exactly as written.
@@ -626,373 +628,122 @@ export const level1RibbitDialogue = [
     type: 'choice',
     speaker: 'pomni',
     options: [
-      { text: '“It’s Pomni. I just wanted to see how you’re doing.”', next: 'l1_c1_a', points: 1 },
-      { text: '“Caine sent me. He’s worried you’re going to abstract.”', next: 'l1_c1_b', points: 0 },
-      { text: '“It’s me. Open up, I don’t have all day.”', next: 'l1_c1_c', points: 0 },
+      { text: '“It’s Pomni”', next: 'l1_c1_a', points: 1 },
+      { text: '“Caine sent me”', next: 'l1_c1_b', points: 0 },
+      { text: '“Open”', next: 'l1_c1_c', points: 0 },
+      { text: '“Nevermind”', next: 'l1_c1_d', points: -1 },
     ],
   },
-  {
-    id: 'l1_c1_a',
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: '…Pomni? Fine. Door’s open.',
-    next: 'l1_inside',
-  },
-  {
-    id: 'l1_c1_b',
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'He — what? Is that what everyone’s saying about me now?',
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'worried',
-    text: 'No. Sorry. That came out wrong. Can I come in?',
-  },
-  {
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: '…Whatever. It’s open.',
-    next: 'l1_inside',
-  },
-  {
-    id: 'l1_c1_c',
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'Then don’t spend it here.',
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'sad',
-    text: '…Okay, that was rude. Sorry. Can I come in?',
-  },
-  {
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: '…It’s open.',
-  },
+  { id: 'l1_c1_a', type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'It’s Pomni. I just wanted to see how you’re doing.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: '…Pomni? Fine. Door’s open.', next: 'l1_inside' },
+  { id: 'l1_c1_b', type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Caine sent me to see if you’re okay. He’s worried you’re going to abstract.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'He — what? Is that what everyone’s saying about me now?' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'No. Sorry. That came out wrong. Can I come in?' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: '…Whatever. It’s open.', next: 'l1_inside' },
+  { id: 'l1_c1_c', type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: 'It’s me. Open up, I don’t have all day.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'Then don’t spend it here.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'sad', text: '…Okay, that was rude. Sorry. Can I come in?' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: '…It’s open.', next: 'l1_inside' },
+  { id: 'l1_c1_d', type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: 'On second thought, nevermind. I’m wasting my time anyway.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'WHY WOULD YOU KNOCK THEN?' },
+  { type: 'beat', gameOver: true, text: 'Don’t be a bum', next: null },
   {
     id: 'l1_inside',
     type: 'beat',
     action: 'enterRoom',
     text: 'Inside, the room is dim. Ribbit is curled up on the bed. An empty mug hook hangs by the door.',
   },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'neutral',
-    text: 'Hey.',
-  },
-  {
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'Hey.',
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'worried',
-    text: 'It’s quiet in here. You’re usually… not quiet.',
-  },
-  {
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'Yeah, well. Turns out I’m a lot. Apparently.',
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'worried',
-    text: 'Who said that?',
-  },
-  {
-    type: 'beat',
-    text: 'Silence.',
-  },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Hey.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'Hey.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'It’s quiet in here. You’re usually… not quiet.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'Yeah, well. Turns out I’m a lot. Apparently.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'Who said that?' },
+  { type: 'beat', text: 'Silence.' },
   // CHOICE 2
   {
     type: 'choice',
     speaker: 'pomni',
     options: [
-      { text: '“Let me guess. Jax.”', next: 'l1_c2_a', points: 0 },
+      { text: '“Jax?”', next: 'l1_c2_a', points: 0 },
       { text: '(Sit down next to her and wait.)', next: 'l1_c2_b', points: 1 },
-      { text: '“Whatever it is, you’ll get over it. Everyone here bounces back.”', next: 'l1_c2_c', points: 0 },
+      { text: '“Bounce back”', next: 'l1_c2_c', points: 0 },
+      { text: '“Yeah.”', next: 'l1_c2_d', points: -1 },
     ],
   },
-  {
-    id: 'l1_c2_a',
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'Don’t. Don’t say his name like it’s a punchline.',
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'sad',
-    text: 'Okay. Sorry.',
-    next: 'l1_jax',
-  },
-  {
-    id: 'l1_c2_b',
-    type: 'line',
-    action: 'sitBesideRibbit',
-    speaker: 'ribbit',
-    side: 'right',
-    text: '…You’re not gonna make me talk?',
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'neutral',
-    text: 'Nope. I’m very good at sitting.',
-  },
-  {
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: '…Okay.',
-    next: 'l1_jax',
-  },
-  {
-    id: 'l1_c2_c',
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'Do they? Because I’ve seen what happens to people who don’t.',
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'sad',
-    text: '…Yeah. Bad choice of words. Sorry.',
-  },
-  {
-    id: 'l1_jax',
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'It was Jax.',
-  },
-  {
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'After every adventure, we have a tradition where Jax, Kaufmo and I hang out at the café. Hot chocolate, terrible jokes. It was the one normal thing in this whole place.',
-  },
-  {
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'He’s been getting so distant from us. We opened up to each other and after that he’s been acting horrible towards me. Snappier. So the other night I asked if he was okay. That’s it. That’s all I asked.',
-  },
-  {
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'And he just exploded. Said he can’t stand me anymore. That I’m loud and clingy, and the only reason anyone puts up with me is because nobody can leave.',
-  },
-  {
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'Then he knocked my mug off the table and walked out.',
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'sad',
-    text: '…',
-  },
-  {
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'And now I keep thinking… what if he’s right?',
-  },
+  { id: 'l1_c2_a', type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Let me guess. Jax.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'Don’t. Don’t say his name like it’s a punchline.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'sad', text: 'Okay. Sorry.', next: 'l1_jax' },
+  { id: 'l1_c2_b', type: 'line', action: 'sitBesideRibbit', speaker: 'ribbit', side: 'right', text: '…You’re not gonna make me talk?' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Nope. I’m very good at sitting.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: '…Okay.', next: 'l1_jax' },
+  { id: 'l1_c2_c', type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Whatever it is, you’ll get over it. Everyone bounces back.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'Do they? Because I’ve seen what happens to people who don’t.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'sad', text: '…Yeah. Bad choice of words. Sorry.', next: 'l1_jax' },
+  { id: 'l1_c2_d', type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: 'You’re right, you are a lot. You should really work on that.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'Why the hell are you here, Pomni? Just leave.' },
+  { type: 'beat', gameOver: true, text: 'Why would you say that?', next: null },
+  { id: 'l1_jax', type: 'line', speaker: 'ribbit', side: 'right', text: 'It was Jax.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'After every adventure, we have a tradition where Jax, Kaufmo and I hang out at the café. Hot chocolate, terrible jokes. It was the one normal thing in this whole place.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'He’s been getting so distant from us. We opened up to each other and after that he’s been acting horrible towards me. Snappier. So the other night I asked if he was okay. That’s it. That’s all I asked.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'And he just exploded. Said he can’t stand me anymore. That I’m loud and clingy, and the only reason anyone puts up with me is because nobody can leave.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'Then he knocked my mug off the table and walked out.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'sad', text: '…' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'And now I keep thinking… what if he’s right?' },
   // CHOICE 3
   {
     type: 'choice',
     speaker: 'pomni',
     options: [
-      { text: '“He’s not right. He’s hurting, and he aimed it at the closest person.”', next: 'l1_c3_a', points: 1 },
-      { text: '“Well… you are pretty loud.”', next: 'l1_c3_b', points: 0 },
-      { text: '“Maybe you should stay away from him for a while.”', next: 'l1_c3_c', points: 0 },
+      { text: '“He’s not”', next: 'l1_c3_a', points: 1 },
+      { text: '“Well…”', next: 'l1_c3_b', points: 0 },
+      { text: '“Stay away from him”', next: 'l1_c3_c', points: 0 },
+      { text: '“He is”', next: 'l1_c3_d', points: -1 },
     ],
   },
-  {
-    id: 'l1_c3_a',
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: '…That’s not fair either.',
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'neutral',
-    text: 'No. It’s not. But it’s not the truth about you.',
-    next: 'l1_best_friend',
-  },
-  {
-    id: 'l1_c3_b',
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: '…Great. Thanks. Really helpful.',
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'shocked',
-    text: 'That — okay, I’m bad at this. Loud isn’t bad. It’s just… you.',
-    next: 'l1_best_friend',
-  },
-  {
-    id: 'l1_c3_c',
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'So he wins? I lose my best friend and my hot chocolate?',
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'sad',
-    text: 'That’s not what I meant. Sorry.',
-  },
-  {
-    id: 'l1_best_friend',
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'He’s my best friend, Pomni. Was. Is? I don’t know.',
-  },
-  {
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'And it’s not just me. He’s been going after Kaufmo too.',
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'shocked',
-    text: 'Kaufmo?',
-  },
-  {
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'Kaufmo’s got this theory. That there’s a way out. He’s been collecting stuff, writing everything down. He told Jax about it.',
-  },
-  {
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'Jax laughed at him. Called him crazy. Keeps ridiculing and dismissing him.',
-  },
-  {
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'At first Kaufmo thought Jax was just being Jax, but he got more tense with his insults and it started getting to him.',
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'worried',
-    text: 'Have you talked to him?',
-  },
-  {
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'I couldn’t even get out of bed. Some friend I am.',
-  },
+  { id: 'l1_c3_a', type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'He’s not right. He’s hurting, and he aimed it at the closest person.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: '…That’s not fair either.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'No. It’s not. But it’s not the truth about you.', next: 'l1_best_friend' },
+  { id: 'l1_c3_b', type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Well… you are pretty loud, I can’t lie.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: '…Great. Thanks. Really helpful.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'shocked', text: 'That — okay, I’m bad at this. Loud isn’t bad. It’s just… you.', next: 'l1_best_friend' },
+  { id: 'l1_c3_c', type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'Maybe you should stay away from him for a while.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'So he wins? I lose my best friend and my hot chocolate?' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'sad', text: 'That’s not what I meant. Sorry.', next: 'l1_best_friend' },
+  { id: 'l1_c3_d', type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: 'I agree with him, he’s right about that. You are really annoying, no one likes a ‘pick-me’, Ribbit.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'You’re so messed up, get the hell out of my room!' },
+  { type: 'beat', gameOver: true, text: 'You’re being the ‘pick-me’', next: null },
+  { id: 'l1_best_friend', type: 'line', speaker: 'ribbit', side: 'right', text: 'He’s my best friend, Pomni. Was. Is? I don’t know.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'And it’s not just me. He’s been going after Kaufmo too.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'shocked', text: 'Kaufmo?' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'Kaufmo’s got this theory. That there’s a way out. He’s been collecting stuff, writing everything down. He told Jax about it.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'Jax laughed at him. Called him crazy. Keeps ridiculing and dismissing him.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'At first Kaufmo thought Jax was just being Jax, but he got more tense with his insults and it started getting to him.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'Have you talked to him?' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'I couldn’t even get out of bed. Some friend I am.' },
   // CHOICE 4
   {
     type: 'choice',
     speaker: 'pomni',
     options: [
-      { text: '“You’re allowed to take a minute. I’ll check on him. You can come when you’re ready.”', next: 'l1_c4_a', points: 1 },
-      { text: '“Yeah, he probably needs you more than you need to lie here.”', next: 'l1_c4_b', points: 0 },
-      { text: '“Kaufmo’s a grown man. He’ll be fine.”', next: 'l1_c4_c', points: 0 },
+      { text: '“Take your time”', next: 'l1_c4_a', points: 1 },
+      { text: '“He needs you”', next: 'l1_c4_b', points: 0 },
+      { text: '“Don’t worry about him”', next: 'l1_c4_c', points: 0 },
+      { text: '“So lazy”', next: 'l1_c4_d', points: -1 },
     ],
   },
-  {
-    id: 'l1_c4_a',
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: '…You’d do that?',
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'annoyed',
-    text: 'Apparently I’m doing welfare checks today.',
-  },
-  {
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'Okay.',
-    next: 'l1_sits_up',
-  },
-  {
-    id: 'l1_c4_b',
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: '…I know. You don’t have to rub it in.',
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'worried',
-    text: 'I didn’t mean — look. I’ll go. You don’t have to.',
-    next: 'l1_sits_up',
-  },
-  {
-    id: 'l1_c4_c',
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'That’s what everyone says right before someone isn’t.',
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'sad',
-    text: '…Okay. I’ll check on him.',
-  },
+  { id: 'l1_c4_a', type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'You’re allowed to take a minute. I’ll check on him. You can come when you’re ready.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: '…You’d do that?' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: 'Apparently I’m doing welfare checks today.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'Okay.', next: 'l1_sits_up' },
+  { id: 'l1_c4_b', type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Yeah, he probably needs you more than you need to lie here.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: '…I know. You don’t have to rub it in.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'I didn’t mean — look. I’ll go. You don’t have to.', next: 'l1_sits_up' },
+  { id: 'l1_c4_c', type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Kaufmo’s a grown man. He’ll be fine.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'That’s what everyone says right before someone isn’t.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'sad', text: '…Okay. I’ll check on him.', next: 'l1_sits_up' },
+  { id: 'l1_c4_d', type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: 'Gee, lazy much? You couldn’t even check up on your friend?' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'Pomni, what’s wrong with you?' },
+  { type: 'beat', gameOver: true, text: 'Genuinely what’s wrong with you? Seek help', next: null },
   {
     id: 'l1_sits_up',
     type: 'beat',
@@ -1010,26 +761,9 @@ export const level1RibbitDialogue = [
     // (tools/generateVoices.mjs) finds and records it too.
     altText: 'I’m still a mess. But… it helps that you stayed. I think I can sit up for a bit.',
   },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'annoyed',
-    text: 'High praise.',
-  },
-  {
-    type: 'line',
-    speaker: 'ribbit',
-    side: 'right',
-    text: 'If you see Kaufmo, tell him I’m on his side. Even if he’s acting a little crazy.',
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'neutral',
-    text: 'Will do.',
-  },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: 'High praise.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'If you see Kaufmo, tell him I’m on his side. Even if he’s acting a little crazy.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Will do.' },
   {
     type: 'line',
     speaker: 'ribbit',
@@ -1043,191 +777,14 @@ export const ribbitFollowupDialogue = [
   { type: 'line', speaker: 'ribbit', side: 'right', text: 'I’m taking a minute. Thanks for checking on me. Kaufmo’s room is a few doors back toward the entrance.', next: null },
 ];
 
-// --- Level 2 hand-in: presenting pictures to Kaufmo ---------------------
-// main.js picks which of these to play based on how many pictures have
-// been presented in total once this hand-in is counted (see itemState in
-// main.js and the interact() callback in kaufmoRoom.js) — these aren't
-// player choices, they're Kaufmo's reaction to the running count.
+// --- Level 2: returning with the pictures ------------------------------
+// Pomni hands Kaufmo everything she's found in one go (see pickKaufmoScript
+// in src/state/level2Items.js): PHOTO_THRESHOLD (4) or more plays
+// level2Return then level2Sendoff; fewer plays level2Abstraction, which
+// ends in Game Over and a fresh search. `distress` on a line shakes the
+// dialogue box (DialogueUI's distress levels 1-3) as he comes apart.
 
-export const level2HandIn1Dialogue = [
-  {
-    type: 'beat',
-    text: 'Pomni holds out a photo. Kaufmo stops pacing.',
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    mood: 'shocked',
-    text: "Wait — wait, is that— that's one of them! That's a real one!",
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    direction: 'turning it over in his hands',
-    mood: 'worried',
-    text: "Okay. Okay, this is good. This is one. There's more though, right? I remember there being more.",
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'neutral',
-    text: "I'll keep looking.",
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    mood: 'worried',
-    text: "Please. One isn't enough to prove anything. One is just a coincidence. I need the rest.",
-    next: null,
-  },
-];
-
-export const level2HandIn2Dialogue = [
-  {
-    type: 'beat',
-    text: 'Pomni holds out another photo.',
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    mood: 'happy',
-    text: "Two! That's two now! Look — look at the corner of this one, that's the same carpet as the first. Same place.",
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'neutral',
-    text: "So it's really one office. Not just random junk.",
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    mood: 'worried',
-    text: "Right! Exactly! That's two confirmed. There are more out there — I remember there being more. Keep looking.",
-    next: null,
-  },
-];
-
-export const level2HandIn3Dialogue = [
-  {
-    type: 'beat',
-    text: 'Pomni holds out a third photo.',
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    mood: 'shocked',
-    text: "Three now. More than half, Pomni. This isn't nothing anymore.",
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'neutral',
-    text: "You keep saying that at every one.",
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    direction: 'half-laugh, half not',
-    mood: 'worried',
-    text: "I mean it more each time. Two left. I can feel it getting clearer.",
-    next: null,
-  },
-];
-
-export const level2HandIn4Dialogue = [
-  {
-    type: 'beat',
-    text: 'Pomni holds out a fourth photo. Kaufmo nearly drops it grabbing for it.',
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    mood: 'shocked',
-    text: "Four. Four, Pomni. One left. Just one.",
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'worried',
-    text: "You okay? You look like you're about to vibrate out of your shoes.",
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    direction: 'not okay, clearly',
-    mood: 'worried',
-    text: "I'm fine. I'm fine. Find the last one and I'm fine.",
-    next: null,
-  },
-];
-
-export const level2HandIn5Dialogue = [
-  {
-    type: 'beat',
-    text: 'Pomni holds out the last photo. Kaufmo goes very still.',
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    mood: 'shocked',
-    text: 'Five.',
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    direction: 'quiet, almost to himself',
-    mood: 'happy',
-    text: "Five. These were it. These were the missing pieces, Pomni — I wasn't imagining it, I wasn't crazy, I just didn't have the whole picture. Now I do.",
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'happy',
-    text: "So what happens now?",
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    mood: 'worried',
-    text: "Now I work out what it means. Give me — I don't know how long. But I'll come find you once I have the answer. I promise.",
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    direction: 'small smile',
-    mood: 'happy',
-    text: "Try not to lose them this time.",
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    mood: 'happy',
-    text: "…No promises.",
-    next: null,
-  },
-];
-
-// Idle lines for revisiting him between hand-ins (holding nothing new).
+// Idle line for talking to him empty-handed mid-search.
 export const level2IdleDialogue = [
   {
     type: 'line',
@@ -1239,7 +796,7 @@ export const level2IdleDialogue = [
   },
 ];
 
-// Idle line once all five have been handed in, before he comes to find her.
+// Revisiting him after the success scene.
 export const level2CompleteDialogue = [
   {
     type: 'line',
@@ -1252,104 +809,97 @@ export const level2CompleteDialogue = [
   },
 ];
 
-// The payoff level2CompleteDialogue promises: the next time Pomni comes
-// back, Kaufmo has an answer. Plays once in place of the idle "still
-// working on it" line, then main.js keeps replaying it for any later
-// visits — same as every other idle/complete script in this file.
-export const level2PayoffDialogue = [
-  {
-    type: 'beat',
-    text: "Kaufmo's on his feet before the door's even shut behind her.",
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    mood: 'shocked',
-    text: "Okay — okay, don't leave yet, I laid them all out, just— look.",
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'neutral',
-    text: "You found something.",
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    mood: 'happy',
-    text: "Same carpet in all five. Same baseboard. There's a water stain in the corner of two of them, same shape, same spot. It's not five places, Pomni. It's one room.",
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    direction: 'quieter',
-    mood: 'worried',
-    text: "And Caine's been keeping pictures of it. Hiding them, even. You don't hide a photo of nothing.",
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'annoyed',
-    text: "Okay. Slow down. A room — where?",
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    mood: 'worried',
-    text: "That's the part I don't have yet. But a room that real doesn't just float in nowhere. It's behind something. A wall that isn't a wall. A door marked as something it's not.",
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    mood: 'neutral',
-    text: "Remember that? 'The door that wasn't a door'? I wrote it off as a glitch. I don't think it was.",
-  },
-  {
-    type: 'beat',
-    text: 'A door slams somewhere down the hall. Then footsteps — fast, frantic, getting closer.',
-  },
-  {
-    // The hallway cutaway plays before this beat's own text — see
-    // jaxBurstsPast's handling in main.js's talkToKaufmo, same technique as
-    // Pre-Level-1's jaxPassByText.
-    id: 'jaxBurstsPast',
-    type: 'beat',
-    text: "Jax bolts past the open doorway at a dead sprint. He doesn't even look in.",
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    mood: 'shocked',
-    text: "...Okay. That's new.",
-  },
-  {
-    type: 'line',
-    speaker: 'pomni',
-    side: 'left',
-    mood: 'worried',
-    text: 'Kaufmo—',
-  },
-  {
-    type: 'line',
-    speaker: 'kaufmo',
-    side: 'right',
-    mood: 'worried',
-    text: "Go. Follow him — I'll be right here. Just go!",
-  },
-  {
-    // Narrates the actual chase and how she ends up at the maze, instead
-    // of cutting straight from this line to "Level 2 Complete" with no
-    // sense of how she got there.
-    type: 'beat',
-    text: 'She chases him down the hall, through the lobby, past the stage — until he ducks through a door she’s never noticed before. She follows him in.',
-    next: null,
-  },
+// Enough pictures (PHOTO_THRESHOLD or more).
+export const level2ReturnDialogue = [
+  { type: 'beat', text: 'Pomni returns with the pictures. Kaufmo is sitting against the wall, scribbling. He looks up immediately.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'shocked', text: 'You’re back. You’re back! Did you — tell me you —' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'I got the pictures. As requested.' },
+  { type: 'beat', text: 'She hands them over. Kaufmo spreads them out on the floor and goes quiet.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'shocked', text: '…Oh.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'I looked at them on the way back. It’s just an office. Desks, chairs, a sad little plant. Kind of boring, honestly.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'worried', text: 'Exactly. Pomni, nothing in here is boring. Caine doesn’t do boring. Everything in this place is bright and loud and bouncing. But this?' },
+  { type: 'beat', text: 'He taps one of the pictures.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'worried', text: 'This is somewhere that just… exists. Somewhere nobody designed to be fun. That’s not his. That’s from outside.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'So why would Caine have pictures of it?' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'worried', text: 'That’s the question, isn’t it? Maybe he’s been there. Maybe he came from there. Maybe he’s just as stuck as we are and he’s not telling anyone.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: '…That’s a lot of maybes.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'happy', text: 'It’s a lot more than I had an hour ago.' },
+  { type: 'beat', text: 'He gathers the pictures carefully and holds them against his chest. His voice is steadier now, closer to his usual laid-back self.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'happy', text: 'These are the missing pieces, Pomni. I’ve been staring at half a puzzle for weeks. Now it’s starting to look like a picture.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'So what happens now?' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'neutral', text: 'Now I sit with it. Line it all up. Figure out where this place is, and how we get there.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'happy', text: 'Once I’ve worked it out, I’ll come find you. I promise.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: 'You’re not going to wander off and start a new list?' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', direction: 'small laugh', mood: 'happy', text: 'Maybe a short one.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'neutral', text: '…Hey. Thanks. For not calling me crazy. Well, for not only calling me crazy.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: 'Don’t mention it. Seriously. Don’t mention it to anyone.' },
+  { type: 'beat', text: 'Kaufmo grins and turns back to the pictures, already muttering, but calm this time.', next: null },
+];
+
+// Straight after level2Return, still in his room: the hand-off to Level 3.
+export const level2SendoffDialogue = [
+  { type: 'line', speaker: 'kaufmo', side: 'right', direction: 'clutching the pictures, voice shaking, but this time with excitement', mood: 'happy', text: 'These are it, Pomni. These are the missing pieces. I think… I think I can actually do this.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Take your time. Don’t let anyone tell you it’s not possible.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'happy', text: 'I’ll come find you the second I have it. Don’t go anywhere too dangerous.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: 'We live in a digital circus. Everywhere is too dangerous.', next: null },
+];
+
+// Too few pictures: he comes apart. Ends in Game Over (main.js).
+export const level2AbstractionDialogue = [
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'happy', text: 'Pomni! You’re back. Tell me you found them. Please.' },
+  { type: 'line', speaker: 'pomni', side: 'left', direction: 'holds out what she has', mood: 'worried', text: 'This is all I could find.' },
+  { type: 'beat', text: 'Kaufmo takes the pictures, looks them over, then past her as if the rest should be there.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'neutral', distress: 1, text: '…This is it? There should be more. There has to be more. I counted. The pattern doesn’t work with this.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'Maybe we can keep looking. We can still—' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'worried', distress: 2, text: 'No, no, no. It doesn’t close. Without the other pieces it doesn’t close. It’s just a picture of an office. It’s just an office.' },
+  { type: 'beat', text: 'Kaufmo starts pacing in circles again, faster. Faint static creeps in at the edges of everything.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'sad', distress: 2, text: 'He said I was crazy. Jax said it, and everyone just… laughed. And I told myself I’d prove it. I just needed something real.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'shocked', text: 'Kaufmo, you’re not crazy. Hey. Look at me.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', direction: 'not hearing her', mood: 'shocked', distress: 3, text: 'What if I am? What if there’s no exit and I made it up, because I couldn’t stand it? What if it’s just a circus, and it’s always been just a circus?' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'shocked', distress: 3, text: 'The pieces don’t, they don’t, they don’t fit, there’s no way, there’s no way, there’s no—' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'shocked', text: 'Kaufmo! Stay with me! Please!' },
+  { type: 'beat', distress: 3, text: 'His colours drain. He distorts and stretches while the room warps around him. The music cuts out to a single distorted tone.', next: null },
+];
+
+// --- Level 3 intro: Jax at the tent, then Ribbit at the maze -------------
+// Played in the Lobby once Level 2 is complete (main.js finishKaufmoLevel),
+// before Pomni follows Jax into the maze.
+export const level3JaxDialogue = [
+  { type: 'beat', text: 'Jax is alone at the edge of the main tent, back turned, toying with a prop. He keeps stuttering, like a skipping recording.' },
+  { type: 'line', speaker: 'jax', side: 'right', direction: 'without turning around', text: 'Oh look, it’s the circus’s resident problem solver. Let me guess. Ribbit sent you. Or the bowling nerd.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Nobody sent me. I just wanted to talk.' },
+  { type: 'line', speaker: 'jax', side: 'right', text: 'Talk. Great. That’s always so productive.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'Everyone’s worried about you, Jax. Ribbit, Kaufmo… you’ve been calling people crazy and snapping at everyone who walks by.' },
+  { type: 'line', speaker: 'jax', side: 'right', text: 'Because it’s true, Pomni. We’re stuck in a circus, there is no exit, and somebody has to say it. Does anybody ever listen to me? No.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'That’s not what this is. You’re not okay, and I think you know that.' },
+  { type: 'beat', distress: 2, text: 'Jax stiffens. A glitch tears across him for a split second, and the sound crackles.' },
+  { type: 'line', speaker: 'jax', side: 'right', direction: 'quietly, almost to himself', distress: 1, text: 'I’m fine. I’m fine. Stop looking at me like that.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'Jax…' },
+  { type: 'line', speaker: 'jax', side: 'right', distress: 2, text: 'Stop it!' },
+  { type: 'beat', text: 'Jax bolts toward a hedge wall at the edge of the tent. A maze entrance twists open and swallows him.' },
+  { type: 'line', speaker: 'pomni', side: 'left', direction: 'shouting after him', mood: 'shocked', text: 'Jax, wait!' },
+  { type: 'beat', text: 'Footsteps. Ribbit walks up and stops when she sees Pomni at the maze entrance.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'Pomni? Was that Jax?' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'He ran into that maze. He was glitching, Ribbit. Something’s really wrong.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', direction: 'her voice drops', text: 'Is this because of me? Because of the fight?' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'It’s not your fault. But I think it’s gotten bigger than the fight.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'Then let’s go after him. Now.' },
+  { type: 'beat', text: 'Pomni steps in front of the entrance, one arm out.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Wait. Not yet.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'Pomni, he’s hurting. We can’t just stand here.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'I know. But I barely got a few sentences out and he bolted. If we both go charging in, he’ll feel cornered. I don’t think he’s ready to be confronted by us yet.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', direction: 'after a pause', text: '…Okay. So what do you need me to do?' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Find the others. Gangle, Zooble, Ragatha, Kinger. Tell them what’s happening with Jax. And tell them about Kaufmo.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'Kaufmo? What about him?' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'happy', text: 'He’s in his room right now, working out the exit. I found the missing pieces he needed, and he thinks he can actually do it this time. Everyone should know it’s real, and that he’s not crazy.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', direction: 'a small, surprised smile, the first one in a while', text: 'He’s been saying it for so long. I’ll make sure they listen.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Thank you. I’ll meet you all back soon.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', direction: 'already turning to go', text: 'You’d better.' },
+  { type: 'beat', text: 'Ribbit heads off toward the tent. Pomni faces the maze entrance alone.', next: null },
+];
+
+// level2Return and level2Sendoff back to back: one conversation in his room.
+export const level2ReturnAndSendoffDialogue = [
+  ...level2ReturnDialogue.map((node, i, all) => (i === all.length - 1 ? { ...node, next: undefined } : node)),
+  ...level2SendoffDialogue,
 ];

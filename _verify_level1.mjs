@@ -1,4 +1,4 @@
-﻿import assert from 'node:assert/strict';
+import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as THREE from 'three';
 import { runLevel1 } from './src/levels/level1.js';
@@ -34,7 +34,7 @@ function fixture() {
     playDialogue(key, callbacks) { script = callbacks; },
     cancelDialogue() { script.onCancel(); },
     showLevelComplete(title, subtitle, options) {
-      cards.push({ title, options });
+      cards.push({ title, subtitle, options });
       return new Promise(resolve => { resolveCard = resolve; });
     },
     showHint() {},
@@ -45,40 +45,49 @@ function fixture() {
   };
 }
 
-test('all 81 answer combinations obey the first threshold crossing, not final points', () => {
-  let wins = 0, losses = 0;
+// Each choice's game-over option (D, -1) and the gameOver beat its branch ends on.
+const quit = choices.map(n => n.options.find(o => o.points === -1));
+const gameOverBeat = quit.map((option) => {
+  let i = level1RibbitDialogue.findIndex(n => n.id === option.next);
+  while (!level1RibbitDialogue[i].gameOver) i++;
+  return level1RibbitDialogue[i];
+});
+
+test('0-point answers upset Ribbit but never fail; only a game-over pick does', () => {
   for (let path = 0; path < 81; path++) {
     const attempt = createLevel1Attempt();
     let expected = 1, points = 0;
     for (let i = 0; i < 4; i++) {
-      const option = choices[i].options[Math.floor(path / 3 ** i) % 3];
+      const option = choices[i].options.filter(o => o.points >= 0)[Math.floor(path / 3 ** i) % 3];
       points += option.points;
-      expected = Math.max(0, expected + (option.points ? -1 : 1));
+      expected = Math.max(0, Math.min(2, expected + (option.points ? -1 : 1)));
       attempt.record(option);
       assert.equal(attempt.distress, expected);
       assert.equal(attempt.points, points);
-      if (expected === 3) {
-        assert.equal(attempt.failed, true);
-        assert.equal(attempt.record(best[i]), null);
-        assert.equal(attempt.distress, 3);
-        losses++;
-        break;
-      }
     }
-    if (!attempt.failed) { assert.equal(attempt.answered, 4); wins++; }
+    assert.equal(attempt.failed, false);
+    assert.equal(attempt.answered, 4);
   }
-  assert.equal(wins + losses, 81);
-  assert.equal(wins, 29);
-  assert.equal(losses, 52);
+  const doomed = createLevel1Attempt();
+  doomed.record(best[0]);
+  doomed.record(quit[1]);
+  assert.equal(doomed.distress, 3);
+  assert.equal(doomed.failed, false); // not until its lines play out to the gameOver beat
+  doomed.fail();
+  assert.equal(doomed.failed, true);
+  assert.equal(doomed.record(best[2]), null);
 });
 
-test('immediate failure blocks recovery/completion, retry resets only Level 1, then win carries points', async () => {
+test('a game-over pick plays out, then fails with its own message; retry resets only Level 1, then a win carries points', async () => {
   const f = fixture();
   await f.start();
-  f.script().onChoice(wrong[0]); // 1 -> 2
+  f.script().onChoice(best[0]);
   await f.script().onComplete(); // enter bedroom
-  f.script().onChoice(wrong[1]); // 2 -> 3, synchronous failure
-  assert.equal(f.cards[0].title, 'Level 1 Failed');
+  f.script().onChoice(quit[1]);
+  assert.equal(f.cards.length, 0); // her line plays first
+  f.script().onNode(gameOverBeat[1]);
+  assert.equal(f.cards[0].title, 'Game Over');
+  assert.equal(f.cards[0].subtitle, gameOverBeat[1].text);
   assert.equal(f.cards[0].options.buttonLabel, 'Retry Level');
   assert.equal(f.cards[0].options.chime, 'fail');
   assert.equal(getLevelPoints('level1'), 0);
@@ -94,7 +103,7 @@ test('immediate failure blocks recovery/completion, retry resets only Level 1, t
   f.continue();
   await flush();
   assert.equal(f.script().stopAt, 'l1_inside');
-  f.script().onChoice(wrong[0]); // fresh distress 1 -> 2, does not fail
+  f.script().onChoice(wrong[0]); // a fresh attempt: a wrong answer doesn't fail
   assert.equal(f.cards.length, 1);
   await f.script().onComplete();
   for (let i = 1; i < 4; i++) f.script().onChoice(best[i]);
@@ -112,20 +121,33 @@ test('immediate failure blocks recovery/completion, retry resets only Level 1, t
   await completion;
 });
 
+test('a game over at the door stops before going inside', async () => {
+  const f = fixture();
+  await f.start();
+  f.script().onChoice(quit[0]);
+  f.script().onNode(gameOverBeat[0]);
+  assert.equal(f.cards[0].title, 'Game Over');
+  assert.equal(f.cards[0].subtitle, gameOverBeat[0].text);
+  const tokenBefore = f.game.token;
+  await f.script().onComplete(); // must not travel into her room
+  assert.equal(f.game.token, tokenBefore);
+});
+
 test('failure clears points already earned and repeated retries do not accumulate them', async () => {
   const f = fixture();
   await f.start();
   for (let retry = 0; retry < 2; retry++) {
-    f.script().onChoice(best[0]); // distress 0, point 1
+    f.script().onChoice(best[0]);
     await f.script().onComplete();
-    f.script().onChoice(wrong[1]);
-    f.script().onChoice(wrong[2]);
-    assert.equal(getLevelPoints('level1'), 1);
-    f.script().onChoice(wrong[3]); // distress 3 at final choice
+    f.script().onChoice(best[1]);
+    f.script().onChoice(best[2]);
+    assert.equal(getLevelPoints('level1'), 3);
+    f.script().onChoice(quit[3]);
+    f.script().onNode(gameOverBeat[3]);
     assert.equal(getLevelPoints('level1'), 0);
     assert.equal(f.progress.ribbitComplete, false);
-  assert.equal(f.progress.hallwayPending, false);
-  assert.equal(f.progress.finishHallway(), false);
+    assert.equal(f.progress.hallwayPending, false);
+    assert.equal(f.progress.finishHallway(), false);
     f.continue();
     await flush();
   }
@@ -135,9 +157,10 @@ test('failure clears points already earned and repeated retries do not accumulat
 test('leaving a failed session invalidates its pending retry', async () => {
   const f = fixture();
   await f.start();
-  f.script().onChoice(wrong[0]);
+  f.script().onChoice(best[0]);
   await f.script().onComplete();
-  f.script().onChoice(wrong[1]);
+  f.script().onChoice(quit[1]);
+  f.script().onNode(gameOverBeat[1]);
   const token = f.game.token;
   f.game.session++;
   f.continue();
@@ -148,14 +171,14 @@ test('leaving a failed session invalidates its pending retry', async () => {
   assert.equal(f.progress.finishHallway(), false);
 });
 
-
 test('cancelling a retry cannot restore points from an older attempt', async () => {
   const f = fixture();
   setLevelPoints('level1', 4);
   await f.start();
-  f.script().onChoice(wrong[0]);
+  f.script().onChoice(best[0]);
   await f.script().onComplete();
-  f.script().onChoice(wrong[1]);
+  f.script().onChoice(quit[1]);
+  f.script().onNode(gameOverBeat[1]);
   f.continue();
   await flush();
   f.script().onChoice(best[0]);

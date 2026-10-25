@@ -10,8 +10,8 @@ import {
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
   level2HallwayDialogue, ribbitFollowupDialogue,
-  level2HandIn1Dialogue, level2HandIn2Dialogue, level2HandIn3Dialogue,
-  level2IdleDialogue, level2CompleteDialogue, level2PayoffDialogue,
+  level2IdleDialogue, level2CompleteDialogue, level2ReturnDialogue, level2SendoffDialogue,
+  level2ReturnAndSendoffDialogue, level2AbstractionDialogue, level3JaxDialogue,
 } from './src/data/dialogues.js';
 import { SPRITES, MOODS } from './src/ui/portraitSprites.js';
 
@@ -37,9 +37,10 @@ function runLinear(script) {
 for (const [name, script] of [
   ['preLevel1', preLevel1Dialogue], ['level1Open', level1OpenDialogue],
   ['level2Hallway', level2HallwayDialogue], ['ribbitFollowup', ribbitFollowupDialogue],
-  ['level2HandIn1', level2HandIn1Dialogue], ['level2HandIn2', level2HandIn2Dialogue],
-  ['level2HandIn3', level2HandIn3Dialogue], ['level2Idle', level2IdleDialogue],
-  ['level2Complete', level2CompleteDialogue], ['level2Payoff', level2PayoffDialogue],
+  ['level2Idle', level2IdleDialogue], ['level2Complete', level2CompleteDialogue],
+  ['level2Return', level2ReturnDialogue], ['level2Sendoff', level2SendoffDialogue],
+  ['level2ReturnAndSendoff', level2ReturnAndSendoffDialogue], ['level2Abstraction', level2AbstractionDialogue],
+  ['level3Jax', level3JaxDialogue],
 ]) {
   const seen = runLinear(script);
   check(`${name}: visits every node once, in order`, seen.length === script.length
@@ -191,25 +192,26 @@ function collectAllReachableNodes(script, maxPaths = 64) {
 }
 
 // Level 1 (Ribbit): walk every combination of answers through the engine
-// with a live tally, the way ribbitRoom.js drives it. Successful paths must
-// reach the end; failed paths stop immediately at distress 3,
-// and score exactly the points of the options it picked.
+// with a live tally, the way ribbitRoom.js drives it. A path that picks a
+// choice's game-over option (D, -1) must play its lines and stop on a
+// `gameOver` beat; every other path must reach the end and score exactly
+// the points of the options it picked.
 {
   const script = level1RibbitDialogue;
   const choices = script.filter((n) => n.type === 'choice');
-  check('level1Ribbit: has four choices of three options', choices.length === 4
-    && choices.every((c) => c.options.length === 3), `choices=${choices.length}`);
+  check('level1Ribbit: has four choices of four options', choices.length === 4
+    && choices.every((c) => c.options.length === 4), `choices=${choices.length}`);
 
   // The script's own answer key (Dorsa's +1 options): A, B, A, A.
   const key = choices.map((c) => c.options.findIndex((o) => o.points === 1));
   check('level1Ribbit: correct answers are A, B, A, A', key.join() === '0,1,0,0', `key=${key.join()}`);
-  check('level1Ribbit: one correct answer per choice, the rest score 0', choices.every(
-    (c) => c.options.filter((o) => o.points === 1).length === 1 && c.options.every((o) => o.points === 0 || o.points === 1)));
+  check('level1Ribbit: per choice one +1 answer, two 0s, and a -1 game-over option last', choices.every(
+    (c) => c.options.map((o) => o.points).sort().join() === '-1,0,0,1' && c.options[3].points === -1));
 
   const paths = [];
   const walk = (picks) => {
     if (picks.length === choices.length) { paths.push(picks); return; }
-    for (let i = 0; i < 3; i++) walk([...picks, i]);
+    for (let i = 0; i < 4; i++) walk([...picks, i]);
   };
   walk([]);
 
@@ -238,19 +240,28 @@ function collectAllReachableNodes(script, maxPaths = 64) {
       failed = `${picks.join('')}: threw ${e.message}`;
       break;
     }
-    const problem = tally.failed ? (tally.distress !== 3 ? 'wrong failure limit' : null)
+    const quit = picks.slice(0, verdicts.length).indexOf(3);
+    const last = seen[seen.length - 1];
+    const problem = quit >= 0
+      ? (!engine.done ? 'game-over path never ended'
+        : !last.gameOver || !last.text?.trim() ? 'game-over path does not end on a gameOver beat with a message'
+        : verdicts.length !== quit + 1 ? 'kept asking after the game-over pick'
+        : tally.distress !== 3 ? 'game-over pick did not max distress'
+        : null)
+      : seen.some((n) => n.gameOver) ? 'reached a gameOver beat without picking D'
+      : tally.distress >= 3 ? 'distress reached the limit without a game-over pick'
       : !engine.done ? 'never ended'
       : tally.answered !== 4 ? `answered ${tally.answered} choices`
-      : tally.points !== expected ? `points ${tally.points} != ${expected}`
+      : tally.points !== Math.max(0, expected) ? `points ${tally.points} != ${expected}`
       : verdicts.some((v, i) => v !== (picks[i] === key[i])) ? `verdicts ${verdicts.join()}`
       : seen.find((n) => n.type === 'line' && !SPEAKERS[n.speaker]) ? 'unknown speaker'
       : seen.find((n) => n.type === 'line' && SPRITES[n.speaker] && !MOODS.includes(n.mood)) ? 'missing/unknown mood'
       : seen.find((n) => (n.type === 'line' || n.type === 'beat') && !n.text?.trim()) ? 'empty text'
       : seen[seen.length - 1].text !== script[script.length - 1].text ? 'ends somewhere else'
       : null;
-    if (problem) { failed = `${picks.map((p) => 'ABC'[p]).join('')}: ${problem}`; break; }
+    if (problem) { failed = `${picks.map((p) => 'ABCD'[p]).join('')}: ${problem}`; break; }
   }
-  check(`level1Ribbit: all ${paths.length} answer paths either fail at distress 3 or finish and score correctly`, !failed, failed ?? '');
+  check(`level1Ribbit: all ${paths.length} answer paths either end on their game over or finish and score correctly`, !failed, failed ?? '');
 
   const best = createChoiceTally(script);
   choices.forEach((c, i) => best.record(c.options[key[i]]));

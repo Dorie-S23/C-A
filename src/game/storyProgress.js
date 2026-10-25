@@ -1,4 +1,4 @@
-import { PHOTO_COUNT } from '../state/level2Items.js';
+import { PHOTO_THRESHOLD } from '../state/level2Items.js';
 
 /** Story milestones survive room loads; previews never complete them. */
 export function createStoryProgress({ objectives, isStorySession }) {
@@ -31,7 +31,7 @@ export function createStoryProgress({ objectives, isStorySession }) {
       return true;
     },
     presentedPhotos(count) {
-      if (!isStorySession() || !kaufmoIntroduced || count < PHOTO_COUNT) return;
+      if (!isStorySession() || !kaufmoIntroduced || count < PHOTO_THRESHOLD) return;
       if (objectives.complete('collect-photos')) objectives.activate('check-kaufmo');
     },
     reset() { ribbitPoints = null; hallwaySeen = false; kaufmoIntroduced = false; },

@@ -2,6 +2,8 @@ import { setLevelPoints } from './escapeThreshold.js';
 
 /** How many office photos Level 2's search is actually looking for. */
 export const PHOTO_COUNT = 5;
+/** How many Kaufmo needs: bringing back fewer and he abstracts (Game Over). */
+export const PHOTO_THRESHOLD = 4;
 
 /**
  * One run's Level 2 pictures, shared by every room. Held and handed-in
@@ -12,8 +14,7 @@ export const PHOTO_COUNT = 5;
 export function createLevel2Items({ onCollect = () => {} } = {}) {
   const collectedItems = new Set();
   const presentedItems = new Set();
-  let stallSeen = false;
-  let done = false; // the payoff has actually been heard once already
+  let done = false; // the success scene has actually played through once already
   let photoLayout = null;
 
   const items = {
@@ -46,23 +47,14 @@ export function createLevel2Items({ onCollect = () => {} } = {}) {
       setLevelPoints('level2', presentedItems.size);
       return presentedItems.size;
     },
-    /** First post-completion revisit stalls; later visits reveal the payoff. */
-    pickPostHandInScript() {
-      if (!stallSeen) {
-        stallSeen = true;
-        return 'level2Complete';
-      }
-      return 'level2Payoff';
-    },
-    /** Whether the payoff has actually played through once already — lets
-     *  a caller show the "Level 2 Complete" beat only the first time a
-     *  replay still hears the same line. */
+    /** Whether the success scene has played through once already — so the
+     *  "Level 2 Complete" step only happens the first time. */
     isDone: () => done,
     markDone() {
       done = true;
     },
     snapshot() {
-      return { collected: [...collectedItems], presented: [...presentedItems], stallSeen, done };
+      return { collected: [...collectedItems], presented: [...presentedItems], done };
     },
     /** From a save. Escape points are restored separately (escapeThreshold.js). */
     restore(saved = {}) {
@@ -70,13 +62,11 @@ export function createLevel2Items({ onCollect = () => {} } = {}) {
       presentedItems.clear();
       for (const id of saved.collected ?? []) collectedItems.add(id);
       for (const id of saved.presented ?? []) presentedItems.add(id);
-      stallSeen = Boolean(saved.stallSeen);
       done = Boolean(saved.done);
     },
     reset() {
       collectedItems.clear();
       presentedItems.clear();
-      stallSeen = false;
       done = false;
       photoLayout = null;
       setLevelPoints('level2', 0);
@@ -87,17 +77,19 @@ export function createLevel2Items({ onCollect = () => {} } = {}) {
 }
 
 /**
- * The existing Kaufmo interaction flow: hand over held pictures immediately,
- * choose the reaction for the cumulative total, then use idle/stall/payoff
- * dialogue on revisits. Pictures can be handed in before the opening plays.
+ * What talking to Kaufmo plays once he's sent Pomni searching: she hands
+ * over everything she's carrying in one go, and he either has enough
+ * (PHOTO_THRESHOLD or more: the success scene) or not (he abstracts — Game
+ * Over). Talking to him empty-handed is just his idle line, and once the
+ * success scene has played, his "working on it" one.
  */
 export function pickKaufmoScript(items) {
   if (!items) return 'level2Opening';
   if (items.heldCount() > 0) {
     const total = items.presentHeld();
-    return `level2HandIn${total}`;
+    return total >= PHOTO_THRESHOLD ? 'level2Return' : 'level2Abstraction';
   }
-  if (items.totalPresented() >= PHOTO_COUNT) return items.pickPostHandInScript();
+  if (items.totalPresented() >= PHOTO_THRESHOLD) return 'level2Complete';
   if (items.totalPresented() > 0) return 'level2Idle';
   return 'level2Opening';
 }

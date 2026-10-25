@@ -26,7 +26,7 @@ import { createStoryProgress } from './game/storyProgress.js';
 import { createSaveSlots } from './game/saveGame.js';
 import { createLoadingBackgrounds } from './ui/loadingBackgrounds.js';
 import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.js';
-import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT } from './state/level2Items.js';
+import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT, PHOTO_THRESHOLD } from './state/level2Items.js';
 import { createMazeItems, MAZE_FINDABLES } from './state/mazeItems.js';
 import { runLevel1 } from './levels/level1.js';
 import { kaufmoHallwayPlan, preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
@@ -42,8 +42,8 @@ import { createActionCaptions } from './ui/actionCaptions.js';
 import { createCaineConversation } from './game/caineConversation.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
-  level2HandIn1Dialogue, level2HandIn2Dialogue, level2HandIn3Dialogue, level2HandIn4Dialogue, level2HandIn5Dialogue,
-  level2IdleDialogue, level2CompleteDialogue, level2PayoffDialogue,
+  level2IdleDialogue, level2CompleteDialogue, level2ReturnAndSendoffDialogue, level2AbstractionDialogue,
+  level3JaxDialogue,
   level2HallwayDialogue, level2RoomOpeningDialogue, ribbitFollowupDialogue,
 } from './data/dialogues.js';
 
@@ -65,14 +65,11 @@ const DIALOGUE_SCRIPTS = {
   level2RoomOpening: { script: level2RoomOpeningDialogue, room: 'kaufmo' },
   ribbitFollowup: { script: ribbitFollowupDialogue, room: 'ribbit' },
   level1Ribbit: { script: level1RibbitDialogue, room: 'ribbit' },
-  level2HandIn1: { script: level2HandIn1Dialogue, room: 'kaufmo' },
-  level2HandIn2: { script: level2HandIn2Dialogue, room: 'kaufmo' },
-  level2HandIn3: { script: level2HandIn3Dialogue, room: 'kaufmo' },
-  level2HandIn4: { script: level2HandIn4Dialogue, room: 'kaufmo' },
-  level2HandIn5: { script: level2HandIn5Dialogue, room: 'kaufmo' },
   level2Idle: { script: level2IdleDialogue, room: 'kaufmo' },
   level2Complete: { script: level2CompleteDialogue, room: 'kaufmo' },
-  level2Payoff: { script: level2PayoffDialogue, room: 'kaufmo' },
+  level2Return: { script: level2ReturnAndSendoffDialogue, room: 'kaufmo' },
+  level2Abstraction: { script: level2AbstractionDialogue, room: 'kaufmo' },
+  level3Jax: { script: level3JaxDialogue, room: 'tadc' },
 };
 
 const ROOM_LOADERS = {
@@ -351,10 +348,9 @@ document.getElementById('btn-level3').addEventListener('click', (event) => {
   objectives.activate('find-ribbit');
   storyProgress.finishRibbit(4);
   storyProgress.finishKaufmoIntro();
+  // Carrying all five: talking to him hands them in and plays the real
+  // success scene, then the Level 2 card and the Lobby scene before the maze.
   for (let i = 0; i < PHOTO_COUNT; i++) itemState.collect(`dev-level3-priming-${i}`);
-  itemState.presentHeld();
-  storyProgress.presentedPhotos(PHOTO_COUNT);
-  itemState.pickPostHandInScript(); // consumes the stall beat so talkToKaufmo lands straight on the payoff below
   titleScreen.hide();
   selectRoom('kaufmo', { onReady: (room) => talkToKaufmo(room.kaufmoApi, loadToken) });
 });
@@ -1306,7 +1302,7 @@ function talkToKaufmo(kaufmoApi, token) {
   // (Pomni put on her mark, the camera at the bed's corner — see
   // kaufmoRoom.js talkShot), else a two-shot (see twoShotCamera). The
   // follow camera comes back when it ends, however it ends.
-  const talk = (key, { onComplete, onCancel }) => {
+  const talk = (key, { onComplete, onCancel, distressFor }) => {
     if (dialogueUI.isActive) return false;
     const staging = currentRoomInfo?.talkShot;
     let faceThis = lookAt;
@@ -1329,6 +1325,7 @@ function talkToKaufmo(kaufmoApi, token) {
     const started = playRoomDialogue(key, {
       lookAt: faceThis,
       onNode,
+      distressFor,
       onComplete() { release(); return onComplete(); },
       onCancel() { release(); onCancel(); },
     });
@@ -1355,20 +1352,28 @@ function talkToKaufmo(kaufmoApi, token) {
       onCancel: stopTalking,
     });
   }
-  const key = pickKaufmoScript(itemState);
+  // Returning with the photos (see pickKaufmoScript): enough and he has his
+  // missing pieces, too few and he abstracts. A success scene that was cut
+  // off plays again rather than skipping to his idle line.
+  let key = pickKaufmoScript(itemState);
+  if (key === 'level2Complete' && !itemState.isDone()) key = 'level2Return';
   storyProgress.presentedPhotos(itemState.totalPresented());
-  if (key.startsWith('level2HandIn')) openingAudio.playChime('handIn');
+  if (key === 'level2Return') openingAudio.playChime('handIn');
+  const finished = () => {
+    if (!valid()) return;
+    if (key === 'level2Return' && !itemState.isDone()) {
+      if (preLevel1Session) objectives.complete('check-kaufmo');
+      itemState.markDone();
+      void finishKaufmoLevel(token);
+    } else if (key === 'level2Abstraction') {
+      void kaufmoAbstracted(token);
+    }
+  };
   return talk(key === 'level2Opening' ? 'level2RoomOpening' : key, {
-    onComplete() {
-      stopTalking();
-      if (!valid()) return;
-      if (key === 'level2Payoff' && !itemState.isDone()) {
-        if (preLevel1Session) objectives.complete('check-kaufmo');
-        itemState.markDone();
-        void finishKaufmoLevel(token);
-      }
-    },
-    onCancel: stopTalking,
+    distressFor: (line) => line.distress ?? 0,
+    onComplete() { stopTalking(); finished(); },
+    // He's already had the photos: backing out can't undo what happens.
+    onCancel() { stopTalking(); if (key === 'level2Abstraction') finished(); },
   });
 }
 
@@ -1422,11 +1427,32 @@ function clearView(from, to) {
   return twoShotRaycaster.intersectObjects(candidates, false).length === 0;
 }
 
+/**
+ * After the success scene: the Level 2 card, then the Lobby, where Pomni
+ * finds Jax by the tent and Ribbit catches up at the maze entrance
+ * (level3Jax), then into the maze for Level 3. The Lobby scene is dialogue
+ * over the room for now; Jax and Ribbit aren't staged there in 3D yet.
+ */
 async function finishKaufmoLevel(token) {
   const title = 'Level 2 Complete';
-  const subtitle = "Five photos, one real room — and Jax just sprinted off like something's actually chasing him. Better go see.";
+  const subtitle = 'Kaufmo has his missing pieces. Now someone should check on Jax.';
   if (!await showLevelComplete(title, subtitle, { resume: false }) || token !== loadToken) return;
-  await missionApi.travel('maze');
+  const lobby = await missionApi.travel('tadc', { from: null });
+  if (!lobby) return;
+  const here = loadToken;
+  const intoTheMaze = () => { if (here === loadToken) void missionApi.travel('maze'); };
+  if (!playRoomDialogue('level3Jax', { onComplete: intoTheMaze, onCancel: intoTheMaze })) intoTheMaze();
+}
+
+/** Too few photos: Kaufmo abstracts. Game Over, then the search starts over. */
+async function kaufmoAbstracted(token) {
+  const retry = await showLevelComplete(
+    'Kaufmo has abstracted.',
+    `He needed at least ${PHOTO_THRESHOLD} of the ${PHOTO_COUNT} photos. Try the search again.`,
+    { resume: false, chime: 'fail', buttonLabel: 'Retry Level 2' },
+  );
+  if (!retry || token !== loadToken) return;
+  await resetPhotoSearch();
 }
 
 /**
@@ -1447,7 +1473,9 @@ const itemState = createLevel2Items({
   onCollect: (count) => {
     showHint(count >= PHOTO_COUNT
       ? 'All photos found — return to Kaufmo before time runs out!'
-      : `Picked up a photo. (${count}/${PHOTO_COUNT})`, 6000);
+      : count >= PHOTO_THRESHOLD
+        ? `Picked up a photo. (${count}/${PHOTO_COUNT}) That's enough for Kaufmo — find the last one or take them to him.`
+        : `Picked up a photo. (${count}/${PHOTO_COUNT})`, 6000);
   },
 });
 const storyProgress = createStoryProgress({ objectives, isStorySession: () => preLevel1Session });
@@ -1639,10 +1667,15 @@ async function restartPhotoSearch() {
   const token = loadToken;
   const continued = await showLevelComplete(
     'LEVEL 2 FAILED',
-    "Time's up — you didn't get all five photos back to Kaufmo in time. Try again from the Lobby.",
+    `Time's up — you didn't get the photos back to Kaufmo in time (he needs at least ${PHOTO_THRESHOLD}). Try again from the Lobby.`,
     { resume: false, chime: 'fail' },
   );
   if (!continued || token !== loadToken) return; // the player had already moved on by the time this landed
+  await resetPhotoSearch();
+}
+
+/** A fresh photo search: new spots, a full clock and hints, back in the Lobby. */
+async function resetPhotoSearch() {
   itemState.reset();
   searchTimeLeft = SEARCH_TIMER_SECONDS;
   hintCooldown = 0;
