@@ -18,6 +18,7 @@ import { bendBone, SIDEWAYS, UP } from './characters/bendBone.js';
 import { preloadJaxHallwayCutscene, playJaxHallwayCutscene } from './cutscenes/jaxHallwayCutscene.js';
 import { createCaineApproachCutscene } from './cutscenes/caineApproachCutscene.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
+import { ICONS } from './ui/portraitIcons.js';
 import { createVoicePlayer } from './audio/voicePlayer.js';
 import { createAmbience } from './audio/ambience.js';
 import { createTitleScreen } from './ui/titleScreen.js';
@@ -547,9 +548,7 @@ cinematicSkip.addEventListener('click', () => {
   cinematicSkip.hidden = true;
   fastForwardCutscenes();
 });
-document.getElementById('btn-options-credits').addEventListener('click', () => {
-  creditsPanel.classList.remove('hidden');
-});
+document.getElementById('btn-options-credits').addEventListener('click', openCredits);
 document.getElementById('btn-options-back').addEventListener('click', () => {
   titleOptions.hidden = true;
 });
@@ -2048,11 +2047,30 @@ function disposeObject3D(root) {
 
 // --- Credits panel ---
 const creditsPanel = document.getElementById('credits');
-document.getElementById('credits-btn').addEventListener('click', () => {
-  creditsPanel.classList.remove('hidden');
-});
+// Cast credits show the characters' dialogue icons. Set from here rather
+// than in index.html so the packager sees the paths (it follows the URLs in
+// the bundle). Each card also gets its turn in the staggered entrance.
+for (const item of creditsPanel.querySelectorAll('[data-icon]')) {
+  const src = ICONS[item.dataset.icon];
+  if (!src) continue;
+  const icon = document.createElement('img');
+  icon.className = 'credit-icon';
+  icon.src = src;
+  icon.alt = ''; // the character's name is right beside it
+  item.prepend(icon);
+}
+creditsPanel.querySelectorAll('.credits-rise').forEach((el, i) => el.style.setProperty('--i', i));
+function openCredits() {
+  creditsPanel.scrollTop = 0;
+  creditsPanel.classList.remove('hidden'); // display:none -> shown replays the entrance
+  document.getElementById('credits-close').focus({ preventScroll: true });
+}
+document.getElementById('credits-btn').addEventListener('click', openCredits);
 document.getElementById('credits-close').addEventListener('click', () => {
   creditsPanel.classList.add('hidden');
+});
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape') creditsPanel.classList.add('hidden');
 });
 
 // --- Controls panel ---

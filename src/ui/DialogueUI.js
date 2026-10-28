@@ -292,8 +292,11 @@ export function createDialogueUI({ speakers, voice = null, escapeCancels = () =>
     // Have the speaker actually say what was picked, as a line of their own,
     // instead of jumping straight to the reply (which would cut the voice
     // off at once). Action-only options like "(Sit down next to her and
-    // wait.)" have nothing to say and go straight on, as before.
-    const said = option && choice.speaker ? speechText(option.text) : '';
+    // wait.)" have nothing to say and go straight on, as before — and so do
+    // short labels ("“It’s Pomni”") whose script carries on with the
+    // speaker's own full line, which is what gets said (and voiced).
+    const scripted = engine.current?.type === 'line' && engine.current.speaker === choice.speaker;
+    const said = option && choice.speaker && !scripted ? speechText(option.text) : '';
     if (said) {
       const side = rightSpeaker === choice.speaker ? 'right' : 'left';
       echo = {

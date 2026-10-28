@@ -35,8 +35,19 @@ export function createVoicePlayer() {
     .then((response) => (response.ok ? response.json() : { clips: {} }))
     .then((manifest) => {
       available = new Map(Object.entries(manifest.clips ?? {}).map(([key, entry]) => [key, entry?.gain ?? 1]));
+      manifestLoaded = true;
     })
     .catch(() => { available = new Map(); });
+
+  // Dev builds name each line that has no clip, once: a script edit without
+  // re-running `npm run voices` otherwise just goes quietly silent.
+  const warned = new Set();
+  function warnMissing(key, text) {
+    if (!import.meta.env?.DEV || warned.has(key) || !manifestLoaded) return;
+    warned.add(key);
+    console.warn(`No voice clip for ${key} ("${text.slice(0, 50)}…") — run npm run voices.`);
+  }
+  let manifestLoaded = false;
 
   audio.addEventListener('ended', () => { active = false; });
   audio.addEventListener('error', () => { active = false; following = false; });
@@ -53,7 +64,10 @@ export function createVoicePlayer() {
       stop();
       if (!speaker || !text || volume === 0) return false;
       const key = voiceKey(speaker, text);
-      if (!available.has(key)) return false;
+      if (!available.has(key)) {
+        warnMissing(key, text);
+        return false;
+      }
       audio.src = `${VOICE_DIR}${key}.mp3`;
       clipGain = available.get(key);
       audio.volume = volume * clipGain;

@@ -107,7 +107,8 @@ function findBone(root, prefix) {
  * @returns {Promise<{ jax: THREE.Group,
  *   update: (deltaSeconds: number) => void,
  *   playPassBy: (from: THREE.Vector3, to: THREE.Vector3, duration: number) => void,
- *   faceTowards: (worldPoint: THREE.Vector3 | null) => void }>}
+ *   faceTowards: (worldPoint: THREE.Vector3 | null) => void,
+ *   bindPose: Map<THREE.Bone, THREE.Quaternion> }>}
  */
 export function loadJax() {
   return new GLTFLoader().loadAsync(JAX_URL).then((gltf) => {
@@ -139,6 +140,14 @@ export function loadJax() {
       spine: findBone(model, 'spine'),
       head: findBone(model, 'head'),
     };
+    // The rig's own bind pose, kept before the arms are lowered below: the
+    // bedroom pass-by (jaxBedroomPass.js) builds its hands-in-pockets pose
+    // from the T-pose, and starting from the lowered arms lowered them twice.
+    const bindPose = new Map();
+    for (const bone of Object.values(bones)) {
+      if (bone) bindPose.set(bone, bone.quaternion.clone());
+    }
+
     // Bring the T-pose arms down to his sides before anything else reads
     // these as "rest" — see ARM_LOWER_ANGLE above.
     const armLower = new THREE.Quaternion().setFromAxisAngle(ARM_LOWER_AXIS, ARM_LOWER_ANGLE);
@@ -230,6 +239,6 @@ export function loadJax() {
       }
     }
 
-    return { jax, update, playPassBy, faceTowards };
+    return { jax, update, playPassBy, faceTowards, bindPose };
   });
 }
