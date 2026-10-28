@@ -12,7 +12,7 @@ await page.route('**/src/main.js', async route => {
     renderer.setPixelRatio(0.25);
     // Exercise real game state and DOM without rendering the heavy 3D scene.
     renderer.render = () => {};
-    renderer.compile = () => {};
+    renderer.compile = () => new Set();
     const lock = () => {
       Object.defineProperty(document, 'pointerLockElement', { value: renderer.domElement, configurable: true });
       document.dispatchEvent(new Event('pointerlockchange'));
@@ -79,8 +79,8 @@ try {
   await page.waitForFunction(() => !!window.__level1Review);
   await page.evaluate(() => window.__level1Review.start());
   console.log('Starting loss attempt');
-  assert.equal(await play([1, 0]), 2); // wrong, wrong: 1 -> 2 -> 3
-  assert.equal(await page.locator('#level-complete-title').textContent(), 'Level 1 Failed');
+  assert.equal(await play([3]), 1); // The fourth option ends its branch on a Game Over beat.
+  assert.equal(await page.locator('#level-complete-title').textContent(), 'Game Over');
   assert.equal(await page.locator('#btn-level-complete-continue').textContent(), 'Retry Level');
   const failed = await state();
   assert.equal(failed.ribbitComplete, false);
