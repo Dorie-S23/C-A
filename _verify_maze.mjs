@@ -5,6 +5,32 @@ import { test } from 'node:test';
 import { generateMaze } from './src/maze/generateMaze.js';
 import { createSeededRandom as makeRng } from './src/maze/seededRandom.js';
 import { getReachableCells, selectMazeCell } from './src/maze/mazePlacements.js';
+import { createMazeItems, MAZE_FINDABLES } from './src/state/mazeItems.js';
+
+test('maze item counts and pickup callbacks advance once per unique keepsake', () => {
+  const pickups = [];
+  const items = createMazeItems({ onCollect: (...args) => pickups.push(args) });
+  assert.equal(items.totalFound(), 0);
+  for (const [index, { id }] of MAZE_FINDABLES.entries()) {
+    items.collect(id);
+    items.collect(id);
+    assert.equal(items.totalFound(), index + 1);
+    assert.equal(items.hasCollected(id), true);
+  }
+  assert.deepEqual(pickups, MAZE_FINDABLES.map(({ id }, index) => [id, index + 1, 2]));
+});
+
+test('maze item reset starts a fresh attempt without changing another run', () => {
+  const items = createMazeItems(), otherRun = createMazeItems();
+  for (const { id } of MAZE_FINDABLES) items.collect(id);
+  otherRun.collect(MAZE_FINDABLES[0].id);
+  items.reset();
+  assert.equal(items.totalFound(), 0);
+  assert.equal(otherRun.totalFound(), 1);
+  for (const { id } of MAZE_FINDABLES) assert.equal(items.hasCollected(id), false);
+  items.collect(MAZE_FINDABLES[0].id);
+  assert.equal(items.totalFound(), 1);
+});
 
 test('maze random streams are repeatable, independent and stay in [0, 1)', () => {
   for (const seed of [0, 1, 12345, 0xffffffff]) {

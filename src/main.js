@@ -216,6 +216,7 @@ const levelCompleteSubtitle = document.getElementById('level-complete-subtitle')
 const btnLevelCompleteContinue = document.getElementById('btn-level-complete-continue');
 
 const pictureCounter = document.getElementById('picture-counter');
+const mazeItemsCounter = document.getElementById('maze-items-counter');
 const searchTimer = document.getElementById('search-timer');
 const hintKey = document.getElementById('hint-key');
 const dialogueVoice = createVoicePlayer();
@@ -601,6 +602,7 @@ function showRoomPicker() {
  * hatch below, which can fire before any room's ever been picked).
  */
 function returnToHome({ toRoomPicker = false } = {}) {
+  mazeItemsCounter.hidden = true;
   skipIntroRequested = false;
   dropRoomPreload();
   resetObjectiveSession();
@@ -1736,6 +1738,15 @@ function directionTo(dx, dz) {
   return right > 0 ? 'to your right' : 'to your left';
 }
 
+function updateMazeItemsCounter(context) {
+  const visible = Boolean(currentRoomKey === 'maze' && context.room && context.ready && context.locked
+    && !context.paused && !context.dialogue && !context.cinematic && !context.menu);
+  if (mazeItemsCounter.hidden === visible) mazeItemsCounter.hidden = !visible;
+
+  const text = `Items found: ${mazeItems.totalFound()}/${MAZE_FINDABLES.length}`;
+  if (mazeItemsCounter.textContent !== text) mazeItemsCounter.textContent = text;
+}
+
 function updatePictureCounter() {
   // Keep the countdown visible wherever the player can spend search time,
   // including the Dorm Hall and any detours. Hide the Level 2 HUD afterward.
@@ -1773,6 +1784,7 @@ function updatePictureCounter() {
 }
 
 function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
+  mazeItemsCounter.hidden = true;
   objectiveHUD.hide();
   caineConversation.cancelPending();
   dropRoomPreload();
@@ -3764,6 +3776,7 @@ function animate() {
     : objectives.active;
   objectiveHUD.update(hudContext, roomShowsMinimap(currentRoomKey), photoReturn);
   tutorialHUD.update(hudContext, focusedBedroomDoor());
+  updateMazeItemsCounter(hudContext);
   updatePictureCounter();
   if (activeCutscene) {
     const finished = activeCutscene.update(paused ? 0 : delta);
