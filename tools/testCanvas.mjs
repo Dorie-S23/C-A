@@ -7,7 +7,7 @@ globalThis.document ??= {
   createElement(tag) {
     if (tag !== 'canvas') throw new Error(`Unexpected test element: ${tag}`);
     return { width: 0, height: 0, getContext() {
-      return { createRadialGradient() { return { addColorStop() {} }; }, fillRect() {} };
+      return { createRadialGradient() { return { addColorStop() {} }; }, fillRect() {}, strokeRect() {}, fillText() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {} };
     } };
   },
 };
