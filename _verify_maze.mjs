@@ -5,6 +5,102 @@ import { test } from 'node:test';
 import { generateMaze } from './src/maze/generateMaze.js';
 import { createSeededRandom as makeRng } from './src/maze/seededRandom.js';
 import { getReachableCells, selectMazeCell } from './src/maze/mazePlacements.js';
+import { createMazeItems, createMazeSearch, MAZE_FINDABLES, MAZE_SEARCH_SECONDS } from './src/state/mazeItems.js';
+
+test('maze item counts and pickup callbacks advance once per unique keepsake', () => {
+  const pickups = [];
+  const items = createMazeItems({ onCollect: (...args) => pickups.push(args) });
+  assert.equal(items.totalFound(), 0);
+  for (const [index, { id }] of MAZE_FINDABLES.entries()) {
+    items.collect(id);
+    items.collect(id);
+    assert.equal(items.totalFound(), index + 1);
+    assert.equal(items.hasCollected(id), true);
+  }
+  assert.deepEqual(pickups, MAZE_FINDABLES.map(({ id }, index) => [id, index + 1, 2]));
+});
+
+test('maze item reset starts a fresh attempt without changing another run', () => {
+  const items = createMazeItems(), otherRun = createMazeItems();
+  for (const { id } of MAZE_FINDABLES) items.collect(id);
+  otherRun.collect(MAZE_FINDABLES[0].id);
+  items.reset();
+  assert.equal(items.totalFound(), 0);
+  assert.equal(otherRun.totalFound(), 1);
+  for (const { id } of MAZE_FINDABLES) assert.equal(items.hasCollected(id), false);
+  items.collect(MAZE_FINDABLES[0].id);
+  assert.equal(items.totalFound(), 1);
+});
+
+test('a maze search starts with 180 seconds and an idle clock never advances', () => {
+  const search = createMazeSearch();
+  assert.equal(search.status, 'idle');
+  assert.equal(search.timeLeft, null);
+  assert.equal(search.tick(999, { playable: true }), null);
+  search.start();
+  assert.equal(MAZE_SEARCH_SECONDS, 180);
+  assert.equal(search.timeLeft, 180);
+  assert.equal(search.status, 'searching');
+});
+
+test('the maze clock freezes when gameplay is blocked, including at Jax', () => {
+  const search = createMazeSearch(); search.start();
+  search.tick(10, { playable: true });
+  for (let i = 0; i < 5; i++) {
+    assert.equal(search.tick(999, { playable: false, allItems: true, atJax: true }), null);
+    assert.equal(search.timeLeft, 170);
+    assert.equal(search.status, 'searching');
+  }
+});
+
+test('maze expiry is clamped to zero and emitted only once', () => {
+  const search = createMazeSearch(); search.start();
+  assert.equal(search.tick(179, { playable: true }), null);
+  assert.equal(search.timeLeft, 1);
+  assert.equal(search.tick(1, { playable: true }), 'expired');
+  assert.equal(search.timeLeft, 0);
+  assert.equal(search.status, 'expired');
+  assert.equal(search.tick(999, { playable: true }), null);
+  assert.equal(search.tick(0, { playable: true, allItems: true, atJax: true }), null);
+  assert.equal(search.status, 'expired');
+});
+
+test('maze search needs both all items and a current Jax arrival', () => {
+  const search = createMazeSearch(); search.start();
+  assert.equal(search.tick(1, { playable: true, atJax: true }), null);
+  assert.equal(search.tick(1, { playable: true, allItems: true }), null);
+  assert.equal(search.timeLeft, 178);
+  assert.equal(search.status, 'searching');
+  assert.equal(search.tick(0, { playable: true, allItems: true, atJax: true }), 'reached');
+  assert.equal(search.status, 'reached');
+  assert.equal(search.tick(999, { playable: true }), null);
+  assert.equal(search.timeLeft, 178);
+});
+
+test('reaching Jax with all items at the deadline wins before expiry', () => {
+  const search = createMazeSearch(); search.start(); search.tick(179, { playable: true });
+  assert.equal(search.tick(1, { playable: true, allItems: true, atJax: true }), 'reached');
+  assert.equal(search.timeLeft, 1);
+});
+
+test('clearing and restarting a maze attempt removes expired or reached state', () => {
+  const search = createMazeSearch();
+  for (const result of ['expired', 'reached']) {
+    search.start();
+    search.tick(180, { playable: true, allItems: result === 'reached', atJax: result === 'reached' });
+    assert.equal(search.status, result);
+    search.clear();
+    assert.equal(search.timeLeft, null); assert.equal(search.status, 'idle');
+    search.start();
+    assert.equal(search.timeLeft, 180); assert.equal(search.status, 'searching');
+  }
+});
+
+test('invalid elapsed values cannot corrupt a running maze clock', () => {
+  const search = createMazeSearch(); search.start();
+  for (const delta of [-1, NaN, Infinity]) assert.throws(() => search.tick(delta, { playable: true }), /finite and nonnegative/);
+  assert.equal(search.timeLeft, 180);
+});
 
 test('maze random streams are repeatable, independent and stay in [0, 1)', () => {
   for (const seed of [0, 1, 12345, 0xffffffff]) {

@@ -7,6 +7,7 @@ import { level1RibbitDialogue } from './src/data/dialogues.js';
 import { getLevelPoints, setLevelPoints, resetEscapeThreshold } from './src/state/escapeThreshold.js';
 import { createObjectiveController } from './src/game/objectives.js';
 import { createStoryProgress } from './src/game/storyProgress.js';
+import { createCaineMemory } from './src/state/caineMemory.js';
 
 const choices = level1RibbitDialogue.filter(n => n.type === 'choice');
 const best = choices.map(n => n.options.find(o => o.points === 1));
@@ -21,6 +22,7 @@ function fixture() {
   const progress = createStoryProgress({ objectives, isStorySession: () => true });
   let script, resolveCard;
   const cards = [], poses = [], distress = [];
+  const memory = createCaineMemory({ storage: null });
   const hall = { group: new THREE.Group() };
   const room = { group: new THREE.Group(), ribbitScene: {
     door: { open() {}, close() {} }, points: {}, seatY: 1, shots: {},
@@ -29,6 +31,8 @@ function fixture() {
   const stage = new Proxy({}, { get: (_, key) => key === 'walkTo' || key === 'wait' ? async () => true : () => {} });
   const game = {
     session: 1, token: 1, stage,
+    get memoryTicket() { return memory.revision; },
+    rememberRetry: (level, ticket) => memory.recordRetry(level, ticket),
     isRoom: () => true,
     async travel(key) { this.token++; return key === 'dorm' ? hall : room; },
     playDialogue(key, callbacks) { script = callbacks; },
@@ -39,7 +43,7 @@ function fixture() {
     },
     showHint() {},
   };
-  return { game, hall, objectives, progress, cards, poses, distress,
+  return { game, hall, objectives, progress, cards, poses, distress, memory,
     script: () => script, continue: () => resolveCard(true),
     start: () => runLevel1(game, { hall, story: true, onComplete: p => progress.finishRibbit(p) }),
   };
@@ -90,6 +94,8 @@ test('a game-over pick plays out, then fails with its own message; retry resets 
   assert.equal(f.cards[0].subtitle, gameOverBeat[1].text);
   assert.equal(f.cards[0].options.buttonLabel, 'Retry Level');
   assert.equal(f.cards[0].options.chime, 'fail');
+  assert.equal(f.cards[0].options.memoryRetry, 'level1');
+  assert.equal(f.memory.snapshot().retries.level1, 0);
   assert.equal(getLevelPoints('level1'), 0);
   assert.equal(getLevelPoints('level2'), 2);
   assert.equal(f.progress.ribbitComplete, false);
@@ -103,6 +109,7 @@ test('a game-over pick plays out, then fails with its own message; retry resets 
   f.continue();
   await flush();
   assert.equal(f.script().stopAt, 'l1_inside');
+  assert.equal(f.memory.snapshot().retries.level1, 1);
   f.script().onChoice(wrong[0]); // a fresh attempt: a wrong answer doesn't fail
   assert.equal(f.cards.length, 1);
   await f.script().onComplete();
@@ -152,6 +159,7 @@ test('failure clears points already earned and repeated retries do not accumulat
     await flush();
   }
   assert.equal(getLevelPoints('level2'), 2);
+  assert.equal(f.memory.snapshot().retries.level1, 2);
 });
 
 test('leaving a failed session invalidates its pending retry', async () => {
@@ -166,9 +174,22 @@ test('leaving a failed session invalidates its pending retry', async () => {
   f.continue();
   await flush();
   assert.equal(f.game.token, token);
+  assert.equal(f.memory.snapshot().retries.level1, 0);
   assert.equal(f.progress.ribbitComplete, false);
   assert.equal(f.progress.hallwayPending, false);
   assert.equal(f.progress.finishHallway(), false);
+});
+
+test('clearing memory while a Level 1 retry is pending prevents stale history from returning', async () => {
+  const f = fixture();
+  await f.start();
+  f.script().onChoice(quit[0]);
+  f.script().onNode(gameOverBeat[0]);
+  f.memory.clear();
+  f.continue();
+  await flush();
+  assert.equal(f.script().stopAt, 'l1_inside');
+  assert.equal(f.memory.snapshot().retries.level1, 0);
 });
 
 test('cancelling a retry cannot restore points from an older attempt', async () => {

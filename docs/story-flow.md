@@ -18,10 +18,12 @@ The playable sequence is:
    plays through the closed door; consent moves the scene into her room.
 4. Pomni approaches the bed before dialogue resumes. Choosing to sit waits
    for her approach and seating pose. Fixed conversation shots frame both
-   characters. The four choices score at most four Escape points; poor
-   choices increase distress by 1 and correct choices reduce it by 1 (minimum 0).
-   Distress starts at 1. Reaching 3 immediately cancels the dialogue and shows
-   **Level 1 Failed** with **Retry Level**. Failure clears Level 1 points and
+   characters. The four choices score at most four Escape points. Correct
+   choices earn +1 and reduce distress by 1 (minimum 0); ordinary poor choices
+   earn zero and increase distress, capped at 2. Distress starts at 1. The
+   fourth option at each choice is a separate Game Over branch: it sets
+   distress to 3, plays its response lines, then shows **Game Over** with the
+   branch's message and **Retry Level**. Failure clears Level 1 points and
    never completes Find Ribbit or enables Find Kaufmo. Retry returns to the
    door and restarts the conversation with distress 1 and zero Level 1 points.
    Surviving paths steady Ribbit; successful points carry into Level 2.
@@ -56,14 +58,16 @@ milestones survive room changes. Ribbit's completed pose and an unscored
 follow-up interaction are restored on re-entry. Re-entering cannot repeat the
 scored encounter or the completed hallway encounter.
 
-Escape during Ribbit's conversation cancels staged actions and restores the
-points from before that attempt. Inside the bedroom it returns Pomni to the
-hallway, where knocking retries the encounter. Leaving the session invalidates
-old dialogue, movement and asset-load callbacks before room disposal.
+Escape during live gameplay releases the pointer and pauses the conversation
+and staged actions. Resume continues the same attempt. Explicit dialogue
+cancellation (the dialogue API or an unlocked, unpaused preview) restores the
+points from before the attempt; cancellation inside Ribbit's bedroom returns
+Pomni to the hallway, where knocking retries the encounter. Leaving the session
+invalidates old dialogue, movement and asset-load callbacks before room disposal.
 
 Dialogue `onNode` hooks may return a Promise. While it is pending, advancing
 or selecting is blocked and the dialogue is hidden so the action is visible.
-Escape remains available. Staged movement, gestures and waits resolve `true`
+Pause remains available. Staged movement, gestures and waits resolve `true`
 on completion and `false` on cancellation. Animation and movement advance once
 per frame and stop while the game is paused.
 
@@ -151,15 +155,27 @@ Developer cutscene skipping honours awaited actions and scores each choice once.
 Returning home or changing rooms cancels a pending completion card.
 
 
-Manual Level 1 win/loss check in Chrome:
+Manual Level 1 win/loss check in Chrome or Edge:
 
 - Start a New Game and follow Find Caine, then Find Ribbit to her door.
-- To lose quickly, choose B at the first dialogue choice and A at the second.
-  Distress moves 1 -> 2 -> 3. Level 1 Failed must appear immediately, without
-  recovery or Find Kaufmo. Click Retry Level: the door conversation restarts
-  without reloading the browser, at distress 1 and zero Level 1 points.
+- To lose quickly, choose D ("Nevermind") at the first dialogue choice.
+  Its response lines must play, then Game Over must show “Don’t be a bum”,
+  without recovery or Find Kaufmo.
+  Click Retry Level: the door conversation restarts without reloading the
+  browser, at distress 1 and zero Level 1 points.
 - On retry, choose A, B, A, A. Finish the dialogue, confirm Level 1 Complete,
   click Continue, and follow Find Kaufmo. The successful attempt earns 4 points
   that stay in the Escape Threshold through the Level 2 transition.
-- A, A, B, B fails on the fourth choice after earning one point; retry must
-  discard that point rather than adding it to the next attempt.
+- A, B, A, D fails on the fourth choice after earlier correct answers; retry
+  must discard the attempt's points rather than adding them to the next one.
+- B, A, B, B and C, C, C, C each survive with zero points. Ordinary zero-point
+  choices do not trigger Game Over in the current script.
+- Escape pauses a live conversation. Resume must retain its choice and points.
+
+For the KAN-30/KAN-48 review matrix and exact suggested Jira updates, see
+[tjeding-status.md](tjeding-status.md). With Vite running,
+`node tools/verify_level1_review_browser.mjs` writes its browser report and
+screenshots to ignored `artifacts/level1-review/rendered/`; `--no-render` runs
+the same state checks without drawing the 3D scene. The default audit draws
+real WebGL frames on demand for screenshots, suppressing continuous rendering
+and shader warm-up; it does not measure rendering performance.

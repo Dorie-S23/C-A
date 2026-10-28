@@ -53,6 +53,7 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
   }
 
   async function failAttempt(message) {
+    const memoryTicket = game.memoryTicket;
     // Cancel synchronously before the dialogue can move on (or complete).
     game.cancelDialogue();
     setLevelPoints('level1', 0);
@@ -61,11 +62,12 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
     const retry = await game.showLevelComplete(
       'Game Over',
       message,
-      { chime: 'fail', buttonLabel: 'Retry Level' },
+      { chime: 'fail', buttonLabel: 'Retry Level', memoryRetry: 'level1' }
     );
     if (!retry || !live()) return;
     const room = await game.travel('dorm');
     if (!room || game.session !== session || !game.isRoom(room)) return;
+    game.rememberRetry?.('level1', memoryTicket);
     token = game.token;
     ribbitScene = null;
     room.hallDoors?.ribbit?.shut();
