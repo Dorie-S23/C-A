@@ -97,6 +97,46 @@
             #pause-menu[hidden] {
                 display: none;
             }
+            #pause-menu {
+                max-height: calc(100dvh - 12rem);
+                overflow-y: auto;
+            }
+            #pause-menu > * {
+                flex-shrink: 0;
+            }
+            #title-options .title-panel-box {
+                max-height: calc(100dvh - 2rem);
+                overflow-y: auto;
+            }
+            #title-options .title-panel-box > * {
+                flex-shrink: 0;
+            }
+            .caine-memory-text {
+                color: #e5c7ff;
+                font-size: 0.95rem;
+                line-height: 1.4;
+            }
+            #caine-pause-joke {
+                max-width: 28rem;
+                margin: 0;
+            }
+            #caine-memory-caption {
+                position: fixed;
+                bottom: 8rem;
+                left: 50%;
+                transform: translateX(-50%);
+                width: min(32rem, calc(100vw - 2rem));
+                box-sizing: border-box;
+                padding: 0.7rem 1rem;
+                border-radius: 6px;
+                background: rgba(20, 10, 35, 0.85);
+                text-align: center;
+                pointer-events: none;
+                z-index: 5;
+            }
+            [data-caine-clear] {
+                background: rgba(100, 60, 150, 0.25);
+            }
             #pause-menu button {
                 font-size: 1.1em;
                 padding: 0.7em 2em;
@@ -229,6 +269,10 @@
                     opacity 0.2s ease,
                     transform 0.2s ease;
                 z-index: 5;
+            }
+            body:has(#maze-items-counter:not([hidden])) #hint {
+                width: min(580px, calc(100vw - 2rem));
+                box-sizing: border-box;
             }
             #hint.visible {
                 opacity: 1;
@@ -681,7 +725,8 @@
             }
             /* The delivery HUD stays readable alongside the hall minimap. */
             @media (max-width: 760px) {
-                body:has(#picture-counter:not([hidden])) #objective-hud { top: 6.75rem; right: 1rem; }
+                body:has(#picture-counter:not([hidden])) #objective-hud,
+                body:has(#maze-items-counter:not([hidden])) #objective-hud { top: 6.75rem; right: 1rem; }
                 body:has(#picture-counter:not([hidden])) #objective-hud.objective-hud--with-minimap { top: calc(180px + 2rem); }
             }
             @media (max-width: 480px) {
@@ -775,16 +820,23 @@
             </div>
             <button id="btn-title">&larr; Title screen</button>
             <div id="pause-menu" hidden>
+                <p id="caine-pause-joke" class="caine-memory-text" role="status" aria-live="polite" hidden></p>
                 <button id="btn-resume">&#9654; Resume</button>
                 <button id="btn-save">&#128190; Save Game</button>
                 <button id="btn-pause-load">Load Game</button>
                 <button id="btn-home">&#8962; Back to Home</button>
+                <label class="title-toggle">
+                    <input id="caine-memory-pause-enabled" data-caine-enabled type="checkbox" />
+                    <span>Caine remembers (local captions)</span>
+                </label>
+                <button type="button" data-caine-clear>Clear Caine’s Memory</button>
             </div>
         </div>
         <div id="level-complete-panel" class="title-panel" hidden>
             <div class="title-panel-box">
                 <h2 id="level-complete-title"></h2>
                 <p id="level-complete-subtitle"></p>
+                <p id="caine-retry-caption" class="caine-memory-text" hidden></p>
                 <button id="btn-level-complete-continue">Continue &rarr;</button>
             </div>
         </div>
@@ -822,6 +874,12 @@
                     />
                 </label>
                 <label class="title-toggle">
+                    <input id="caine-memory-enabled" data-caine-enabled type="checkbox" />
+                    <span>Caine remembers (local captions)</span>
+                </label>
+                <p id="caine-memory-note" role="status">Caine’s run/retry history stays in this browser, separately from saves. Off stops captions and new history.</p>
+                <button type="button" data-caine-clear>Clear Caine’s Memory</button>
+                <label class="title-toggle">
                     <input id="dev-skip-intro" type="checkbox" />
                     <span>Dev mode: open on room selection</span>
                 </label>
@@ -853,6 +911,7 @@
             </div>
         </div>
         <div id="crosshair" hidden></div>
+        <aside id="caine-memory-caption" class="caine-memory-text" role="status" aria-live="polite" aria-atomic="true" hidden></aside>
         <aside id="objective-hud" role="status" aria-live="polite" aria-atomic="true" hidden>
             <div class="objective-label"><span aria-hidden="true">&#10022; </span>Current objective</div>
             <p id="objective-title" data-objective-title></p>

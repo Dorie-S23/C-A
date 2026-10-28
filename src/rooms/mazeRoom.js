@@ -198,7 +198,7 @@ function buildMaze(jaxApi, mazeItems, seed, rng) {
   const exitCenter = cellCenter(maze.exit.r, maze.exit.c);
   const exitMarker = new THREE.Mesh(
     new THREE.CylinderGeometry(cellSize * 0.35, cellSize * 0.35, 0.05, 24),
-    new THREE.MeshStandardMaterial({ color: 0x35d46a, emissive: 0x0f4d22, emissiveIntensity: 0.6 }),
+    new THREE.MeshStandardMaterial({ color: 0xd8a14a, emissive: 0x4d3211, emissiveIntensity: 0.3 }),
   );
   exitMarker.position.set(exitCenter.x, 0.03, exitCenter.z);
   exitMarker.name = 'ExitMarker';
@@ -335,8 +335,12 @@ function buildMaze(jaxApi, mazeItems, seed, rng) {
     new THREE.Vector3(width / 2, wallHeight, depth / 2),
   );
 
+  const jaxObjects = [];
+  jax.traverse(object => { if (object.isMesh) jaxObjects.push(object); });
+  const jaxEncounter = { anchor: jax, objects: jaxObjects, radius: 2.5 };
+
   return {
-    mazeSeed: seed, maze, mazePlacement,
+    mazeSeed: seed, maze, mazePlacement, jaxEncounter,
     group, bounds, spawn, spawnFacing, colliders, triggers, movers, hazards, update,
     interactables: findableRoom.interactables,
   };

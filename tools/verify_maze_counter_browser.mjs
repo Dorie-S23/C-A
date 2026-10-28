@@ -71,9 +71,28 @@ await page.route('**/src/main.js', async route => {
       tick(seconds) { updateMazeSearch(0); updateMazeSearch(seconds); },
       frame: seconds => updateMazeSearch(seconds),
       placeAt(target) {
-        const point = target === 'spawn' ? currentRoomInfo.spawn : triggers[target].getCenter(new THREE.Vector3());
+        let point = target === 'spawn' ? currentRoomInfo.spawn : triggers.exit.getCenter(new THREE.Vector3());
+        if (target === 'jax' || target === 'jax-approach') {
+          const anchor = currentRoomInfo.jaxEncounter.anchor.position;
+          const approach = triggers.jax.getCenter(new THREE.Vector3());
+          point = anchor.clone().lerp(approach, target === 'jax' ? 0.5 : 2);
+        }
         stage.place({ x: point.x, z: point.z });
       },
+      blockJax() {
+        this.placeAt('jax');
+        const midpoint = currentRoomInfo.jaxEncounter.anchor.position.clone().lerp(player.position, 0.5);
+        window.__mazeJaxBlock = new THREE.Box3(
+          new THREE.Vector3(midpoint.x - 0.2, 0, midpoint.z - 0.2),
+          new THREE.Vector3(midpoint.x + 0.2, 3, midpoint.z + 0.2));
+        colliders.push(window.__mazeJaxBlock);
+      },
+      unblockJax() {
+        colliders = colliders.filter(box => box !== window.__mazeJaxBlock);
+        this.placeAt('spawn');
+      },
+      rememberJax: () => { window.__retainedJax = interactables.find(i => i.prompt() === 'Check on Jax'); },
+      staleJax: () => window.__retainedJax.interact(interactionContext),
       triggers: () => checkTriggers(player),
       cinematic(active) {
         activeEntrance = active ? { active: true, phase: 'held', update() {}, dispose() {} } : null;
@@ -101,6 +120,12 @@ await page.route('**/src/main.js', async route => {
           remaining: interactables.filter(i => i.prompt().startsWith('Pick up ')).length,
           timeLeft: mazeSearch.timeLeft, searchStatus: mazeSearch.status, seed: mazeAttemptSeed, foundJax,
           timerHidden: mazeSearchTimer.hidden, timerText: mazeSearchTimer.textContent,
+          objectiveHidden: document.getElementById('objective-hud').hidden,
+          objectiveTitle: document.getElementById('objective-title').textContent,
+          objectiveDetail: document.getElementById('objective-detail').textContent,
+          objective: objectives.active?.id ?? null, dialogueActive: dialogueUI.isActive,
+          promptHidden: interactPrompt.hidden, promptText: interactPrompt.textContent,
+          jaxReachable: canReachMazeJax(),
           cardVisible: !levelCompletePanel.hidden, cardTitle: levelCompleteTitle.textContent,
           token: loadToken, titleActive: titleScreen.active, escape: snapshotEscapeThreshold(),
           position: [player.position.x, player.position.z],
@@ -122,6 +147,9 @@ const visible = async (text = 'Items found: 1/2') => {
 const hidden = async () => {
   await page.waitForFunction(() => window.__mazeCounterReview.state().hidden);
   assert.equal(await page.locator('#maze-items-counter').isVisible(), false);
+  if ((await state()).room === 'maze') {
+    await page.waitForFunction(() => window.__mazeCounterReview.state().objectiveHidden);
+  }
 };
 const travel = async room => {
   const loading = await call('beginTravel', room);
@@ -168,6 +196,10 @@ try {
     const s = await state();
     assert.equal(s.remaining, 2);
     assert.equal(s.pictureHidden, true);
+    assert.equal(s.objective, null, 'Maze guidance must not activate a saved campaign objective');
+    await page.waitForFunction(() => !window.__mazeCounterReview.state().objectiveHidden);
+    assert.equal((await state()).objectiveTitle, 'Find Jax’s keepsakes');
+    assert.match((await state()).objectiveDetail, /bowling ball and hot chocolate mug/);
     const element = page.locator('#maze-items-counter');
     assert.equal(await element.getAttribute('role'), 'status');
     assert.equal(await element.getAttribute('aria-live'), 'polite');
@@ -255,6 +287,10 @@ try {
     await page.setViewportSize({ width: 390, height: 844 });
     const box = await page.locator('#maze-items-counter').boundingBox();
     assert.ok(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= 390);
+    const objective = await page.locator('#objective-hud').boundingBox();
+    const timer = await page.locator('#maze-search-timer').boundingBox();
+    assert.ok(objective && timer && objective.y >= timer.y + timer.height, 'Maze instructions must not overlap the countdown');
+    assert.ok(objective.x >= 0 && objective.x + objective.width <= 390);
     await page.setViewportSize({ width: 1000, height: 750 });
   });
   await check('Home hides the counter; New Game resets finds before a fresh maze attempt', async () => {
@@ -323,26 +359,60 @@ try {
     await call('placeAt', 'jax'); await call('tick', 1);
     assert.equal((await state()).foundJax, false);
     assert.equal((await state()).searchStatus, 'searching');
+    await page.waitForFunction(() => !window.__mazeCounterReview.state().promptHidden);
+    assert.equal((await state()).promptText, 'E — Check on Jax');
+    await page.keyboard.press('e');
+    assert.match((await state()).hint, /^Still needed: mug of hot chocolate/);
+    assert.equal((await state()).dialogueActive, false);
+    await call('rememberJax');
     await call('placeAt', 'exit'); await call('triggers');
+    assert.match((await state()).hint, /placeholder maze exit, not a goal/);
     assert.equal((await state()).ready, true);
     assert.equal((await state()).cardVisible, false);
     assert.equal((await state()).searchStatus, 'searching');
     await call('placeAt', 'spawn');
   });
-  await check('Both items alone do not stop the clock; reaching Jax stops it without inventing a finale', async () => {
+  await check('Both items still need a close, unobstructed Jax arrival, not the old approach trigger', async () => {
     await call('pickup'); await call('tick', 1);
     assert.equal((await state()).found, 2);
     assert.equal((await state()).searchStatus, 'searching');
+    await page.waitForFunction(() => window.__mazeCounterReview.state().objectiveTitle === 'Bring the keepsakes to Jax');
+    await call('placeAt', 'jax-approach'); await call('tick', 1);
+    assert.equal((await state()).jaxReachable, false);
+    assert.equal((await state()).searchStatus, 'searching');
+    await call('blockJax'); await call('tick', 1);
+    assert.equal((await state()).jaxReachable, false, 'A wall between Pomni and Jax must block arrival');
+    assert.equal((await state()).searchStatus, 'searching');
+    await page.waitForFunction(() => window.__mazeCounterReview.state().promptHidden);
+    await call('unblockJax');
+  });
+  await check('Reaching Jax stops only the search and E explains the missing finale without completing Level 3', async () => {
+    const before = await state();
     await call('placeAt', 'jax'); await call('tick', 999);
     const reached = await state();
     assert.equal(reached.searchStatus, 'reached');
     assert.equal(reached.foundJax, true);
     assert.equal(reached.cardVisible, false);
+    await page.waitForFunction(() => window.__mazeCounterReview.state().objectiveTitle === 'Jax reached — search finished');
+    assert.match((await state()).objectiveDetail, /Level 3 is not complete/);
+    await page.waitForFunction(() => !window.__mazeCounterReview.state().promptHidden);
+    await page.keyboard.press('e');
+    assert.match((await state()).hint, /final conversation is not implemented yet; Level 3 is not complete/);
+    assert.equal((await state()).dialogueActive, false);
+    assert.deepEqual((await state()).escape, before.escape);
+    assert.equal((await state()).objective, before.objective);
     await call('tick', 999);
     assert.equal((await state()).timeLeft, reached.timeLeft);
     await call('placeAt', 'exit'); await call('triggers');
     assert.equal((await state()).ready, true);
     assert.equal((await state()).cardVisible, false);
+    assert.match((await state()).hint, /placeholder maze exit, not the circus exit/);
+    await travel('maze');
+    assert.equal((await state()).searchStatus, 'reached');
+    assert.equal((await state()).timeLeft, reached.timeLeft);
+    const revisited = await state();
+    await call('staleJax');
+    assert.equal((await state()).hint, revisited.hint, 'A retained Jax interaction cannot affect a replacement room');
   });
   await call('start'); await call('lock');
   await check('Even with both items, timeout before reaching Jax shows one LEVEL 3 FAILED card', async () => {

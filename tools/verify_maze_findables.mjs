@@ -140,6 +140,13 @@ GLTFLoader.prototype.load = function (url, onLoad, _progress, onError) {
       assert.ok(room.colliders.every(wall => !wall.containsPoint(prop.position)), `seed ${seed}: item is inside a wall`);
     }
     const jax = room.group.getObjectByName('Jax');
+    assert.equal(room.jaxEncounter.anchor, jax);
+    assert.equal(room.jaxEncounter.radius, 2.5);
+    assert.ok(room.jaxEncounter.objects.length > 0);
+    assert.ok(room.jaxEncounter.objects.every(object => object.isMesh));
+    const oldApproach = room.triggers.jax.getCenter(jax.position.clone()).sub(jax.position).multiplyScalar(2);
+    assert.ok(Math.hypot(oldApproach.x, oldApproach.z) > room.jaxEncounter.radius,
+      `seed ${seed}: the old approach cell must not count as a close Jax arrival`);
     assert.equal(mazePlacement.cellAt(jax.position), maze.jax);
     assert.ok(distances.has(key(maze.jax)));
     assert.ok(room.colliders.every(wall => !wall.containsPoint(jax.position)));
