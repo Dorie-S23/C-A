@@ -37,20 +37,19 @@ The playable sequence is:
    to the Lobby's default spawn; time advances only during active play, with
    loading, pause, dialogue and cinematics excluded. All 5 photos (`PHOTO_COUNT`
    in `level2Items.js`) glow softly around the Circus Lobby. Their positions and
-   rotations stay fixed for this attempt, including visits after partial delivery.
+   rotations stay fixed for this attempt, including return visits to the Lobby.
    The HUD shows found and delivered totals separately and keeps the countdown
    visible throughout the return route, including Dorm Hall and detours.
    Finding the fifth photo changes the instruction to **Return to Kaufmo**;
-   the remaining time continues without resetting. E presents all held photos
-   immediately. Partial deliveries pause for dialogue and then resume the same
-   clock; reaching 5 delivered stops it before Kaufmo's reaction, even with one
-   second left. Early pickups are retained but do not bypass his introduction.
-   All 5 delivered enable **Hear Kaufmo’s Theory**; his stall/payoff conversations
-   resolve that objective and show **Level 2 Complete** once per run. Expiring
-   with fewer than 5 delivered fails even if all photos have been found. Continue
-   clears held/delivered photos and Level 2 points, chooses new spots, and restarts
-   at the same default Lobby spawn with 4 minutes. Level 1 points are preserved.
-   This remains a retry card, not the later "abstraction" effect.
+   the remaining time continues without resetting. E hands Kaufmo every held
+   photo at once, which stops the clock, even with one second left. With at
+   least 4 (`PHOTO_THRESHOLD`) he plays his success scene and send-off, then
+   **Level 2 Complete**. With fewer he abstracts and the attempt ends on a
+   **Retry Level 2** card. Early pickups are retained but do not bypass his
+   introduction. Expiring before the hand-in fails even if all photos have been
+   found. Either retry clears held/delivered photos and Level 2 points, chooses
+   new spots, and restarts at the same default Lobby spawn with 4 minutes.
+   Level 1 points are preserved.
 
 `src/game/storyProgress.js` owns the post-Caine milestones. Objectives and
 milestones survive room changes. Ribbit's completed pose and an unscored
@@ -88,11 +87,12 @@ review-only browser instrumentation positions the player between encounters.
 Screenshots and the report are written to ignored `artifacts/story-flow/`.
 
 `node tools/verify_photo_search_timer_browser.mjs` checks the initial countdown,
-two consecutive timeout/retry cycles and equal start positions, pause/loading/
-dialogue exclusion, actual photo pickup and Kaufmo interaction callbacks,
-stable positions after partial delivery, visible timing in Dorm Hall, failure
-with all photos held, immediate last-second final delivery, and cancellation
-of a pending retry by returning home. Its report and desktop/narrow-screen
+a too-small hand-in (Kaufmo abstracts, Retry Level 2), two consecutive
+timeout/retry cycles and equal start positions, pause/loading/dialogue
+exclusion, actual photo pickup and Kaufmo interaction callbacks, stable
+positions on a Lobby revisit, visible timing in Dorm Hall, failure with all
+photos held, immediate last-second final delivery, and cancellation of a
+pending retry by returning home. Its report and desktop/narrow-screen
 screenshots are written to `artifacts/photo-search-timer/`. The bridge skips
 walking distances and advances the game clock for deadline tests; these are
 functional checks, not human difficulty measurements.
