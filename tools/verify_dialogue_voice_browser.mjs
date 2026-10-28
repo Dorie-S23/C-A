@@ -144,6 +144,19 @@ try {
   assert.equal(await page.evaluate(() => window.shown.at(-1)), 'c1_b');
   console.log('PASS The next advance brings in the reply (and only then its onNode)');
 
+  // A short label whose script carries on with Pomni's own full line isn't
+  // said twice: straight to that line, voiced.
+  await page.evaluate(async () => {
+    const { level1RibbitDialogue } = await import('/src/data/dialogues.js');
+    const at = level1RibbitDialogue.findIndex(node => node.options?.some(o => o.text === '“It’s Pomni”'));
+    window.ui.play(level1RibbitDialogue.slice(at));
+  });
+  await page.keyboard.press('Digit1');
+  await page.waitForFunction(() => document.getElementById('dialogue-text').textContent.startsWith('It’s Pomni. I just'));
+  await page.waitForFunction(() => window.voiceEl.src.includes('/pomni-') && window.voiceEl.currentTime > 0.1);
+  console.log('PASS A short option label goes straight to the full line it stands for, voiced once');
+  await page.keyboard.press('Escape');
+
   await page.evaluate(async () => {
     const { level1RibbitDialogue } = await import('/src/data/dialogues.js');
     const choice = level1RibbitDialogue.find(node => node.options?.some(o => o.text.startsWith('(Sit down')));
