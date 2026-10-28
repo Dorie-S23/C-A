@@ -49,6 +49,15 @@ const LANDMARK_REACH = 6;
 const lobbyReach = decodeReachMap(LOBBY_REACH);
 const PHOTO_VIEW_DISTANCE = 2.5;
 const EYE_HEIGHT = 1.5;
+// ...and out in the open, not tucked behind a building: seen face-on from
+// at least PHOTO_OPEN_MIN points of a PHOTO_OPEN_STEP grid of walkable
+// floor within PHOTO_OPEN_RADIUS. A spot with nothing in the way sees ~56,
+// so this is half of that. Measured against the real Lobby, the old
+// close-up check alone let ~5% of spots through that only a narrow pocket
+// of floor could see, and a few facing a wall no one could see at all.
+const PHOTO_OPEN_RADIUS = 12;
+const PHOTO_OPEN_STEP = 2;
+const PHOTO_OPEN_MIN = 28;
 
 export function loadTadcRoom(onProgress, { from, items } = {}) {
   return Promise.all([
@@ -82,7 +91,8 @@ export function loadTadcRoom(onProgress, { from, items } = {}) {
       const pictures = scatterPictures(room, items, PICTURES, defaultSpawn, [dormArch?.box.getCenter(new THREE.Vector3())], {
         zoneOf: (spot) => nearestLandmark(spot.position.x, spot.position.z, LANDMARK_REACH) ?? spot.object,
         isOpen: (origin) => lobbyReach.has(origin.x, origin.z),
-        isReachable: (spot) => photoInView(room.group, spot, defaultSpawn.y),
+        isReachable: (spot) => photoInView(room.group, spot, defaultSpawn.y)
+          && photoInOpen(room.group, spot, defaultSpawn.y),
       });
       room.photoPositions = pictures.remaining;
       const doorsUpdate = room.update;
@@ -106,32 +116,64 @@ export function loadTadcRoom(onProgress, { from, items } = {}) {
 const viewRaycaster = new THREE.Raycaster();
 
 /**
+ * Walkable floor cells within `radius` of a photo spot on a `step` grid,
+ * in front of its face only: from behind, the frame hides the photo (and
+ * a spot on the far side of a wall isn't findable from the near side).
+ */
+function floorInFront({ position, rotationY }, radius, step) {
+  const facing = { x: Math.sin(rotationY), z: Math.cos(rotationY) };
+  const cells = [];
+  for (let dx = -radius; dx <= radius; dx += step) {
+    for (let dz = -radius; dz <= radius; dz += step) {
+      if (Math.hypot(dx, dz) > radius || dx * facing.x + dz * facing.z <= 0) continue;
+      const x = position.x + dx, z = position.z + dz;
+      if (lobbyReach.has(x, z)) cells.push({ x, z });
+    }
+  }
+  return cells;
+}
+
+const eye = new THREE.Vector3();
+const toPhoto = new THREE.Vector3();
+
+/**
+ * Nothing between an eye on the floor cell (x, z) and the photo. Cast
+ * both ways: the castle walls and stairs draw front faces only, and a ray
+ * passes straight through the back of a single-sided mesh.
+ */
+function photoSeenFrom(group, position, x, z, floorY) {
+  eye.set(x, floorY + EYE_HEIGHT, z);
+  toPhoto.subVectors(position, eye);
+  const distance = toPhoto.length() - 0.05;
+  toPhoto.normalize();
+  viewRaycaster.far = distance;
+  viewRaycaster.set(eye, toPhoto);
+  if (viewRaycaster.intersectObject(group, true).length) return false;
+  viewRaycaster.set(position, toPhoto.negate());
+  return viewRaycaster.intersectObject(group, true).length === 0;
+}
+
+/**
  * Whether some walkable floor within PHOTO_VIEW_DISTANCE of a photo spot
  * sees it unobstructed, trying the floor straight out in front of it
  * first. Without this a spot could be on the inside of a sealed gap in
  * the toy blocks: near the floor plan's walkable cells, but out of sight.
  */
-function photoInView(group, { position, rotationY }, floorY) {
+function photoInView(group, spot, floorY) {
+  const { position, rotationY } = spot;
   const front = { x: position.x + Math.sin(rotationY) * 1.5, z: position.z + Math.cos(rotationY) * 1.5 };
-  const cells = [];
-  const step = lobbyReach.step;
-  for (let dx = -PHOTO_VIEW_DISTANCE; dx <= PHOTO_VIEW_DISTANCE; dx += step) {
-    for (let dz = -PHOTO_VIEW_DISTANCE; dz <= PHOTO_VIEW_DISTANCE; dz += step) {
-      if (Math.hypot(dx, dz) > PHOTO_VIEW_DISTANCE) continue;
-      const x = position.x + dx, z = position.z + dz;
-      if (lobbyReach.has(x, z)) cells.push({ x, z, order: Math.hypot(x - front.x, z - front.z) });
-    }
-  }
-  cells.sort((a, b) => a.order - b.order);
-  const eye = new THREE.Vector3();
-  const toPhoto = new THREE.Vector3();
-  for (const { x, z } of cells) {
-    eye.set(x, floorY + EYE_HEIGHT, z);
-    toPhoto.subVectors(position, eye);
-    const distance = toPhoto.length();
-    viewRaycaster.set(eye, toPhoto.normalize());
-    viewRaycaster.far = distance - 0.05;
-    if (viewRaycaster.intersectObject(group, true).length === 0) return true;
+  const cells = floorInFront(spot, PHOTO_VIEW_DISTANCE, lobbyReach.step);
+  cells.sort((a, b) => Math.hypot(a.x - front.x, a.z - front.z) - Math.hypot(b.x - front.x, b.z - front.z));
+  return cells.some(({ x, z }) => photoSeenFrom(group, position, x, z, floorY));
+}
+
+/** Whether enough of the floor around a photo spot sees it (PHOTO_OPEN_MIN). */
+function photoInOpen(group, spot, floorY) {
+  const cells = floorInFront(spot, PHOTO_OPEN_RADIUS, PHOTO_OPEN_STEP);
+  let seen = 0;
+  for (const [i, { x, z }] of cells.entries()) {
+    if (photoSeenFrom(group, spot.position, x, z, floorY) && ++seen >= PHOTO_OPEN_MIN) return true;
+    if (seen + cells.length - 1 - i < PHOTO_OPEN_MIN) return false;
   }
   return false;
 }

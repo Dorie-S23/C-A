@@ -130,7 +130,13 @@ origins can land sealed inside props (a pocket in the Toy Block Wall, the poles'
 hollow bases), so the Lobby checks spots against `src/rooms/lobbyReach.js`, a
 walkable-floor map flood-filled from the spawn. It's generated: rerun
 `node tools/buildLobbyReach.mjs` after changing the Lobby model, castle walls
-or staircase.
+or staircase. A spot also has to be out in the open, not behind a building:
+seen face-on from at least half the walkable floor in front of it within
+12 m (`PHOTO_OPEN_*` in `tadcRoom.js`). Sight lines are cast both ways, since
+the single-sided castle walls let a one-way ray through from behind; that
+let the occasional photo face a wall no floor could see. Photos are about
+1 m wide so they read from across a landmark. With these rules the same
+8-layout route estimate came to 84.8–160.4 seconds at walking speed.
 
 Room/cutscene cleanup releases unique geometries, skeletons, shadow targets,
 textures and decoded bitmap sources. A loading-manager hook also releases the
