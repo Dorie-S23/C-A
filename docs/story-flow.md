@@ -38,20 +38,19 @@ The playable sequence is:
    to the Lobby's default spawn; time advances only during active play, with
    loading, pause, dialogue and cinematics excluded. All 5 photos (`PHOTO_COUNT`
    in `level2Items.js`) glow softly around the Circus Lobby. Their positions and
-   rotations stay fixed for this attempt, including visits after partial delivery.
+   rotations stay fixed for this attempt, including return visits to the Lobby.
    The HUD shows found and delivered totals separately and keeps the countdown
    visible throughout the return route, including Dorm Hall and detours.
    Finding the fifth photo changes the instruction to **Return to Kaufmo**;
-   the remaining time continues without resetting. E presents all held photos
-   immediately. Partial deliveries pause for dialogue and then resume the same
-   clock; reaching 5 delivered stops it before Kaufmo's reaction, even with one
-   second left. Early pickups are retained but do not bypass his introduction.
-   All 5 delivered enable **Hear Kaufmo’s Theory**; his stall/payoff conversations
-   resolve that objective and show **Level 2 Complete** once per run. Expiring
-   with fewer than 5 delivered fails even if all photos have been found. Continue
-   clears held/delivered photos and Level 2 points, chooses new spots, and restarts
-   at the same default Lobby spawn with 4 minutes. Level 1 points are preserved.
-   This remains a retry card, not the later "abstraction" effect.
+   the remaining time continues without resetting. E hands Kaufmo every held
+   photo at once, which stops the clock, even with one second left. With at
+   least 4 (`PHOTO_THRESHOLD`) he plays his success scene and send-off, then
+   **Level 2 Complete**. With fewer he abstracts and the attempt ends on a
+   **Retry Level 2** card. Early pickups are retained but do not bypass his
+   introduction. Expiring before the hand-in fails even if all photos have been
+   found. Either retry clears held/delivered photos and Level 2 points, chooses
+   new spots, and restarts at the same default Lobby spawn with 4 minutes.
+   Level 1 points are preserved.
 
 `src/game/storyProgress.js` owns the post-Caine milestones. Objectives and
 milestones survive room changes. Ribbit's completed pose and an unscored
@@ -89,11 +88,12 @@ review-only browser instrumentation positions the player between encounters.
 Screenshots and the report are written to ignored `artifacts/story-flow/`.
 
 `node tools/verify_photo_search_timer_browser.mjs` checks the initial countdown,
-two consecutive timeout/retry cycles and equal start positions, pause/loading/
-dialogue exclusion, actual photo pickup and Kaufmo interaction callbacks,
-stable positions after partial delivery, visible timing in Dorm Hall, failure
-with all photos held, immediate last-second final delivery, and cancellation
-of a pending retry by returning home. Its report and desktop/narrow-screen
+a too-small hand-in (Kaufmo abstracts, Retry Level 2), two consecutive
+timeout/retry cycles and equal start positions, pause/loading/dialogue
+exclusion, actual photo pickup and Kaufmo interaction callbacks, stable
+positions on a Lobby revisit, visible timing in Dorm Hall, failure with all
+photos held, immediate last-second final delivery, and cancellation of a
+pending retry by returning home. Its report and desktop/narrow-screen
 screenshots are written to `artifacts/photo-search-timer/`. The bridge skips
 walking distances and advances the game clock for deadline tests; these are
 functional checks, not human difficulty measurements.
@@ -117,6 +117,27 @@ the factory runs once per attempt and stores immutable plain coordinates and
 rotations, without retaining meshes or textures. `scatterPictures()` reconstructs
 only uncollected props from those slots. `reset()` clears both inventory and
 layout for retries and New Game. No saved-game persistence is added.
+
+Each Lobby landmark (`src/rooms/lobbyLandmarks.js`: hand-measured footprints
+such as the Gumball Tower or Toy Block Wall) holds at most one photo, so they
+can't all end up on one wall of 16 m toy blocks. The same landmarks label the
+Lobby minimap, and during the search **H** names the nearest photo's landmark,
+distance and direction and pings it on the minimap: 3 hints per attempt
+(`HINT_LIMIT`), at least 20 seconds of search time apart
+(`HINT_COOLDOWN_SECONDS`, both in `main.js`).
+
+Photos only go where Pomni can walk up and see them. The scatter's sweep
+origins can land sealed inside props (a pocket in the Toy Block Wall, the poles'
+hollow bases), so the Lobby checks spots against `src/rooms/lobbyReach.js`, a
+walkable-floor map flood-filled from the spawn. It's generated: rerun
+`node tools/buildLobbyReach.mjs` after changing the Lobby model, castle walls
+or staircase. A spot also has to be out in the open, not behind a building:
+seen face-on from at least half the walkable floor in front of it within
+12 m (`PHOTO_OPEN_*` in `tadcRoom.js`). Sight lines are cast both ways, since
+the single-sided castle walls let a one-way ray through from behind; that
+let the occasional photo face a wall no floor could see. Photos are about
+1 m wide so they read from across a landmark. With these rules the same
+8-layout route estimate came to 84.8–160.4 seconds at walking speed.
 
 Room/cutscene cleanup releases unique geometries, skeletons, shadow targets,
 textures and decoded bitmap sources. A loading-manager hook also releases the

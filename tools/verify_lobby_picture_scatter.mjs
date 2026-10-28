@@ -14,6 +14,7 @@ import { loadTadcRoom } from '../src/rooms/tadcRoom.js';
 import { loadDormHallRoom } from '../src/rooms/dormHallRoom.js';
 import { loadKaufmoRoom } from '../src/rooms/kaufmoRoom.js';
 import { createLevel2Items, PHOTO_COUNT } from '../src/state/level2Items.js';
+import { nearestLandmark } from '../src/rooms/lobbyLandmarks.js';
 
 globalThis.ProgressEvent ??= class {};
 GLTFLoader.prototype.load = function (url, onLoad, _progress, onError) {
@@ -29,6 +30,7 @@ GLTFLoader.prototype.load = function (url, onLoad, _progress, onError) {
 
 const TRIALS = 8; // each trial reloads both real GLBs from scratch; the wider scatter grid (see officePicture.js) also costs more per trial than the old one did
 const counts = [];
+const landmarkRepeats = [];
 const routeSamples = [];
 const hall = await loadDormHallRoom(null, { from: 'tadc' });
 const kaufmo = await loadKaufmoRoom(null, { from: 'dorm' });
@@ -52,6 +54,10 @@ for (let i = 0; i < TRIALS; i++) {
   const room = await loadTadcRoom(null, { items });
   counts.push(room.group.children.filter((c) => c.name === 'OfficePicture').length);
   const photos = room.group.children.filter(c => c.name === 'OfficePicture');
+  // Same reach tadcRoom.js uses: three photos on one wall of toy blocks
+  // once passed the 8m spacing check alone.
+  const landmarks = photos.map(p => nearestLandmark(p.position.x, p.position.z, 6)?.label).filter(Boolean);
+  if (new Set(landmarks).size < landmarks.length) landmarkRepeats.push(`trial ${i + 1}: ${landmarks.join(', ')}`);
   const lengths = routeLengths(room.spawn, photos.map(p => p.position), room.portals[0].box.getCenter(new THREE.Vector3()));
   const best = Math.min(...lengths) / walkSpeed;
   const worst = Math.max(...lengths) / walkSpeed;
@@ -77,6 +83,8 @@ for (let i = 0; i < TRIALS; i++) {
 assert.ok(counts.every((n) => n === PHOTO_COUNT),
   `expected all ${TRIALS} trials to place all ${PHOTO_COUNT} pictures, got counts: ${counts.join(',')}`);
 console.log(`PASS All ${PHOTO_COUNT} pictures placed in every one of ${TRIALS} trials against the real Lobby model`);
+assert.deepEqual(landmarkRepeats, [], 'no landmark should hold two photos');
+console.log(`PASS No landmark held two photos in any of ${TRIALS} trials`);
 const timingReport = {
   method: 'Straight-line distances through every pickup order, plus real Lobby exit, Dorm Hall and Kaufmo approach; no obstacle detours, spotting time or interaction delays. Not human playtest results.',
   budgetSeconds: budget, walkSpeed, sprintMultiplier, returnDistance, trials: routeSamples,

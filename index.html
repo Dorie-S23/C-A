@@ -44,6 +44,31 @@
             #overlay.loading {
                 cursor: default;
             }
+            /* Light loading pictures get dark text (src/ui/loadingBackgrounds.js). */
+            #overlay.loading.loading-dark-text {
+                color: #1d1626;
+            }
+            #overlay.loading.loading-dark-text p {
+                opacity: 0.9;
+            }
+            #overlay.loading::before {
+                content: "";
+                position: absolute;
+                inset: -16%;
+                z-index: -1;
+                pointer-events: none;
+                background-image: var(--loading-image); /* picked by src/ui/loadingBackgrounds.js */
+                background-repeat: no-repeat;
+                background-size: cover;
+                animation: loading-background-drift 24s linear infinite alternate;
+            }
+            /* Each picture drifts its own way: --drift-x/--drift-y (set by
+               src/ui/loadingBackgrounds.js) are where it ends up; it starts
+               the same distance the opposite way. */
+            @keyframes loading-background-drift {
+                from { transform: translate(calc(-1 * var(--drift-x, 8%)), calc(-1 * var(--drift-y, 8%))); }
+                to { transform: translate(var(--drift-x, 8%), var(--drift-y, 8%)); }
+            }
 
             #room-picker {
                 display: flex;
@@ -167,7 +192,7 @@
                 pointer-events: none;
                 z-index: 5;
             }
-            #search-timer {
+            #search-timer, #hint-key {
                 position: fixed;
                 top: calc(1em + 2.6em);
                 left: 1em;
@@ -180,6 +205,12 @@
                 pointer-events: none;
                 z-index: 5;
             }
+
+            #hint-key {
+                top: calc(1em + 5.2em);
+                color: #7af0ff;
+            }
+            #hint-key[hidden] { display: none; }
 
             #hint {
                 position: fixed;
@@ -656,6 +687,7 @@
             @media (max-width: 480px) {
                 body:has(.objective-hud--with-minimap) #picture-counter { top: calc(180px + 2rem); }
                 body:has(.objective-hud--with-minimap) #search-timer { top: calc(180px + 2rem + 2.6em); }
+                body:has(.objective-hud--with-minimap) #hint-key { top: calc(180px + 2rem + 5.2em); }
                 body:has(#picture-counter:not([hidden])) #objective-hud.objective-hud--with-minimap { top: calc(180px + 8rem); }
             }
 
@@ -834,6 +866,7 @@
         </aside>
         <div id="picture-counter" role="status" hidden>Photos found: 0/5 · Delivered: 0/5</div>
         <div id="search-timer" role="status" hidden>Time left: 4:00</div>
+        <div id="hint-key" hidden>Press H for a hint</div>
         <div id="hint"></div>
         <div id="prompt" hidden></div>
         <button id="controls-btn">Controls</button>
@@ -856,6 +889,8 @@
                     <dd>Jump</dd>
                     <dt><kbd>E</kbd></dt>
                     <dd>Interact</dd>
+                    <dt><kbd>H</kbd></dt>
+                    <dd>Hint: where the nearest photo is, during the photo search</dd>
                     <dt><kbd>T</kbd></dt>
                     <dd>Retry an interrupted morning conversation in Pomni's room</dd>
                     <dt><kbd>Mouse</kbd></dt>
