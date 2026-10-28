@@ -40,10 +40,11 @@ import { createControlsTutorial } from './game/controlsTutorial.js';
 import { createTutorialHUD } from './ui/tutorialHUD.js';
 import { createActionCaptions } from './ui/actionCaptions.js';
 import { createCaineConversation } from './game/caineConversation.js';
+import { distressFromDialogue } from './effects/abstraction.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
   level2IdleDialogue, level2CompleteDialogue, level2ReturnAndSendoffDialogue, level2AbstractionDialogue,
-  level3JaxDialogue,
+  level2TimeUpDialogue, level3JaxDialogue,
   level2HallwayDialogue, level2RoomOpeningDialogue, ribbitFollowupDialogue,
 } from './data/dialogues.js';
 
@@ -69,6 +70,7 @@ const DIALOGUE_SCRIPTS = {
   level2Complete: { script: level2CompleteDialogue, room: 'kaufmo' },
   level2Return: { script: level2ReturnAndSendoffDialogue, room: 'kaufmo' },
   level2Abstraction: { script: level2AbstractionDialogue, room: 'kaufmo' },
+  level2TimeUp: { script: level2TimeUpDialogue, room: 'kaufmo' },
   level3Jax: { script: level3JaxDialogue, room: 'tadc' },
 };
 
@@ -1635,11 +1637,11 @@ document.getElementById('btn-save-slots-back').addEventListener('click', (event)
   if (savePanelFromTitle) titleOptions.hidden = false;
 });
 
-// The photo search times out before all five photos are delivered: a
-// "LEVEL 2 FAILED" card (see restartPhotoSearch) and a restart (new spots,
-// same objective, back to the Lobby) — not yet the real "abstraction"
-// fail effect, which is a later pass. Objective changes arm/disarm the
-// clock; a retry resets it explicitly because the objective stays active.
+// The photo search times out before the photos are delivered: Kaufmo runs
+// out of patience and abstracts (see kaufmoOutOfTime), and Level 2 starts
+// again from the beginning. Objective changes arm/disarm the clock; a
+// retry after too few photos resets it explicitly because the objective
+// stays active.
 // Includes delivery through Dorm Hall; see docs/story-flow.md for timing checks.
 const SEARCH_TIMER_SECONDS = 240;
 let searchTimeLeft = null; // seconds left, or null while it isn't the active objective
@@ -1659,19 +1661,79 @@ function updateSearchTimer(deltaSeconds) {
   searchTimeLeft -= deltaSeconds;
   if (searchTimeLeft <= 0) {
     searchTimeLeft = null;
-    restartPhotoSearch();
+    void kaufmoOutOfTime();
   }
 }
 
-async function restartPhotoSearch() {
+/**
+ * Time's up before Pomni is back: a cutaway to Kaufmo alone in his room
+ * (level2TimeUpDialogue), the shared abstraction effect following his
+ * distress line by line until he abstracts on the last beat. Then Game
+ * Over, and Level 2 from the beginning (restartLevel2). Escape skips to
+ * the end: he's gone either way.
+ */
+async function kaufmoOutOfTime() {
+  const session = storySessionId;
+  const room = currentRoomKey === 'kaufmo' ? currentRoomInfo : await missionApi.travel('kaufmo', { from: null });
+  if (!room?.kaufmoApi || session !== storySessionId) return;
   const token = loadToken;
-  const continued = await showLevelComplete(
-    'LEVEL 2 FAILED',
-    `Time's up — you didn't get the photos back to Kaufmo in time (he needs at least ${PHOTO_THRESHOLD}). Try again from the Lobby.`,
-    { resume: false, chime: 'fail' },
-  );
-  if (!continued || token !== loadToken) return; // the player had already moved on by the time this landed
-  await resetPhotoSearch();
+  const { kaufmoApi, talkShot: staging } = room;
+  const { kaufmo, abstraction } = kaufmoApi;
+  resetMoveState();
+  // Just him: she isn't back yet.
+  player.visible = false;
+  if (staging) {
+    kaufmo.position.x = staging.kaufmo.x;
+    kaufmo.position.z = staging.kaufmo.z;
+    kaufmo.updateMatrixWorld(true);
+    kaufmoApi.faceTowards(staging.kaufmoLooksAt);
+  }
+  stageCamera = {
+    position: staging?.camera.clone() ?? camera.position.clone(),
+    target: kaufmo.position.clone().setY(kaufmo.position.y + 1.2),
+  };
+
+  let over = false;
+  const gameOver = async () => {
+    if (over || token !== loadToken) return;
+    over = true;
+    kaufmoApi.setSpeaking(false);
+    abstraction.setProgress(1);
+    abstraction.setDistress(1, { immediate: true });
+    const retry = await showLevelComplete(
+      'Kaufmo has abstracted.',
+      'Time ran out before you got the photos back to him. Level 2 starts again from the beginning.',
+      { resume: false, chime: 'fail', buttonLabel: 'Retry Level 2' },
+    );
+    if (retry && token === loadToken) await restartLevel2();
+  };
+  const started = playRoomDialogue('level2TimeUp', {
+    distressFor: (line) => line.distress ?? 0,
+    onNode(node) {
+      // A line without a level leaves him as upset as the last one.
+      if (node.distress !== undefined) abstraction.setDistress(distressFromDialogue(node.distress));
+      const speaking = node.speaker === 'kaufmo';
+      kaufmoApi.setSpeaking(speaking);
+      kaufmoApi.setPose(speaking ? (node.mood || 'neutral') : 'neutral');
+      // Holds the beat (its text hidden) while he comes apart.
+      if (node.id === 'abstracts') return abstraction.abstract();
+    },
+    onComplete: gameOver,
+    onCancel: gameOver,
+  });
+  if (!started) void gameOver();
+}
+
+/**
+ * Level 2 from its first beat, as if Pomni had just left Ribbit's room:
+ * Kaufmo hurrying past in the Dorm Hall, then his introduction, then a
+ * fresh search with new spots and a full clock. Level 1 is kept.
+ */
+async function restartLevel2() {
+  itemState.reset();
+  if (!storyProgress.restartLevel2()) return;
+  // Arriving from Ribbit's room plays the hallway pass-by (see selectRoom).
+  await missionApi.travel('dorm', { from: 'ribbit' });
 }
 
 /** A fresh photo search: new spots, a full clock and hints, back in the Lobby. */

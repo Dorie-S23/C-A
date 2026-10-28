@@ -889,6 +889,20 @@ export const level2AbstractionDialogue = [
   { type: 'beat', distress: 3, text: 'His colours drain. He distorts and stretches while the room warps around him. The music cuts out to a single distorted tone.', next: null },
 ];
 
+// The search clock runs out before Pomni is back: a cutaway to Kaufmo alone
+// in his room, waiting, until he can't any more. The last beat (id
+// 'abstracts') is where main.js plays the abstraction effect through, then
+// Game Over and Level 2 starts again from the top (kaufmoOutOfTime).
+export const level2TimeUpDialogue = [
+  { type: 'beat', text: 'Meanwhile, in Kaufmo’s room. He’s pacing in circles, glancing at the door every few steps.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', direction: 'to himself', mood: 'worried', text: 'She’s coming back. She said she’d find them. She’s coming back.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'worried', distress: 1, text: 'How long does it take to find five pictures? I could’ve found five pictures. I could’ve found ten.' },
+  { type: 'beat', text: 'He stops at the door and listens. Nothing. Faint static creeps in at the edges of everything.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'sad', distress: 2, text: 'She’s not coming. Nobody’s coming. They all think I made it up, and now she does too.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', direction: 'faster and faster', mood: 'shocked', distress: 3, text: 'No pictures, no pattern, no door, no exit, no, no, there’s no, there’s no—' },
+  { id: 'abstracts', type: 'beat', distress: 3, text: 'His colours drain. He distorts and stretches until there’s nothing left of Kaufmo, just a dark, churning shape where he stood.', next: null },
+];
+
 // --- Level 3 intro: Jax at the tent, then Ribbit at the maze -------------
 // Played in the Lobby once Level 2 is complete (main.js finishKaufmoLevel),
 // before Pomni follows Jax into the maze.

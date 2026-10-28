@@ -3,6 +3,7 @@ import { loadRoomModel } from './loadRoomModel.js';
 import { loadKaufmoTalk } from '../characters/kaufmoTalk.js';
 import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { createDoorPortal } from './portals.js';
+import { createAbstractionEffect } from '../effects/abstraction.js';
 
 const DOOR_FRAME_NAME = 'Door_Frame';
 const DOOR_SLAB_NAME = 'Door_Slab';
@@ -71,6 +72,9 @@ export function loadKaufmoRoom(onProgress, {
     // main.js keeps a dynamic entry's box wherever he is.
     room.collisionMeshes.push({ mesh: collider, box: new THREE.Box3().setFromObject(collider), dynamic: true });
     room.talkShot = talkShot(kaufmo.position);
+    // For when the search clock runs out and he comes apart (main.js
+    // kaufmoOutOfTime). Hidden, and free, until that's driven.
+    kaufmoApi.abstraction = createAbstractionEffect(kaufmo);
 
     if (playDialogue) {
       // His collider counts as him too: main.js's line-of-sight check skips
@@ -94,6 +98,7 @@ export function loadKaufmoRoom(onProgress, {
     }
     room.update = (deltaSeconds, playerPosition) => {
       kaufmoApi.update(deltaSeconds);
+      kaufmoApi.abstraction.update(deltaSeconds);
       doorControl?.update?.(deltaSeconds, playerPosition);
     };
 
