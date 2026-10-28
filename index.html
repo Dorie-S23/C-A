@@ -192,7 +192,7 @@
                 pointer-events: none;
                 z-index: 5;
             }
-            #search-timer, #hint-key {
+            #search-timer, #maze-search-timer, #hint-key {
                 position: fixed;
                 top: calc(1em + 2.6em);
                 left: 1em;
@@ -866,6 +866,7 @@
         </aside>
         <div id="picture-counter" role="status" hidden>Photos found: 0/5 · Delivered: 0/5</div>
         <div id="maze-items-counter" role="status" aria-live="polite" aria-atomic="true" hidden>Items found: 0/2</div>
+        <div id="maze-search-timer" role="timer" aria-live="off" hidden>Time left: 3:00</div>
         <div id="search-timer" role="status" hidden>Time left: 4:00</div>
         <div id="hint-key" hidden>Press H for a hint</div>
         <div id="hint"></div>

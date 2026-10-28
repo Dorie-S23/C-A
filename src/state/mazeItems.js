@@ -24,3 +24,25 @@ export function createMazeItems({ onCollect = () => {} } = {}) {
     reset() { collected.clear(); },
   };
 }
+
+export const MAZE_SEARCH_SECONDS = 180;
+
+/** Per-attempt gameplay clock; reaching Jax is not a Level 3 completion. */
+export function createMazeSearch() {
+  let timeLeft = null;
+  let status = 'idle';
+  return {
+    get timeLeft() { return timeLeft; },
+    get status() { return status; },
+    start() { timeLeft = MAZE_SEARCH_SECONDS; status = 'searching'; },
+    clear() { timeLeft = null; status = 'idle'; },
+    tick(deltaSeconds, { playable = false, allItems = false, atJax = false } = {}) {
+      if (!playable || status !== 'searching') return null;
+      if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) throw new RangeError('Maze clock delta must be finite and nonnegative.');
+      if (allItems && atJax) { status = 'reached'; return 'reached'; }
+      timeLeft = Math.max(0, timeLeft - deltaSeconds);
+      if (timeLeft === 0) { status = 'expired'; return 'expired'; }
+      return null;
+    },
+  };
+}

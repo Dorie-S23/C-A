@@ -9,7 +9,7 @@ import path from 'node:path';
 const output = path.resolve('artifacts/maze-counter');
 await fs.mkdir(output, { recursive: true });
 const report = { pass: false, checks: [], errors: [],
-  instrumentation: 'Real rooms and pickup callbacks; emulated pointer lock; 3D drawing and shader warm-up disabled. Cutscene visibility uses a held test cutscene.' };
+  instrumentation: 'Real rooms and pickup callbacks; emulated pointer lock; 3D drawing and shader warm-up disabled. Held test cutscenes/cinematics and accelerated gameplay-clock updates exercise countdown boundaries.' };
 const browser = await chromium.launch({ channel: 'msedge', headless: true,
   args: ['--no-first-run', '--disable-background-networking', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 1000, height: 750 } });
@@ -39,8 +39,12 @@ await page.route('**/src/main.js', async route => {
       lock,
       travel: room => missionApi.travel(room),
       beginTravel(room) {
+        const statusBeforeLoading = mazeSearch.status;
+        const timeBeforeLeaving = mazeSearch.timeLeft;
         window.__mazeCounterTravel = missionApi.travel(room);
-        return this.state();
+        const timeBeforeLoading = mazeSearch.timeLeft;
+        updateMazeSearch(999);
+        return { ...this.state(), statusBeforeLoading, timeBeforeLeaving, timeBeforeLoading };
       },
       finishTravel: () => window.__mazeCounterTravel,
       pickup() {
@@ -64,6 +68,26 @@ await page.route('**/src/main.js', async route => {
         else cancelCutscene();
       },
       hold: held => stage.hold(held),
+      tick(seconds) { updateMazeSearch(0); updateMazeSearch(seconds); },
+      frame: seconds => updateMazeSearch(seconds),
+      placeAt(target) {
+        const point = target === 'spawn' ? currentRoomInfo.spawn : triggers[target].getCenter(new THREE.Vector3());
+        stage.place({ x: point.x, z: point.z });
+      },
+      triggers: () => checkTriggers(player),
+      cinematic(active) {
+        activeEntrance = active ? { active: true, phase: 'held', update() {}, dispose() {} } : null;
+      },
+      tabHidden(hidden) {
+        Object.defineProperty(document, 'hidden', { value: hidden, configurable: true });
+        document.dispatchEvent(new Event('visibilitychange'));
+      },
+      primeCheckpoint() {
+        resetObjectiveSession(true); openingCompleted = true;
+        objectives.activate('find-ribbit'); storyProgress.finishRibbit(4); storyProgress.finishKaufmoIntro();
+        takeCheckpoint(); return structuredClone(checkpoint);
+      },
+      loadCheckpoint: data => loadGame(data),
       home: () => returnToHome(),
       newGame: () => startNewGame(),
       async revisitAfterNewGame() {
@@ -75,6 +99,12 @@ await page.route('**/src/main.js', async route => {
           found: mazeItems.totalFound(), hidden: mazeItemsCounter.hidden, text: mazeItemsCounter.textContent,
           photoFound: itemState.totalFound(), pictureHidden: pictureCounter.hidden, pictureText: pictureCounter.textContent,
           remaining: interactables.filter(i => i.prompt().startsWith('Pick up ')).length,
+          timeLeft: mazeSearch.timeLeft, searchStatus: mazeSearch.status, seed: mazeAttemptSeed, foundJax,
+          timerHidden: mazeSearchTimer.hidden, timerText: mazeSearchTimer.textContent,
+          cardVisible: !levelCompletePanel.hidden, cardTitle: levelCompleteTitle.textContent,
+          token: loadToken, titleActive: titleScreen.active, escape: snapshotEscapeThreshold(),
+          position: [player.position.x, player.position.z],
+          spawn: currentRoomInfo ? [currentRoomInfo.spawn.x, currentRoomInfo.spawn.z] : null,
           hint: hint.textContent, hintVisible: hint.classList.contains('visible') };
       },
     };
@@ -97,6 +127,14 @@ const travel = async room => {
   const loading = await call('beginTravel', room);
   assert.equal(loading.ready, false);
   assert.equal(loading.hidden, true, 'The maze HUD hides immediately when loading starts');
+  assert.equal(loading.timerHidden, true);
+  assert.equal(loading.timeLeft, loading.timeBeforeLoading, 'Loading does not spend maze search time');
+  if (loading.statusBeforeLoading === 'expired') {
+    assert.equal(loading.searchStatus, 'idle', 'Leaving a failed attempt clears its expired clock');
+    assert.equal(loading.timeLeft, null);
+  } else {
+    assert.equal(loading.timeLeft, loading.timeBeforeLeaving, 'A normal detour preserves the attempt clock');
+  }
   await call('finishTravel');
   await page.waitForFunction(room => {
     const s = window.__mazeCounterReview.state();
@@ -115,6 +153,15 @@ try {
   await page.waitForFunction(() => !!window.__mazeCounterReview);
   await check('The maze counter is hidden on the title screen', hidden);
   await call('start');
+  await check('The loaded maze retains the full clock while waiting to become playable', async () => {
+    await call('tick', 999);
+    const waiting = await state();
+    assert.equal(waiting.timeLeft, 180);
+    assert.equal(waiting.searchStatus, 'searching');
+    assert.equal(waiting.timerHidden, true);
+    assert.equal(await page.locator('#maze-search-timer').getAttribute('role'), 'timer');
+    assert.equal(await page.locator('#maze-search-timer').getAttribute('aria-live'), 'off');
+  });
   await call('lock');
   await check('A playable maze shows a styled, accessible 0/2 counter', async () => {
     await visible('Items found: 0/2');
@@ -223,11 +270,186 @@ try {
     await visible('Items found: 0/2');
     assert.equal((await state()).remaining, 2);
   });
+  await check('The maze countdown begins at three minutes and advances only when playable', async () => {
+    await page.waitForFunction(() => !window.__mazeCounterReview.state().timerHidden);
+    const initial = await state();
+    assert.ok(initial.timeLeft > 175 && initial.timeLeft <= 180);
+    assert.match(initial.timerText, /^Time left: (3:00|2:5\d)$/);
+    await call('tick', 5);
+    assert.ok((await state()).timeLeft <= initial.timeLeft - 5);
+  });
+  await check('Pause, dialogue, cutscenes, cinematics, staging, menus and hidden tabs freeze the maze clock', async () => {
+    const unchanged = async () => {
+      const before = (await state()).timeLeft;
+      await call('tick', 999);
+      assert.equal((await state()).timeLeft, before);
+    };
+    await page.evaluate(() => document.exitPointerLock()); await unchanged();
+    await page.locator('#btn-resume').click();
+    await call('dialogue'); await unchanged(); await call('cancelDialogue');
+    await call('cutscene', true); await unchanged(); await call('cutscene', false);
+    await call('cinematic', true); await unchanged(); await call('cinematic', false);
+    await call('hold', true); await unchanged(); await call('hold', false);
+    await page.evaluate(() => document.getElementById('save-slots').hidden = false);
+    await unchanged();
+    await page.evaluate(() => document.getElementById('save-slots').hidden = true);
+    await call('tabHidden', true); await unchanged();
+    const resumed = await page.evaluate(() => {
+      const review = window.__mazeCounterReview;
+      const before = review.state().timeLeft;
+      review.tabHidden(false);
+      review.frame(999);
+      return { before, after: review.state().timeLeft };
+    });
+    assert.equal(resumed.after, resumed.before, 'Resuming a hidden tab must not charge suspended time');
+    await call('tick', 0);
+    assert.equal((await state()).searchStatus, 'searching');
+  });
+  await check('Room detours freeze the maze clock and seeded revisits retain the attempt', async () => {
+    await call('pickup');
+    const before = await state();
+    await travel('tadc');
+    const outside = await state();
+    await call('tick', 999);
+    assert.equal((await state()).timeLeft, outside.timeLeft);
+    assert.equal(outside.seed, before.seed);
+    await travel('maze');
+    const revisited = await state();
+    assert.equal(revisited.seed, before.seed);
+    assert.equal(revisited.found, 1);
+    assert.ok(revisited.timeLeft > before.timeLeft - 2 && revisited.timeLeft <= before.timeLeft);
+  });
+  await check('Jax without both items cannot stop the clock, and the exit cannot complete Level 3', async () => {
+    await call('placeAt', 'jax'); await call('tick', 1);
+    assert.equal((await state()).foundJax, false);
+    assert.equal((await state()).searchStatus, 'searching');
+    await call('placeAt', 'exit'); await call('triggers');
+    assert.equal((await state()).ready, true);
+    assert.equal((await state()).cardVisible, false);
+    assert.equal((await state()).searchStatus, 'searching');
+    await call('placeAt', 'spawn');
+  });
+  await check('Both items alone do not stop the clock; reaching Jax stops it without inventing a finale', async () => {
+    await call('pickup'); await call('tick', 1);
+    assert.equal((await state()).found, 2);
+    assert.equal((await state()).searchStatus, 'searching');
+    await call('placeAt', 'jax'); await call('tick', 999);
+    const reached = await state();
+    assert.equal(reached.searchStatus, 'reached');
+    assert.equal(reached.foundJax, true);
+    assert.equal(reached.cardVisible, false);
+    await call('tick', 999);
+    assert.equal((await state()).timeLeft, reached.timeLeft);
+    await call('placeAt', 'exit'); await call('triggers');
+    assert.equal((await state()).ready, true);
+    assert.equal((await state()).cardVisible, false);
+  });
+  await call('start'); await call('lock');
+  await check('Even with both items, timeout before reaching Jax shows one LEVEL 3 FAILED card', async () => {
+    await call('pickup'); await call('pickup');
+    await page.evaluate(async () => {
+      const score = await import('/src/state/escapeThreshold.js');
+      score.setLevelPoints('level1', 3); score.setLevelPoints('level2', 2);
+    });
+    await call('tick', 999);
+    const failed = await state();
+    assert.equal(failed.searchStatus, 'expired'); assert.equal(failed.timeLeft, 0);
+    assert.equal(failed.cardVisible, true); assert.equal(failed.cardTitle, 'LEVEL 3 FAILED');
+    assert.equal(await page.locator('#btn-level-complete-continue').textContent(), 'Retry');
+    await call('tick', 999); await call('tick', 999);
+    assert.equal((await state()).token, failed.token);
+    assert.deepEqual((await state()).escape, failed.escape);
+  });
+  await check('Double Retry returns to the entrance with a fresh seed, two items and a full clock', async () => {
+    const failed = await state();
+    await page.locator('#btn-level-complete-continue').evaluate(button => {
+      const random = Math.random;
+      const failedSeed = window.__mazeCounterReview.state().seed;
+      Math.random = () => failedSeed / 0x100000000;
+      button.click(); button.click();
+      queueMicrotask(() => { Math.random = random; });
+    });
+    await page.waitForFunction(() => {
+      const s = window.__mazeCounterReview.state();
+      return s.ready && s.room === 'maze' && s.searchStatus === 'searching';
+    }, null, { timeout: 120000 });
+    await call('tick', 999);
+    assert.equal((await state()).timeLeft, 180, 'Retry loading and waiting for pointer lock spend no time');
+    await call('lock');
+    const retried = await state();
+    assert.equal(retried.seed, (failed.seed + 1) >>> 0, 'A repeated random seed is replaced by a different uint32 seed');
+    assert.equal(retried.token, failed.token + 1);
+    assert.equal(retried.found, 0); assert.equal(retried.remaining, 2); assert.equal(retried.foundJax, false);
+    assert.deepEqual(retried.position, retried.spawn);
+    assert.ok(retried.timeLeft > 175 && retried.timeLeft <= 180);
+    assert.deepEqual(retried.escape, failed.escape);
+  });
+  await check('Leaving Home immediately after Retry prevents its pending continuation from reviving the run', async () => {
+    await call('tick', 999);
+    await page.locator('#btn-level-complete-continue').evaluate(button => {
+      window.__staleMazeRetry = button;
+      button.click(); window.__mazeCounterReview.home(); button.click();
+    });
+    await page.waitForTimeout(250);
+    const home = await state();
+    assert.equal(home.titleActive, true); assert.equal(home.roomLoaded, false);
+    assert.equal(home.searchStatus, 'idle'); assert.equal(home.cardVisible, false);
+    assert.equal(home.seed, null); assert.equal(home.found, 0);
+  });
+  await call('start'); await call('lock');
+  await check('Home also invalidates a Retry whose replacement room is already loading', async () => {
+    await call('tick', 999);
+    const failed = await state();
+    const loading = await page.locator('#btn-level-complete-continue').evaluate(button => new Promise(resolve => {
+      button.click();
+      queueMicrotask(() => {
+        const loading = window.__mazeCounterReview.state();
+        window.__mazeCounterReview.home();
+        resolve(loading);
+      });
+    }));
+    assert.equal(loading.ready, false);
+    assert.equal(loading.token, failed.token + 1);
+    await page.waitForTimeout(1000);
+    const home = await state();
+    assert.equal(home.titleActive, true); assert.equal(home.roomLoaded, false);
+    assert.equal(home.searchStatus, 'idle'); assert.equal(home.seed, null);
+    assert.equal(home.cardVisible, false);
+  });
+  await call('start'); await call('lock');
+  await check('Leaving a failed maze for another room invalidates the retained Retry button', async () => {
+    await call('tick', 999);
+    await page.evaluate(() => window.__staleMazeRetry = document.getElementById('btn-level-complete-continue'));
+    await travel('tadc');
+    await page.evaluate(() => window.__staleMazeRetry.click());
+    await page.waitForTimeout(250);
+    assert.equal((await state()).room, 'tadc');
+    assert.equal((await state()).searchStatus, 'idle');
+    assert.equal((await state()).cardVisible, false);
+  });
+  await call('start'); await call('lock');
+  await check('Existing checkpoint format restores a fresh maze attempt without changing saved story or scores', async () => {
+    const checkpoint = await call('primeCheckpoint');
+    assert.equal(checkpoint.room, 'maze');
+    assert.equal('mazeSearch' in checkpoint, false); assert.equal('mazeItems' in checkpoint, false);
+    await call('pickup'); await call('tick', 30);
+    await call('loadCheckpoint', checkpoint);
+    await page.waitForFunction(() => {
+      const s = window.__mazeCounterReview.state();
+      return s.ready && s.room === 'maze' && s.searchStatus === 'searching';
+    }, null, { timeout: 120000 });
+    await call('lock');
+    const restored = await state();
+    assert.equal(restored.found, 0); assert.equal(restored.remaining, 2);
+    assert.ok(restored.timeLeft > 175 && restored.timeLeft <= 180);
+    assert.deepEqual(restored.escape, checkpoint.escape);
+  });
   assert.deepEqual(report.errors, []);
   report.pass = true;
-  console.log(`${report.checks.length}/${report.checks.length} maze counter checks passed; no browser errors`);
+  console.log(`${report.checks.length}/${report.checks.length} maze counter/countdown checks passed; no browser errors`);
 } catch (error) {
-  report.failure = String(error);
+  report.failure = error.stack;
+  report.lastState = await state().catch(() => null);
   throw error;
 } finally {
   await fs.writeFile(path.join(output, 'report.json'), JSON.stringify(report, null, 2));
