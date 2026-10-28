@@ -24,28 +24,30 @@ export function createMazeEnvironment({ maze, layout, cellCenter, cellSize }) {
     chestLid: new THREE.CylinderGeometry(0.19,0.19,1.32,16,1,false,0,Math.PI),
   };
   const material = (color, extra = {}) => new THREE.MeshStandardMaterial({
-    color, roughness: 0.72, emissive: color, emissiveIntensity: 0.025, ...extra,
+    color, roughness: 0.72, emissive: color, emissiveIntensity: 0.018, ...extra,
   });
   const palette = {
-    yellow: material(0xf2ca48), red: material(0xa71939), scarlet: material(0xe43c4f), cream: material(0xffe3ac),
-    gold: material(0xeab85a, { metalness: 0.22, roughness: 0.32 }),
-    ink: material(0x27213c), purple: material(0x54245e), magenta: material(0xa02d72),
-    blue: material(0x477a94), silver: material(0xb7d5da, { metalness: 0.32, roughness: 0.32, emissiveIntensity: 0.09 }),
-    bulb: new THREE.MeshBasicMaterial({ color: 0xffe6ac }),
-    pale: new THREE.MeshBasicMaterial({ color: 0xc3dae3 }),
+    yellow: material(0x252b59), red: material(0xac244b), scarlet: material(0xce3262), cream: material(0xeae6e2),
+    gold: material(0xdaa94b, { metalness: 0.38, roughness: 0.4 }),
+    ink: material(0x17182d), purple: material(0x362053), magenta: material(0xb13d83),
+    blue: material(0x252b59), silver: material(0xa2afd2, { metalness: 0.32, roughness: 0.32, emissiveIntensity: 0.09 }),
+    bulb: new THREE.MeshBasicMaterial({ color: 0xffeddb }),
+    pale: new THREE.MeshBasicMaterial({ color: 0xb5bfea }),
     darkMirror: material(0x34425d, { metalness: 0.45, roughness: 0.19, emissiveIntensity: 0.07 }),
   };
+  // Structural borders reuse the navy material to retain the instance budget.
+  palette.trim=palette.blue;palette.blue.metalness=0.20;palette.blue.roughness=0.47;
   const textMaterials = new Map();
   function signMaterial(title, subtitle = '') {
     const key = `${title}/${subtitle}`;
     if (textMaterials.has(key)) return textMaterials.get(key);
     const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 128;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#271d38'; ctx.fillRect(0, 0, 512, 128);
-    ctx.strokeStyle = '#d9ad61'; ctx.lineWidth = 3; ctx.strokeRect(8, 8, 496, 112);
-    ctx.fillStyle = '#ffe9bf'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#17182d'; ctx.fillRect(0, 0, 512, 128);
+    ctx.strokeStyle = '#daa94b'; ctx.lineWidth = 3; ctx.strokeRect(8, 8, 496, 112);
+    ctx.fillStyle = '#eae6e2'; ctx.textAlign = 'center';
     ctx.font = 'bold 32px Georgia, serif'; ctx.fillText(title, 256, subtitle ? 57 : 76, 470);
-    if (subtitle) { ctx.font = '14px Georgia, serif'; ctx.fillStyle = '#e7b76c'; ctx.fillText(subtitle, 256, 91, 465); }
+    if (subtitle) { ctx.font = '14px Georgia, serif'; ctx.fillStyle = '#b8aed4'; ctx.fillText(subtitle, 256, 91, 465); }
     const map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
     const result = new THREE.MeshBasicMaterial({ map }); textMaterials.set(key, result); return result;
   }
@@ -104,7 +106,7 @@ export function createMazeEnvironment({ maze, layout, cellCenter, cellSize }) {
   geometry.raisedPanel=new THREE.ExtrudeGeometry(raised,{depth:0.025,bevelEnabled:true,bevelThickness:0.012,bevelSize:0.025,bevelSegments:1});
   const damask=document.createElement('canvas');damask.width=damask.height=128;
   const dc=damask.getContext('2d');dc.fillStyle='#ffffff';dc.fillRect(0,0,128,128);
-  dc.fillStyle='#cfc9bf';
+  dc.fillStyle='#b2aacb';
   for(let y=0;y<4;y++)for(let x=0;x<4;x++){
     const cx=x*32+(y%2)*16,cy=y*32;
     dc.beginPath();dc.moveTo(cx,cy-11);dc.lineTo(cx+6,cy);dc.lineTo(cx,cy+11);dc.lineTo(cx-6,cy);dc.closePath();dc.fill();
@@ -112,9 +114,10 @@ export function createMazeEnvironment({ maze, layout, cellCenter, cellSize }) {
   }
   const textileMap=new THREE.CanvasTexture(damask);textileMap.colorSpace=THREE.SRGBColorSpace;
   textileMap.wrapS=textileMap.wrapT=THREE.RepeatWrapping;textileMap.repeat.set(0.7,0.7);
-  const textileWarm=material(0x8b2944,{map:textileMap,roughness:0.93,emissiveIntensity:0.015});
-  const textileCool=material(0x2d516d,{map:textileMap,roughness:0.93,emissiveIntensity:0.015});
-  const textilePurple=material(0x462e65,{map:textileMap,roughness:0.93,emissiveIntensity:0.015});
+  const textileWarm=material(0xac244b,{map:textileMap,roughness:0.93,emissiveIntensity:0.015});
+  const textileCool=material(0x252b59,{map:textileMap,roughness:0.93,emissiveIntensity:0.015});
+  const textilePurple=material(0x76409b,{map:textileMap,roughness:0.93,emissiveIntensity:0.015});
+  const textileJax=material(0x431f66,{map:textileMap,roughness:0.90,emissiveIntensity:0.01});
   const distances = new Map(getReachableCells(maze, maze.start).map(entry => [entry.cell, entry.distance]));
   const maxDistance = Math.max(...distances.values());
   const chamber = new Set(layout.chamber);
@@ -129,20 +132,20 @@ export function createMazeEnvironment({ maze, layout, cellCenter, cellSize }) {
       const zone=distances.get(cell)/maxDistance;
       const upper=mysterious?palette.purple:variant===1?palette.yellow:palette.red;
       box(p,upper,0,1.92,0,4.26,1.83,0.012);
-      box(p,mysterious?palette.ink:palette.cream,0,0.52,0.005,4.26,0.98,0.018);
+      box(p,palette.ink,0,0.52,0.005,4.26,0.98,0.018);
       // A stepped cornice, real arch moulding and recessed textile bay.
       for(const [y,h,d] of [[0.10,0.10,0.05],[1.04,0.075,0.055],[2.78,0.07,0.065],[2.89,0.09,0.085],[2.97,0.045,0.10]])
-        box(p,y===2.89?palette.cream:palette.gold,0,y,0.018,4.28,h,d);
-      mesh(p,geometry.archInset,zone>0.66?textilePurple:zone>0.33?textileCool:textileWarm,0,1.87,0.018);
+        box(p,y===2.89?palette.blue:palette.trim,0,y,0.018,4.28,h,d);
+      mesh(p,geometry.archInset,chamber.has(cell)?textileJax:zone>0.66?textilePurple:zone>0.33?textileCool:textileWarm,0,1.87,0.018);
       mesh(p,geometry.wallArch,palette.gold,0,1.87,0.033);
       for(const x of [-2.02,2.02]){
-        box(p,palette.cream,x,1.45,0.025,0.115,2.68,0.065);
+        box(p,palette.blue,x,1.45,0.025,0.115,2.68,0.065);
         box(p,palette.gold,x,1.45,0.064,0.032,2.64,0.025);
-        mesh(p,geometry.raisedPanel,palette.gold,x,2.73,0.055,0.21,0.14,1);
+        mesh(p,geometry.raisedPanel,palette.trim,x,2.73,0.055,0.21,0.14,1);
       }
       for(const x of [-1.4,0,1.4]){
-        mesh(p,geometry.raisedPanel,palette.gold,x,0.53,0.02,1.24,0.65,1);
-        mesh(p,geometry.raisedPanel,mysterious?palette.magenta:palette.red,x,0.53,0.05,1.12,0.54,1);
+        mesh(p,geometry.raisedPanel,palette.trim,x,0.53,0.02,1.24,0.65,1);
+        mesh(p,geometry.raisedPanel,chamber.has(cell)?palette.purple:mysterious?palette.magenta:palette.red,x,0.53,0.05,1.12,0.54,1);
         box(p,palette.gold,x,0.53,0.09,0.10,0.10,0.018,Math.PI/4);
       }
       if(variant===2){
@@ -151,7 +154,7 @@ export function createMazeEnvironment({ maze, layout, cellCenter, cellSize }) {
         mesh(p,geometry.sphere,palette.darkMirror,0,1.97,0.035,0.55,0.65,0.065);
         box(p,palette.silver,-0.16,1.98,0.105,0.025,0.74,0.008,-0.22);
       }else{
-        mesh(p,geometry.disc,mysterious?palette.magenta:palette.cream,0,1.96,0.065,0.49,0.49,1);
+        mesh(p,geometry.disc,mysterious?palette.magenta:palette.blue,0,1.96,0.065,0.49,0.49,1);
         mesh(p,geometry.ring,palette.gold,0,1.96,0.08,0.50,0.50,0.50);
         star(p,0,1.96,0.10,0.33,mysterious?palette.silver:palette.gold);
         for(const x of [-1.13,1.13]){
@@ -176,15 +179,15 @@ export function createMazeEnvironment({ maze, layout, cellCenter, cellSize }) {
   for(let row=0;row<7;row++)for(let col=-8;col<8;col++){
     const a=row/7,b=(row+1)/7,y1=142+a*a*114,y2=142+b*b*114;
     const w1=5+a*36,w2=5+b*36;
-    lc.fillStyle=(row+col)%2?'#edcca1':'#38304d';lc.beginPath();
+    lc.fillStyle=(row+col)%2?'#eae6e2':'#17182d';lc.beginPath();
     lc.moveTo(256+col*w1,y1);lc.lineTo(256+(col+1)*w1,y1);lc.lineTo(256+(col+1)*w2,y2);lc.lineTo(256+col*w2,y2);lc.closePath();lc.fill();
   }
-  for (let i = 0; i < 9; i++) { lc.fillStyle = i % 2 ? '#ffd27c' : '#b8325a'; lc.fillRect(148 + i * 24, 70, 24, 103); }
+  for (let i = 0; i < 9; i++) { lc.fillStyle = i % 2 ? '#eae6e2' : '#b8325a'; lc.fillRect(148 + i * 24, 70, 24, 103); }
   lc.fillStyle = '#49244e'; lc.fillRect(222, 107, 64, 66);
-  lc.fillStyle = '#ffe8a8'; lc.beginPath(); lc.moveTo(138, 70); lc.lineTo(256, 8); lc.lineTo(374, 70); lc.closePath(); lc.fill();
-  for (const x of [35, 427]) { lc.fillStyle = '#d5b9e5'; lc.fillRect(x, 44, 48, 151); lc.fillStyle = '#f3cf7a'; lc.fillRect(x-4, 40, 56, 15); }
+  lc.fillStyle = '#daa94b'; lc.beginPath(); lc.moveTo(138, 70); lc.lineTo(256, 8); lc.lineTo(374, 70); lc.closePath(); lc.fill();
+  for (const x of [35, 427]) { lc.fillStyle = '#d5b9e5'; lc.fillRect(x, 44, 48, 151); lc.fillStyle = '#daa94b'; lc.fillRect(x-4, 40, 56, 15); }
   const lobbyMap = new THREE.CanvasTexture(lobby); lobbyMap.colorSpace = THREE.SRGBColorSpace;
-  box(entrance, new THREE.MeshBasicMaterial({ map: lobbyMap, color: 0xb8a4bd }), 0, 1.75, -0.04, 6.9, 3.4, 0.015);
+  box(entrance, new THREE.MeshBasicMaterial({ map: lobbyMap, color: 0xd9d7eb }), 0, 1.75, -0.04, 6.9, 3.4, 0.015);
   for (const x of [-3.66, 3.66]) {
     box(entrance, palette.gold, x, 1.24, 0, 0.38, 2.48, 0.19);
     for (let y = 0.2; y < 2.5; y += 0.34) box(entrance, palette.red, x, y, 0.11, 0.32, 0.16, 0.035);

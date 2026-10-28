@@ -32,13 +32,13 @@ function createCheckerTexture() {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#242034';
+  ctx.fillStyle = '#17182d';
   ctx.fillRect(0, 0, size, size);
-  ctx.fillStyle = '#f3dfb8';
+  ctx.fillStyle = '#eae6e2';
   ctx.fillRect(0, 0, size / 2, size / 2);
   ctx.fillRect(size / 2, size / 2, size / 2, size / 2);
 
-  ctx.strokeStyle = '#504250'; ctx.lineWidth = 1.4;
+  ctx.strokeStyle = '#45485f'; ctx.lineWidth = 1.4;
   for (const x of [0,size/2]) for (const y of [0,size/2]) ctx.strokeRect(x,y,size/2,size/2);
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -96,9 +96,9 @@ function buildMaze(jaxApi, mazeItems, seed, rng) {
 
   // Each visit owns its materials/textures so room disposal never invalidates
   // resources held by a later visit.
-  const wallMaterialA = new THREE.MeshStandardMaterial({ color: 0xd6323a, roughness: 0.75 });
-  const wallMaterialB = new THREE.MeshStandardMaterial({ color: 0xf4c93b, roughness: 0.75 });
-  const floorMaterial = new THREE.MeshStandardMaterial({ map: createCheckerTexture(), roughness: 0.65, metalness: 0.04, emissive: 0x322738, emissiveIntensity: 0.035 });
+  const wallMaterialA = new THREE.MeshStandardMaterial({ color: 0xac244b, roughness: 0.75 });
+  const wallMaterialB = new THREE.MeshStandardMaterial({ color: 0x252b59, roughness: 0.75 });
+  const floorMaterial = new THREE.MeshStandardMaterial({ map: createCheckerTexture(), roughness: 0.65, metalness: 0.04, emissive: 0x17182d, emissiveIntensity: 0.018 });
 
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(width, depth), floorMaterial);
   floor.rotation.x = -Math.PI / 2;

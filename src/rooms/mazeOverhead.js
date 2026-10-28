@@ -8,11 +8,11 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 export function createMazeOverhead({maze,layout,cellCenter}) {
   const root=new THREE.Group();root.name='MazeOverhead';
   const geo={box:new THREE.BoxGeometry(1,1,1),sphere:new THREE.IcosahedronGeometry(1,0),arch:new THREE.TorusGeometry(1,0.035,4,20,Math.PI)};
-  const material=(color,emissiveIntensity=0.08)=>new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity,roughness:0.85});
-  const silver=material(0xa9c4d6,0.07),magenta=material(0x9e397d,0.08);silver.metalness=0.25;silver.roughness=0.3;
-  const gold=material(0xd4a75b,0.15),red=material(0x9d2b47),cream=material(0xf4ddb2),violet=material(0x584777);
-  const bulb=new THREE.MeshBasicMaterial({color:0xffd99d});
-  const cloth=[0xb75263,0xf0d4a3,0x65527f,0xf0d4a3].map(color=>new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:0.30,roughness:0.95,side:THREE.BackSide}));
+  const material=(color,emissiveIntensity=0.035)=>new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity,roughness:0.85});
+  const silver=material(0xa2afd2,0.04),magenta=material(0xb13d83,0.04);silver.metalness=0.25;silver.roughness=0.3;
+  const gold=material(0xdaa94b,0.06),red=material(0xac244b),cream=material(0x252b59),violet=material(0x76409b);
+  const bulb=new THREE.MeshBasicMaterial({color:0xffeddb});
+  const cloth=[0x651a46,0x252b59,0x472569,0x17182d].map(color=>new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:0.10,roughness:0.95,side:THREE.BackSide}));
   const add=(g,m,p,s=[1,1,1],rz=0)=>{const mesh=new THREE.Mesh(g,m);mesh.position.fromArray(p);mesh.scale.fromArray(s);mesh.rotation.z=rz;root.add(mesh);return mesh;};
   // A tall, slotted big-top roof (8m eaves / 17m crown) fills the empty sky
   // without adding a low opaque ceiling or affecting the player's camera.
@@ -32,7 +32,7 @@ export function createMazeOverhead({maze,layout,cellCenter}) {
     const curve=new THREE.CatmullRomCurve3(points);
     add(new THREE.TubeGeometry(curve,20,0.035,5,false),gold,[0,0,0]);
   }
-  const drumMaterial=new THREE.MeshStandardMaterial({color:0x514062,emissive:0x514062,emissiveIntensity:0.3,roughness:1,side:THREE.BackSide});
+  const drumMaterial=new THREE.MeshStandardMaterial({color:0x252b59,emissive:0x252b59,emissiveIntensity:0.08,roughness:1,side:THREE.BackSide});
   const drum=add(new THREE.CylinderGeometry(44.2,44.2,5.2,64,1,true),drumMaterial,[0,5.4,0]);drum.name='DistantVelvetTentWall';
   // Real floor-plan openings determine where repeated structural ribs go.
   // Sparse two-cell rhythm avoids the look of unrelated floating ornaments.
@@ -86,7 +86,7 @@ export function createMazeOverhead({maze,layout,cellCenter}) {
   const cz=layout.chamber.reduce((n,c)=>n+cellCenter(c.r,c.c).z,0)/layout.chamber.length;
   const crown=add(new THREE.TorusGeometry(3.6,0.065,6,48),gold,[cx,6.3,cz]);crown.rotation.x=Math.PI/2;
   for(let i=0;i<16;i++){const a=i/16*Math.PI*2;add(geo.sphere,bulb,[cx+Math.cos(a)*3.6,6.28,cz+Math.sin(a)*3.6],[0.09,0.09,0.09]);}
-  const stageCloth=new THREE.MeshStandardMaterial({color:0x573260,emissive:0x573260,emissiveIntensity:0.18,roughness:0.95,side:THREE.BackSide});
+  const stageCloth=new THREE.MeshStandardMaterial({color:0x29183f,emissive:0x29183f,emissiveIntensity:0.06,roughness:0.95,side:THREE.BackSide});
   const stageCeiling=add(new THREE.CircleGeometry(3.5,48),stageCloth,[cx,6.45,cz]);stageCeiling.rotation.x=-Math.PI/2;
   const valance=new THREE.CylinderGeometry(3.6,3.6,0.45,48,1,true);
   const skirt=add(valance,violet,[cx,6.04,cz]);skirt.material.side=THREE.DoubleSide;
