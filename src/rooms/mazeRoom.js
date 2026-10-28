@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import { createMazeOverhead } from './mazeOverhead.js';
+import { createMazeLoopMarkings } from './mazeLoopMarkings.js';
+import { ownMazeShadowPass } from './mazeShadowDepth.js';
+import { createMazeShaderEffects } from './mazeShaders.js';
 import { createMazeLighting } from './mazeLighting.js';
 import { createMazeEnvironment } from './mazeEnvironment.js';
 import { generateMaze } from '../maze/generateMaze.js';
@@ -146,6 +149,7 @@ function buildMaze(jaxApi, mazeItems, seed, rng) {
 
   group.add(createMazeEnvironment({ maze, layout: environmentLayout, cellCenter, cellSize }));
   group.add(createMazeOverhead({ maze, layout: environmentLayout, cellCenter }));
+  group.add(createMazeLoopMarkings({ loops: environmentLayout.loops, cellCenter, cellSize }));
 
   group.add(createMazeLighting({ maze, layout: environmentLayout, cellCenter }));
 
@@ -181,6 +185,7 @@ function buildMaze(jaxApi, mazeItems, seed, rng) {
   jax.rotation.y = Math.atan2(jaxNeighborCenter.x - jaxCenter.x, jaxNeighborCenter.z - jaxCenter.z);
   jax.visible = true;
   group.add(jax);
+  ownMazeShadowPass(jax);
 
   const exitCenter = cellCenter(maze.exit.r, maze.exit.c);
   const exitMarker = new THREE.Mesh(
@@ -232,6 +237,11 @@ function buildMaze(jaxApi, mazeItems, seed, rng) {
     group.add(hazardMarker);
   }
 
+  const shaderEffects = createMazeShaderEffects({
+    patrolCells, cellCenter, cellSize, jaxPosition: jaxCenter,
+    backdrop: group.getObjectByName('JaxTheatreBackdrop'),
+  });
+  group.add(shaderEffects.group);
 
   // The two hidden keepsakes (see src/state/mazeItems.js) go in random
   // cells away from the start, Jax's own spot and approach, the exit, and
@@ -294,6 +304,7 @@ function buildMaze(jaxApi, mazeItems, seed, rng) {
   const FACE_RADIUS = cellSize * 1.4;
   let findableElapsed = 0;
   function update(deltaSeconds, playerPosition) {
+    shaderEffects.update(deltaSeconds, playerPosition);
     jaxApi.update(deltaSeconds);
     findableElapsed += deltaSeconds;
     pulseGlow(placedFindables, findableElapsed);
@@ -329,7 +340,7 @@ function buildMaze(jaxApi, mazeItems, seed, rng) {
   );
 
   return {
-    mazeSeed: seed, maze, mazePlacement, environmentLayout,
+    mazeSeed: seed, maze, mazePlacement, environmentLayout, shaderEffects,
     group, bounds, spawn, spawnFacing, colliders, triggers, movers, hazards, update,
     interactables: findableRoom.interactables,
   };
