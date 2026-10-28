@@ -229,3 +229,54 @@ test('100 seeded final mazes retain reachability, honour placement limits and us
   }
   assert.ok(shortcutsSeen > 0, 'loop shortcuts must actually be reflected in measured distances');
 });
+
+
+// Exercise the actual room's layout pass, independently of the legacy generator.
+test('funhouse layouts preserve circulation, pockets, hazard path and a remote Jax chamber across 100 seeds', async () => {
+  const { shapeMazeEnvironment } = await import('./src/maze/mazeEnvironmentLayout.js');
+  for (const seed of [123, 0xffffffff, ...Array.from({ length: 100 }, (_, i) => i)]) {
+    const maze = generateMaze(13, 13, makeRng(seed), 0);
+    const path = maze.path.map(cell => [cell.r, cell.c]);
+    const exit = maze.exit;
+    const layout = shapeMazeEnvironment(maze);
+    const replay = generateMaze(13, 13, makeRng(seed), 0);
+    assert.deepEqual(shapeMazeEnvironment(replay), layout, `seed ${seed}: layout metadata`);
+    assert.deepEqual(replay, maze, `seed ${seed}: walls and anchors`);
+    assert.equal(maze.start, maze.cells[0][0]);
+    assert.equal(maze.exit, exit);
+    assert.deepEqual(maze.path.map(cell => [cell.r, cell.c]), path);
+    const reached = getReachableCells(maze, maze.start);
+    assert.equal(reached.length, 169);
+    assert.ok(reached.find(entry => entry.cell === maze.jax).distance >= layout.minimumJaxDistance);
+    assert.equal(layout.entrance.length, 4);
+    assert.equal(layout.chamber.length, 4);
+    assert.ok(layout.chamber.includes(maze.jax) && layout.chamber.includes(maze.jaxNeighbor));
+    assert.equal(Math.abs(maze.jax.r - maze.jaxNeighbor.r) + Math.abs(maze.jax.c - maze.jaxNeighbor.c), 1);
+    assert.ok(layout.loops.length >= 2, `seed ${seed}: at least two intentional circuits`);
+    assert.ok(layout.alcoves.length >= 2);
+    const openBetween = (a, b) => {
+      const wall = a.r < b.r ? 'bottom' : a.r > b.r ? 'top' : a.c < b.c ? 'right' : 'left';
+      assert.equal(a.walls[wall], false);
+    };
+    for (const loop of layout.loops) {
+      assert.equal(new Set(loop).size, 8);
+      loop.forEach((cell, i) => openBetween(cell, loop[(i + 1) % loop.length]));
+    }
+    maze.path.slice(1).forEach((cell, i) => openBetween(maze.path[i], cell));
+    for (const cell of layout.alcoves) {
+      assert.equal(Object.values(cell.walls).filter(wall => !wall).length, 1);
+      assert.ok(!layout.patrolCells.includes(cell) && !layout.chamber.includes(cell) && !layout.entrance.includes(cell));
+    }
+    for (const row of maze.cells) for (const cell of row) {
+      if (cell.r === 0) assert.equal(cell.walls.top, true);
+      if (cell.c === 0) assert.equal(cell.walls.left, true);
+      if (cell.r === 12) assert.equal(cell.walls.bottom, true);
+      if (cell.c === 12) assert.equal(cell.walls.right, true);
+      if (cell.c < 12) assert.equal(cell.walls.right, maze.cells[cell.r][cell.c + 1].walls.left);
+      if (cell.r < 12) assert.equal(cell.walls.bottom, maze.cells[cell.r + 1][cell.c].walls.top);
+    }
+    for (const region of [layout.entrance, layout.chamber]) for (const cell of region) for (const other of region) {
+      if (Math.abs(cell.r - other.r) + Math.abs(cell.c - other.c) === 1) openBetween(cell, other);
+    }
+  }
+});

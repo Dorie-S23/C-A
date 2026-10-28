@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { shapeMazeEnvironment } from '../maze/mazeEnvironmentLayout.js';
 import { generateMaze } from '../maze/generateMaze.js';
 import { createSeededRandom } from '../maze/seededRandom.js';
 import { getReachableCells, selectMazeCell } from '../maze/mazePlacements.js';
@@ -72,7 +73,8 @@ export async function loadMazeRoom(onProgress, {
 
 function buildMaze(jaxApi, mazeItems, seed, rng) {
   const { cols, rows, cellSize, wallHeight, wallThickness } = MAZE;
-  const maze = generateMaze(cols, rows, rng);
+  const maze = generateMaze(cols, rows, rng, 0);
+  const environmentLayout = shapeMazeEnvironment(maze);
 
   const group = new THREE.Group();
   group.name = 'MazeRoom';
@@ -250,7 +252,7 @@ function buildMaze(jaxApi, mazeItems, seed, rng) {
   // the hazard's patrol segment — so finding them never means walking
   // into immediate danger or them sitting right where the player already
   // has to go anyway.
-  const reservedCells = [maze.start, maze.jax, maze.jaxNeighbor, maze.exit, ...patrolCells];
+  const reservedCells = [...environmentLayout.entrance, ...environmentLayout.chamber, maze.exit, ...patrolCells];
   const itemCells = [];
   // Bound to this room's final corridor graph and seeded stream. Future search
   // phases can select a safe cell from the player's current cell and get its
@@ -282,7 +284,10 @@ function buildMaze(jaxApi, mazeItems, seed, rng) {
       { id: 'hot-chocolate-mug', label: 'mug of hot chocolate', createMesh: createHotChocolateMug },
     ];
     findables.forEach(({ id, label, createMesh }) => {
-      const selected = mazePlacement.selectCell(maze.start);
+      const pocket = environmentLayout.alcoves[itemCells.length];
+      const selected = pocket
+        ? { cell: pocket, position: cellCenter(pocket.r, pocket.c) }
+        : mazePlacement.selectCell(maze.start);
       if (!selected) throw new Error(`No reachable maze cell is available for ${id}.`);
       // Reserve both item slots even when an item was already picked up, so
       // revisits keep the remaining item at the same cell for this seed.
@@ -336,7 +341,7 @@ function buildMaze(jaxApi, mazeItems, seed, rng) {
   );
 
   return {
-    mazeSeed: seed, maze, mazePlacement,
+    mazeSeed: seed, maze, mazePlacement, environmentLayout,
     group, bounds, spawn, spawnFacing, colliders, triggers, movers, hazards, update,
     interactables: findableRoom.interactables,
   };
