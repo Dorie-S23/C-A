@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "test": "node _verify_dialogue.mjs && node _verify_collision.mjs && node --test _verify_kaufmo_hallway.mjs _verify_level1.mjs _verify_level2.mjs _verify_story_flow.mjs _verify_asset_lifecycle.mjs _verify_picture_scatter.mjs _verify_maze.mjs _verify_save.mjs",
+    "test": "node _verify_dialogue.mjs && node _verify_collision.mjs && node --test _verify_kaufmo_hallway.mjs _verify_level1.mjs _verify_level2.mjs _verify_story_flow.mjs _verify_asset_lifecycle.mjs _verify_picture_scatter.mjs _verify_maze.mjs _verify_maze_shaders.mjs _verify_maze_polish.mjs _verify_save.mjs",
     "build": "vite build",
     "package": "node tools/package.mjs",
     "voices": "node tools/generateVoices.mjs",
