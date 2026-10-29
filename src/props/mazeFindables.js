@@ -43,6 +43,8 @@ export function createBowlingBall() {
 export function createHotChocolateMug() {
   const group = new THREE.Group();
   group.name = 'MazeFindable';
+  // A readable gameplay prop, still rooted at the same floor position.
+  group.scale.setScalar(2.5);
   const material = glowMaterial(0xb5462f, { roughness: 0.6 });
 
   const body = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.055, 0.1, 16), material);
@@ -103,8 +105,14 @@ export function placeMazeFindable(room, items, itemId, label, createMesh, positi
 
   const pickup = {
     objects,
+    // Reuse the existing same-floor, line-of-sight proximity focus.
+    // Looking at a 10cm floor prop should not require pixel-perfect aiming.
+    anchor: mesh,
+    radius: 2.2,
+    enabled: () => Boolean(mesh.parent) && !items.hasCollected(itemId),
     prompt: () => `Pick up ${label}`,
     interact: () => {
+      if (!mesh.parent || items.hasCollected(itemId)) return;
       mesh.removeFromParent();
       items.collect(itemId);
       const list = room.interactables;
