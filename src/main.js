@@ -229,6 +229,7 @@ const hint = document.getElementById('hint');
 const interactPrompt = document.getElementById('prompt');
 const cinematicSkip = document.getElementById('cinematic-skip');
 const levelCompletePanel = document.getElementById('level-complete-panel');
+const sceneFade = document.getElementById('scene-fade');
 const levelCompleteTitle = document.getElementById('level-complete-title');
 const levelCompleteSubtitle = document.getElementById('level-complete-subtitle');
 const btnLevelCompleteContinue = document.getElementById('btn-level-complete-continue');
@@ -657,6 +658,7 @@ function showRoomPicker() {
  * hatch below, which can fire before any room's ever been picked).
  */
 function returnToHome({ toRoomPicker = false } = {}) {
+  sceneFade.classList.remove('on');
   mazeItemsCounter.hidden = true;
   mazeSearchTimer.hidden = true;
   resetMazeAttempt();
@@ -1786,6 +1788,11 @@ function loadGame(data) {
   if (isLocked) document.exitPointerLock();
   titleScreen.hide();
   titleOptions.hidden = true;
+  // Saved after leaving the maze: straight to the ending, not back inside.
+  if (storyProgress.level3Complete) {
+    void playEnding(storyProgress.ending);
+    return;
+  }
   selectRoom(data.room, {
     from: data.from ?? undefined,
     openingMode: data.room === 'pomni' ? 'settled' : undefined,
@@ -1955,6 +1962,55 @@ async function retryMaze(title, subtitle) {
   if (room && session === storySessionId && currentRoomInfo === room && currentRoomKey === 'maze') {
     caineMemory.recordRetry('maze', memoryTicket);
   }
+}
+
+/**
+ * How Level 3 went for Jax, for the ending (see ENDING_VARIANTS in
+ * storyProgress.js). The final conversation has no losing path yet
+ * (KAN-67), so finishing it is the only way to the exit and he's saved.
+ */
+function jaxOutcome() {
+  return mazeItems.jaxComplete ? 'saved' : 'abstracted';
+}
+
+/** Fades the screen to black (true) or back (false); resolves once it's there. */
+function fadeScreen(toBlack, seconds = 1.2) {
+  sceneFade.style.transitionDuration = `${seconds}s`;
+  sceneFade.classList.toggle('on', toBlack);
+  return new Promise(resolve => setTimeout(resolve, seconds * 1000));
+}
+
+/**
+ * Level 3's exit: Pomni's controls freeze, the maze fades to black, the
+ * run records that Level 3 is done and how it went for Jax (so a save
+ * taken now resumes at the ending, not back in the maze), then the ending.
+ */
+async function leaveMaze(variant) {
+  const token = loadToken;
+  resetMoveState();
+  stage.hold(true);
+  mazeSearchTimer.hidden = true;
+  await fadeScreen(true);
+  if (token !== loadToken) return;
+  storyProgress.finishLevel3(variant);
+  takeCheckpoint();
+  await playEnding(variant);
+}
+
+// What each ending variant opens on, until the ending itself is built:
+// the scene at the maze entrance (KAN-89, KAN-95) replaces these cards.
+const ENDING_CARDS = {
+  saved: 'Pomni and Jax step out of the maze together.',
+  abstracted: 'Pomni steps out of the maze alone.',
+};
+
+/** The end of the game for `variant` ('saved' or 'abstracted'); for now a card, then the title screen. */
+async function playEnding(variant) {
+  const token = loadToken;
+  sceneFade.classList.add('on');
+  const done = await showLevelComplete('Level 3 Complete', ENDING_CARDS[variant], { resume: false, buttonLabel: 'Back to title' });
+  if (!done || token !== loadToken) return;
+  returnToHome();
 }
 
 function updateSearchTimer(deltaSeconds) {
@@ -3727,10 +3783,7 @@ function checkTriggers(player) {
     }
     foundJax=true;
     reachedExit = true;
-    endLevel(
-      'Maze Complete!',
-      foundJax ? 'You found Jax and the exit.' : 'You reached the exit — but never found Jax.',
-    );
+    void leaveMaze(jaxOutcome());
   }
 }
 

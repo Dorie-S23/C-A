@@ -175,8 +175,14 @@ actual embedded-image blob URLs after decoding, working around the r169
 GLTFLoader cleanup path. The browser regression tracks those URLs and checks
 that none remain at the end of loading.
 
-The maze remains the existing prototype. This change does not implement its
-planned memory searches, final Jax dialogue or branching ending cinematics.
+Leaving the maze (both keepsakes found, Jax's conversation finished) freezes
+Pomni, fades to black and records Level 3 as complete with its ending variant,
+`saved` or `abstracted` (`storyProgress.ending`, kept in saves). A save taken
+after that loads straight into the ending instead of the maze. `jaxOutcome()`
+in `main.js` decides the variant; until the final conversation can fail
+(KAN-67) it is always `saved`. `playEnding(variant)` is where the ending
+starts: for now a **Level 3 Complete** card, then the title screen, until the
+maze entrance scene (KAN-89, KAN-95) replaces it.
 
 Developer cutscene skipping honours awaited actions and scores each choice once.
 Returning home or changing rooms cancels a pending completion card.

@@ -93,3 +93,27 @@ test('Level 2 restarts from Kaufmo hurrying past, keeping Ribbit and her points'
   assert.equal(progress.finishKaufmoIntro(), true);
   assert.equal(objectives.active.id, 'collect-photos');
 });
+
+test('leaving the maze records Level 3 and its ending variant once, through saves and new runs', () => {
+  const { progress, preview } = fixture();
+  assert.equal(progress.level3Complete, false);
+  assert.equal(progress.ending, null);
+  assert.equal(progress.finishLevel3('escaped'), false);
+  assert.equal(progress.finishLevel3('saved'), true);
+  assert.equal(progress.level3Complete, true);
+  assert.equal(progress.finishLevel3('abstracted'), false);
+  assert.equal(progress.ending, 'saved');
+
+  const saved = JSON.parse(JSON.stringify(progress.snapshot()));
+  progress.reset();
+  assert.equal(progress.level3Complete, false);
+  progress.restore(saved);
+  assert.equal(progress.ending, 'saved');
+  progress.restore({});
+  assert.equal(progress.level3Complete, false, 'saves from before Level 3 had an ending load without one');
+  progress.restore({ ending: 'bogus' });
+  assert.equal(progress.ending, null);
+
+  preview();
+  assert.equal(progress.finishLevel3('abstracted'), false, 'the raw maze review never records story progress');
+});

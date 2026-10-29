@@ -5,6 +5,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { MAZE_SEARCH_SECONDS as FULL } from '../src/state/mazeItems.js';
 
 const output = path.resolve('artifacts/maze-counter');
 await fs.mkdir(output, { recursive: true });
@@ -107,6 +108,12 @@ await page.route('**/src/main.js*', async route => {
         takeCheckpoint(); return structuredClone(checkpoint);
       },
       loadCheckpoint: data => loadGame(data),
+      async startStory() {
+        returnToHome(); resetObjectiveSession(true); mazeItems.reset(); itemState.reset();
+        openingCompleted = true; titleScreen.hide();
+        await missionApi.travel('maze');
+      },
+      checkpoint: () => structuredClone(checkpoint),
       home: () => returnToHome(),
       newGame: () => startNewGame(),
       async revisitAfterNewGame() {
@@ -131,7 +138,9 @@ await page.route('**/src/main.js*', async route => {
           token: loadToken, titleActive: titleScreen.active, escape: snapshotEscapeThreshold(),
           position: [player.position.x, player.position.z],
           spawn: currentRoomInfo ? [currentRoomInfo.spawn.x, currentRoomInfo.spawn.z] : null,
-          hint: hint.textContent, hintVisible: hint.classList.contains('visible') };
+          hint: hint.textContent, hintVisible: hint.classList.contains('visible'),
+          fadeOn: document.getElementById('scene-fade').classList.contains('on'),
+          cardSubtitle: levelCompleteSubtitle.textContent, ending: storyProgress.ending };
       },
     };
   ` });
@@ -185,7 +194,7 @@ try {
   await check('The loaded maze retains the full clock while waiting to become playable', async () => {
     await call('tick', 999);
     const waiting = await state();
-    assert.equal(waiting.timeLeft, 180);
+    assert.equal(waiting.timeLeft, FULL);
     assert.equal(waiting.searchStatus, 'searching');
     assert.equal(waiting.timerHidden, true);
     assert.equal(await page.locator('#maze-search-timer').getAttribute('role'), 'timer');
@@ -303,11 +312,11 @@ try {
     await visible('Objects found: 0/2');
     assert.equal((await state()).remaining, 2);
   });
-  await check('The maze countdown begins at three minutes and advances only when playable', async () => {
+  await check('The maze countdown begins at its full time and advances only when playable', async () => {
     await page.waitForFunction(() => !window.__mazeCounterReview.state().timerHidden);
     const initial = await state();
-    assert.ok(initial.timeLeft > 175 && initial.timeLeft <= 180);
-    assert.match(initial.timerText, /^Time left: (3:00|2:5\d)$/);
+    assert.ok(initial.timeLeft > FULL - 5 && initial.timeLeft <= FULL);
+    assert.match(initial.timerText, new RegExp(`^Time left: (${FULL / 60}:00|${FULL / 60 - 1}:5\d)$`));
     await call('tick', 5);
     assert.ok((await state()).timeLeft <= initial.timeLeft - 5);
   });
@@ -421,14 +430,14 @@ try {
       return s.ready && s.room === 'maze' && s.searchStatus === 'searching';
     }, null, { timeout: 120000 });
     await call('tick', 999);
-    assert.equal((await state()).timeLeft, 180, 'Retry loading and waiting for pointer lock spend no time');
+    assert.equal((await state()).timeLeft, FULL, 'Retry loading and waiting for pointer lock spend no time');
     await call('lock');
     const retried = await state();
     assert.equal(retried.seed, (failed.seed + 1) >>> 0, 'A repeated random seed is replaced by a different uint32 seed');
     assert.equal(retried.token, failed.token + 1);
     assert.equal(retried.found, 0); assert.equal(retried.remaining, 2); assert.equal(retried.foundJax, false);
     assert.deepEqual(retried.position, retried.spawn);
-    assert.ok(retried.timeLeft > 175 && retried.timeLeft <= 180);
+    assert.ok(retried.timeLeft > FULL - 5 && retried.timeLeft <= FULL);
     assert.deepEqual(retried.escape, failed.escape);
   });
   await check('Leaving Home immediately after Retry prevents its pending continuation from reviving the run', async () => {
@@ -488,8 +497,51 @@ try {
     await call('lock');
     const restored = await state();
     assert.equal(restored.found, 0); assert.equal(restored.remaining, 2);
-    assert.ok(restored.timeLeft > 175 && restored.timeLeft <= 180);
+    assert.ok(restored.timeLeft > FULL - 5 && restored.timeLeft <= FULL);
     assert.deepEqual(restored.escape, checkpoint.escape);
+  });
+  await check('Leaving the maze after Jax fades out, records the ending, and a save resumes at it', async () => {
+    await call('startStory'); await call('lock');
+    await call('pickup'); await call('pickup');
+    await call('placeAt', 'jax'); await call('tick', 0);
+    await page.waitForFunction(() => window.__mazeCounterReview.state().dialogueActive);
+    for (let i = 0; i < 60 && (await state()).dialogueActive; i++) {
+      await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true, cancelable: true })));
+      await page.waitForTimeout(40);
+    }
+    assert.equal((await state()).jaxComplete, true);
+    await call('placeAt', 'exit'); await call('triggers');
+    const leaving = await state();
+    assert.equal(leaving.fadeOn, true, 'The maze starts fading to black at the exit');
+    assert.equal(leaving.cardVisible, false, 'No card until the fade has finished');
+    assert.equal(leaving.timerHidden, true);
+    await page.waitForFunction(() => window.__mazeCounterReview.state().cardVisible, null, { timeout: 5000 });
+    const ending = await state();
+    assert.equal(ending.cardTitle, 'Level 3 Complete');
+    assert.match(ending.cardSubtitle, /Pomni and Jax step out of the maze together/);
+    assert.equal(ending.ending, 'saved');
+    assert.equal(await page.locator('#btn-level-complete-continue').textContent(), 'Back to title');
+    const saved = await call('checkpoint');
+    assert.equal(saved.story.ending, 'saved', 'The checkpoint after the exit carries the ending variant');
+    await page.waitForTimeout(500); // the card's pop-in
+    assert.equal(await page.evaluate(() => {
+      const box = document.getElementById('btn-level-complete-continue').getBoundingClientRect();
+      return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.id;
+    }), 'btn-level-complete-continue', 'The card sits above the black fade');
+    await page.screenshot({ path: path.join(output, 'level3-complete.png') });
+
+    await page.locator('#btn-level-complete-continue').click();
+    const home = await state();
+    assert.equal(home.titleActive, true); assert.equal(home.roomLoaded, false);
+    assert.equal(home.fadeOn, false); assert.equal(home.ending, null);
+
+    await call('loadCheckpoint', saved);
+    const resumed = await state();
+    assert.equal(resumed.roomLoaded, false, 'A save from after the maze does not reload the maze');
+    assert.equal(resumed.cardVisible, true); assert.equal(resumed.cardTitle, 'Level 3 Complete');
+    assert.equal(resumed.ending, 'saved');
+    await page.locator('#btn-level-complete-continue').click();
+    assert.equal((await state()).titleActive, true);
   });
   assert.deepEqual(report.errors, []);
   report.pass = true;
