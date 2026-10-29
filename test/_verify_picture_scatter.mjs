@@ -1,15 +1,15 @@
 // Exercises scatterPictures()'s wall-sweep + randomization without starting
-// WebGL or loading a real room .glb. Run: node --test _verify_picture_scatter.mjs
-import './tools/testCanvas.mjs';
+// WebGL or loading a real room .glb. Run: node --test test/_verify_picture_scatter.mjs
+import '../tools/testCanvas.mjs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as THREE from 'three';
-import { scatterPictures } from './src/props/officePicture.js';
-import { createLevel2Items } from './src/state/level2Items.js';
-import { createSeededRandom } from './src/maze/seededRandom.js';
-import { nearestLandmark } from './src/rooms/lobbyLandmarks.js';
-import { decodeReachMap } from './src/rooms/reachMap.js';
-import { LOBBY_REACH } from './src/rooms/lobbyReach.js';
+import { scatterPictures } from '../src/props/officePicture.js';
+import { createLevel2Items } from '../src/state/level2Items.js';
+import { createSeededRandom } from '../src/maze/seededRandom.js';
+import { nearestLandmark } from '../src/rooms/lobbyLandmarks.js';
+import { decodeReachMap } from '../src/rooms/reachMap.js';
+import { LOBBY_REACH } from '../src/rooms/lobbyReach.js';
 
 const PICTURES = [
   { id: 'ca1', url: './models/objects/ca1.png' },

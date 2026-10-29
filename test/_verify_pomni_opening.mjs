@@ -1,19 +1,19 @@
 // Real assets and controller lifecycle; browser-only texture decoding is omitted.
-import './tools/testCanvas.mjs';
+import '../tools/testCanvas.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { computeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
-import { loadPomniRoom } from './src/rooms/pomniRoom.js';
-import { OPENING_HANDOFF, sampleOpeningShot, OPENING_SLEEP_SECONDS, OPENING_WAKE_SECONDS, OPENING_PLAYBACK_SECONDS, openingClipTime } from './src/cinematics/pomniOpening.js';
-import { KNOCK_TIMES, makeOpeningBuffers } from './src/cinematics/openingAudio.js';
-import { POMNI_INVITATION } from './src/cinematics/pomniInvitation.js';
+import { loadPomniRoom } from '../src/rooms/pomniRoom.js';
+import { OPENING_HANDOFF, sampleOpeningShot, OPENING_SLEEP_SECONDS, OPENING_WAKE_SECONDS, OPENING_PLAYBACK_SECONDS, openingClipTime } from '../src/cinematics/pomniOpening.js';
+import { KNOCK_TIMES, makeOpeningBuffers } from '../src/cinematics/openingAudio.js';
+import { POMNI_INVITATION } from '../src/cinematics/pomniInvitation.js';
 globalThis.ProgressEvent ??= class {};
 GLTFLoader.prototype.load = function (url, onLoad, onProgress, onError) {
   try {
-    const file = new URL(url.replace(/^\.\//, ''), new URL('./public/', import.meta.url));
+    const file = new URL(url.replace(/^\.\//, ''), new URL('../public/', import.meta.url));
     const bytes = fs.readFileSync(file), length = bytes.readUInt32LE(12);
     const data = JSON.parse(bytes.subarray(20,20+length));
     data.buffers[0].uri = `data:application/octet-stream;base64,${bytes.subarray(length+28).toString('base64')}`;
@@ -133,7 +133,7 @@ check('Temporary audio buffers are finite, quiet, and have exactly three knock t
  assert.deepEqual(KNOCK_TIMES,[5,5.22,5.44]);assert.equal(POMNI_INVITATION[0].text,'Come in.');assert.equal(POMNI_INVITATION[0].speaker,'pomni');
 });
 check('Runtime GLB is the verified export; original game assets are unchanged',()=>{
- const manifest=JSON.parse(fs.readFileSync(new URL('./tools/fixtures/pomni-opening-assets.json',import.meta.url)));
+ const manifest=JSON.parse(fs.readFileSync(new URL('../tools/fixtures/pomni-opening-assets.json',import.meta.url)));
  assert.equal(hash(fs.readFileSync('public/models/cinematics/pomni-sleep-wake-r5.glb')),manifest.asset_sha256);
  for(const [name,digest] of Object.entries(manifest.protected_source_hashes))assert.equal(hash(fs.readFileSync(name)),digest,name);
 });

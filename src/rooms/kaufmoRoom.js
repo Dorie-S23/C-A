@@ -29,7 +29,14 @@ const TALK_POMNI_LOOK_HEIGHT = 1.75;
 // parts have generic export names (Plane, Cylinder), so they're matched by
 // name and by where they stand.
 const ROCKING_HORSE_PARTS = new Set(['Cylinder', 'Plane', 'Plane007', 'Plane009', 'Plane011', 'Plane014', 'Vert001']);
-const ROCKING_HORSE_AREA = new THREE.Box3(new THREE.Vector3(-1.5, -0.5, -3.6), new THREE.Vector3(0.9, 2.5, -1.6));  // aimed at about their chests, between them
+const ROCKING_HORSE_AREA = new THREE.Box3(new THREE.Vector3(-1.5, -0.5, -3.6), new THREE.Vector3(0.9, 2.5, -1.6));
+
+// The walls' bottom strip, a skirting band in the export, measured up from
+// the wall mesh's own bottom (local units; the walls aren't scaled).
+const SKIRTING_HEIGHT = 0.48;
+// The yellow spiky crown on the bookshelf, exported sunk into its board.
+const SHELF_CROWN = 'TwistedTorus';
+const BOOKSHELF = 'Plane012';
 
 /**
  * Loads Kaufmo's Room, exported from "Kaufmos Room V4.blend" via
@@ -43,9 +50,13 @@ export function loadKaufmoRoom(onProgress, {
   return Promise.all([
     loadRoomModel('./models/character%20rooms/kaufmos-room.glb', onProgress),
     loadKaufmoTalk(),
-  ]).then(([room, kaufmoApi]) => {
+    loadWallArt(),
+  ]).then(([room, kaufmoApi, wallArt]) => {
     const { kaufmo, collider } = kaufmoApi;
     fixExportedMaterials(room.group);
+    paintGraffiti(room.group, wallArt);
+    woodenSkirting(room.group);
+    seatOnShelf(room, SHELF_CROWN, BOOKSHELF);
     removeRockingHorse(room);
     // Kaufmo always stands relative to the room's own default spawn, even
     // when `from` below moves the player's actual spawn to the doorway.
@@ -104,6 +115,80 @@ export function loadKaufmoRoom(onProgress, {
 
     return room;
   });
+}
+
+/**
+ * The walls' bottom strip (SKIRTING_HEIGHT) is UV-mapped to the last rows
+ * of the wall pattern over again, so under the painted graffiti it showed
+ * a squashed second copy of the drawings. It's given the room's own dark
+ * wood instead, as a skirting board: its triangles move to an extra
+ * material group on each wall mesh (the mesh and its collision unchanged).
+ */
+function woodenSkirting(group) {
+  let wood = null;
+  group.traverse((mesh) => {
+    if (mesh.isMesh && !Array.isArray(mesh.material) && mesh.material.name === 'Dark Wood (Shiny)') wood ??= mesh.material;
+  });
+  if (!wood) return;
+  const skirting = wood.clone();
+  skirting.name = 'Kaufmo Skirting';
+
+  const walls = [];
+  group.traverse((mesh) => {
+    if (mesh.isMesh && mesh.geometry.index
+      && [mesh.material].flat().some((material) => material.name?.startsWith('Kaufmo Walls'))) walls.push(mesh);
+  });
+  for (const mesh of walls) {
+    const { geometry } = mesh;
+    const materials = [mesh.material].flat();
+    const index = geometry.index;
+    const position = geometry.attributes.position;
+    geometry.computeBoundingBox();
+    const top = geometry.boundingBox.min.y + SKIRTING_HEIGHT + 1e-3;
+    const groups = geometry.groups.length ? geometry.groups : [{ start: 0, count: index.count, materialIndex: 0 }];
+    const kept = [];
+    const skirt = [];
+    const newGroups = [];
+    for (const { start, count, materialIndex } of groups) {
+      const from = kept.length;
+      for (let t = start; t < start + count; t += 3) {
+        const ids = [index.getX(t), index.getX(t + 1), index.getX(t + 2)];
+        (ids.every((id) => position.getY(id) <= top) ? skirt : kept).push(...ids);
+      }
+      newGroups.push({ start: from, count: kept.length - from, materialIndex });
+    }
+    if (!skirt.length) continue;
+    geometry.setIndex([...kept, ...skirt]);
+    geometry.clearGroups();
+    for (const { start, count, materialIndex } of newGroups) if (count) geometry.addGroup(start, count, materialIndex);
+    geometry.addGroup(kept.length, skirt.length, materials.length);
+    mesh.material = [...materials, skirting];
+  }
+}
+
+/**
+ * Lifts a prop so it stands on the shelf board under it rather than
+ * through it: the first surface of `shelfName` straight down from the
+ * prop's top is the board it belongs on.
+ */
+function seatOnShelf(room, objectName, shelfName) {
+  const object = room.group.getObjectByName(objectName);
+  const shelf = room.group.getObjectByName(shelfName);
+  if (!object?.isMesh || !shelf) return;
+  room.group.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(object);
+  const centre = box.getCenter(new THREE.Vector3());
+  const raycaster = new THREE.Raycaster(new THREE.Vector3(centre.x, box.max.y, centre.z), new THREE.Vector3(0, -1, 0));
+  raycaster.far = box.max.y - box.min.y + 0.5;
+  const board = raycaster.intersectObject(shelf, false)[0];
+  const lift = board ? board.point.y - box.min.y : 0;
+  if (lift <= 0) return;
+  const world = object.getWorldPosition(new THREE.Vector3());
+  world.y += lift;
+  object.position.copy(object.parent.worldToLocal(world));
+  object.updateMatrixWorld(true);
+  const entry = room.collisionMeshes?.find(({ mesh }) => mesh === object);
+  if (entry) entry.box.setFromObject(object);
 }
 
 function removeRockingHorse(room) {
@@ -181,4 +266,209 @@ function fixExportedMaterials(group) {
       }
     }
   });
+}
+
+// --- Kaufmo's graffiti -------------------------------------------------
+// In the .blend his walls layer a diamond pattern with his own drawings:
+// "EXIT" scrawled everywhere, "NO WAY OUT", and a doodle of Caine and Jax.
+// The glTF export can't carry those layers (see fix_kaufmo_walls in the
+// export script), so they're put back here: all of it on the wall he's
+// been working on (the "Drawings" one), the EXITs thinning out along the
+// two walls either side as they run away from it, and only a trace on the
+// wall facing it.
+//
+// The export's wall UVs can't take a picture (each wall maps most of its
+// height onto one stretched triangle of the image), so the graffiti goes on
+// separate transparent panels flat against each wall, with their own UVs.
+const WALL_ART_DIR = './models/character%20rooms/kaufmo-walls/';
+const WALL_ART = { exit: 'exit.png', noWayOut: 'no-way-out.png', drawing: 'drawing.png' };
+// EXIT across the side walls: opacity at the end touching the Drawings
+// wall, and at the far end. The far wall: one faint, even layer.
+const SIDE_EXIT_NEAR = 0.95;
+// Shape of the fade (1 = even all the way along, higher = drops off sooner).
+const SIDE_EXIT_CURVE = 0.8;
+const SIDE_EXIT_FAR = 0.3;
+const FAR_WALL_EXIT = 0.25;
+const PANEL_GAP = 0.012; // metres off the wall, so a panel never flickers into it
+// How much of each wall's height the panels cover, in metres from the floor.
+const PANEL_BOTTOM = 0.55;
+const PANEL_TOP = 6.9;
+// On the Drawings wall: NO WAY OUT and the doodle, in fractions of the wall
+// (seen from inside, left to right): centre x, centre y, height.
+const NO_WAY_OUT_AT = { x: 0.33, y: 0.3, height: 0.7 };
+const DRAWING_AT = { x: 0.72, y: 0.45, height: 0.8 };
+
+function loadWallArt() {
+  const loader = new THREE.TextureLoader();
+  const entries = Object.entries(WALL_ART).map(([key, file]) =>
+    loader.loadAsync(WALL_ART_DIR + file).then((loaded) => {
+      const texture = key === 'noWayOut' ? withQuestionMark(loaded) : loaded;
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = 8;
+      return [key, texture];
+    }, () => [key, null]));
+  return Promise.all(entries).then(Object.fromEntries);
+}
+
+// "NO WAY OUT" becomes "NO WAY OUT?": a question mark is drawn on after
+// OUT, in the letters' own red, as a fat marker stroke. Where it goes, in
+// fractions of the image: left edge, top, height (about OUT's height).
+const QUESTION_MARK_AT = { x: 0.605, y: 0.6, height: 0.27 };
+
+function withQuestionMark(texture) {
+  const image = texture.image;
+  const canvas = document.createElement('canvas');
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(image, 0, 0);
+
+  // The letters' colour: the average of the strongly red, solid pixels.
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  let r = 0, g = 0, b = 0, n = 0;
+  for (let i = 0; i < data.length; i += 4 * 7) {
+    if (data[i + 3] > 220 && data[i] > 150 && data[i + 1] < 90) { r += data[i]; g += data[i + 1]; b += data[i + 2]; n++; }
+  }
+  const colour = n ? `rgb(${Math.round(r / n)}, ${Math.round(g / n)}, ${Math.round(b / n)})` : '#e8161c';
+
+  const h = QUESTION_MARK_AT.height * canvas.height;
+  const x = QUESTION_MARK_AT.x * canvas.width;
+  const y = QUESTION_MARK_AT.y * canvas.height;
+  const w = h * 0.55;
+  ctx.strokeStyle = colour;
+  ctx.fillStyle = colour;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = h * 0.15;
+  // Two slightly offset passes, like a marker gone over twice.
+  for (const [dx, dy] of [[0, 0], [h * 0.012, -h * 0.01]]) {
+    ctx.beginPath();
+    ctx.moveTo(x + dx + w * 0.05, y + dy + h * 0.24);
+    ctx.bezierCurveTo(x + dx + w * 0.1, y + dy - h * 0.02, x + dx + w * 1.0, y + dy - h * 0.04, x + dx + w * 0.95, y + dy + h * 0.25);
+    ctx.bezierCurveTo(x + dx + w * 0.9, y + dy + h * 0.45, x + dx + w * 0.45, y + dy + h * 0.45, x + dx + w * 0.48, y + dy + h * 0.68);
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.ellipse(x + w * 0.5, y + h * 0.92, h * 0.1, h * 0.09, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  const result = new THREE.CanvasTexture(canvas);
+  texture.dispose();
+  return result;
+}
+
+/**
+ * Hangs the graffiti panels on Kaufmo's walls. Where each wall is comes
+ * from the wall meshes themselves: the "Drawings" wall is the one with
+ * that material, the far wall faces it, the other two are its sides.
+ */
+function paintGraffiti(group, art) {
+  if (!art.exit) return; // the art didn't load: plain walls, as exported
+  group.updateMatrixWorld(true);
+  const room = new THREE.Box3();
+  let drawings = null;
+  group.traverse((mesh) => {
+    if (!mesh.isMesh) return;
+    for (const material of [mesh.material].flat()) {
+      if (material.name === 'Kaufmo Walls') room.expandByObject(mesh);
+      if (material.name === 'Kaufmo Walls - Drawings') drawings = mesh;
+    }
+  });
+  if (room.isEmpty() || !drawings) return;
+  const centre = room.getCenter(new THREE.Vector3());
+  // The Drawings wall's outward direction, snapped to x or z.
+  const toward = new THREE.Box3().setFromObject(drawings).getCenter(new THREE.Vector3()).sub(centre);
+  const out = Math.abs(toward.x) > Math.abs(toward.z)
+    ? new THREE.Vector3(Math.sign(toward.x), 0, 0) : new THREE.Vector3(0, 0, Math.sign(toward.z));
+  const across = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), out);
+
+  const panels = new THREE.Group();
+  panels.name = 'KaufmoGraffiti';
+  const main = wallPanelFrame(room, out);
+  const far = wallPanelFrame(room, out.clone().negate());
+
+  panels.add(exitPanel(main, art.exit, () => 1));
+  panels.add(exitPanel(far, art.exit, () => FAR_WALL_EXIT));
+  for (const side of [wallPanelFrame(room, across), wallPanelFrame(room, across.clone().negate())]) {
+    // Which end of this side wall (as seen from inside) touches the Drawings wall.
+    const nearIsRight = side.right.dot(out) > 0;
+    panels.add(exitPanel(side, art.exit, (u) => {
+      const t = nearIsRight ? u : 1 - u;
+      return SIDE_EXIT_FAR + (SIDE_EXIT_NEAR - SIDE_EXIT_FAR) * t ** SIDE_EXIT_CURVE;
+    }));
+  }
+  if (art.noWayOut) panels.add(decalPanel(main, art.noWayOut, NO_WAY_OUT_AT, 2));
+  if (art.drawing) panels.add(decalPanel(main, art.drawing, DRAWING_AT, 3));
+  group.add(panels);
+}
+
+/**
+ * One wall's panel area, from inside the room: its centre (just off the
+ * wall), which way is right, which way faces into the room, and its size.
+ */
+function wallPanelFrame(room, outward) {
+  const centre = room.getCenter(new THREE.Vector3());
+  const size = room.getSize(new THREE.Vector3());
+  const runsAlongX = outward.x === 0;
+  const width = runsAlongX ? size.x : size.z;
+  const depth = runsAlongX ? size.z : size.x;
+  const position = centre.clone().addScaledVector(outward, depth / 2 - PANEL_GAP);
+  position.y = room.min.y + (PANEL_BOTTOM + PANEL_TOP) / 2;
+  const inward = outward.clone().negate();
+  // Facing the wall from inside, right is up × (towards the viewer)... i.e. inward × up.
+  const right = new THREE.Vector3().crossVectors(inward, new THREE.Vector3(0, 1, 0)).negate();
+  return { position, inward, right, width, height: PANEL_TOP - PANEL_BOTTOM };
+}
+
+/** A flat panel on a wall, facing into the room, carrying `material`. */
+function panelMesh(frame, width, height, material, offset = new THREE.Vector2()) {
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), material);
+  mesh.position.copy(frame.position).addScaledVector(frame.right, offset.x);
+  mesh.position.y += offset.y;
+  mesh.lookAt(mesh.position.clone().add(frame.inward));
+  mesh.name = 'KaufmoGraffitiPanel';
+  mesh.receiveShadow = true;
+  mesh.raycast = () => {}; // never blocks a click, a look or a walk
+  return mesh;
+}
+
+/** The EXIT scrawl across a whole wall, its opacity `fade(u)` across it (u 0 = left). */
+function exitPanel(frame, texture, fade) {
+  const alpha = document.createElement('canvas');
+  alpha.width = 256;
+  alpha.height = 4;
+  const ctx = alpha.getContext('2d');
+  const gradient = ctx.createLinearGradient(0, 0, 256, 0);
+  for (let i = 0; i <= 8; i++) {
+    const level = Math.round(Math.min(1, Math.max(0, fade(i / 8))) * 255);
+    gradient.addColorStop(i / 8, `rgb(${level}, ${level}, ${level})`);
+  }
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 256, 4);
+  // Scaled to the wall's height, keeping the scrawl's proportions: a wall
+  // narrower than the image shows a stretch of it, a wider one repeats it.
+  const map = texture.clone();
+  map.wrapS = THREE.RepeatWrapping;
+  const imageAspect = texture.image.width / texture.image.height;
+  map.repeat.set(frame.width / (frame.height * imageAspect), 1);
+  map.needsUpdate = true;
+  const material = new THREE.MeshStandardMaterial({
+    map, alphaMap: new THREE.CanvasTexture(alpha), transparent: true, depthWrite: false,
+    roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1,
+  });
+  return panelMesh(frame, frame.width, frame.height, material);
+}
+
+/** A single picture (NO WAY OUT, the doodle) placed on a wall. */
+function decalPanel(frame, texture, at, order) {
+  const height = at.height * frame.height;
+  const width = height * (texture.image.width / texture.image.height);
+  const material = new THREE.MeshStandardMaterial({
+    map: texture, transparent: true, depthWrite: false, roughness: 0.9,
+    polygonOffset: true, polygonOffsetFactor: -1 - order,
+  });
+  const offset = new THREE.Vector2((at.x - 0.5) * frame.width, (0.5 - at.y) * frame.height);
+  const mesh = panelMesh(frame, width, height, material, offset);
+  mesh.renderOrder = order;
+  return mesh;
 }

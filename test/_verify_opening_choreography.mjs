@@ -1,19 +1,19 @@
-import './tools/testCanvas.mjs';
+import '../tools/testCanvas.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { loadPomniRoom } from './src/rooms/pomniRoom.js';
-import { createRagathaEntrance } from './src/cinematics/ragathaEntrance.js';
-import { OPENING_SEATED_TIME, OPENING_WAKE_SECONDS } from './src/cinematics/pomniOpening.js';
-import { POMNI_SEATED_DIALOGUE } from './src/cinematics/pomniInvitation.js';
-import { preLevel1Dialogue } from './src/data/dialogues.js';
-import { createDialogueEngine } from './src/dialogue/dialogueEngine.js';
+import { loadPomniRoom } from '../src/rooms/pomniRoom.js';
+import { createRagathaEntrance } from '../src/cinematics/ragathaEntrance.js';
+import { OPENING_SEATED_TIME, OPENING_WAKE_SECONDS } from '../src/cinematics/pomniOpening.js';
+import { POMNI_SEATED_DIALOGUE } from '../src/cinematics/pomniInvitation.js';
+import { preLevel1Dialogue } from '../src/data/dialogues.js';
+import { createDialogueEngine } from '../src/dialogue/dialogueEngine.js';
 
 globalThis.ProgressEvent ??= class {};
 GLTFLoader.prototype.load = function(url,onLoad,_progress,onError) {
  try {
-  const bytes=fs.readFileSync(new URL(url.replace(/^\.\//,''),new URL('./public/',import.meta.url)));
+  const bytes=fs.readFileSync(new URL(url.replace(/^\.\//,''),new URL('../public/',import.meta.url)));
   const size=bytes.readUInt32LE(12),json=JSON.parse(bytes.subarray(20,20+size));
   json.buffers[0].uri='data:application/octet-stream;base64,'+bytes.subarray(size+28).toString('base64');
   delete json.images;delete json.textures;json.materials=json.materials.map(({name,doubleSided})=>({name,doubleSided}));

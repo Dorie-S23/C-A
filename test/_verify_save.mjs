@@ -1,15 +1,15 @@
 // Save/load: every piece of story state a checkpoint holds survives a
 // round trip through JSON and a save slot, without WebGL or rooms.
-// Run: node --test _verify_save.mjs
+// Run: node --test test/_verify_save.mjs
 import assert from 'node:assert/strict';
 import { beforeEach, test } from 'node:test';
-import { createObjectiveController } from './src/game/objectives.js';
-import { createStoryProgress } from './src/game/storyProgress.js';
-import { createLevel2Items } from './src/state/level2Items.js';
+import { createObjectiveController } from '../src/game/objectives.js';
+import { createStoryProgress } from '../src/game/storyProgress.js';
+import { createLevel2Items } from '../src/state/level2Items.js';
 import {
   getLevelPoints, resetEscapeThreshold, restoreEscapeThreshold, setLevelPoints, snapshotEscapeThreshold,
-} from './src/state/escapeThreshold.js';
-import { createSaveSlots, SAVE_VERSION, SLOT_COUNT } from './src/game/saveGame.js';
+} from '../src/state/escapeThreshold.js';
+import { createSaveSlots, SAVE_VERSION, SLOT_COUNT } from '../src/game/saveGame.js';
 
 function memoryStorage() {
   const data = new Map();

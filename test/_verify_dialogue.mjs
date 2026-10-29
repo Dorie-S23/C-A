@@ -1,19 +1,19 @@
 // Node verification harness for the dialogue engine's branching logic.
-// Run with `node _verify_dialogue.mjs`.
-import { createDialogueEngine } from './src/dialogue/dialogueEngine.js';
-import { createLevel1Attempt } from './src/state/level1Attempt.js';
-import { createChoiceTally } from './src/dialogue/choiceTally.js';
+// Run with `node test/_verify_dialogue.mjs`.
+import { createDialogueEngine } from '../src/dialogue/dialogueEngine.js';
+import { createLevel1Attempt } from '../src/state/level1Attempt.js';
+import { createChoiceTally } from '../src/dialogue/choiceTally.js';
 import {
   ESCAPE_MAX, ESCAPE_PASS_MARK, LEVEL_MAX_POINTS, getEscapeTotal, getLevelPoints,
   passesEscapeGate, resetEscapeThreshold, setLevelPoints,
-} from './src/state/escapeThreshold.js';
+} from '../src/state/escapeThreshold.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
   level2HallwayDialogue, ribbitFollowupDialogue,
   level2IdleDialogue, level2CompleteDialogue, level2ReturnDialogue, level2SendoffDialogue,
   level2ReturnAndSendoffDialogue, level2AbstractionDialogue, level3JaxDialogue,
-} from './src/data/dialogues.js';
-import { SPRITES, MOODS } from './src/ui/portraitSprites.js';
+} from '../src/data/dialogues.js';
+import { SPRITES, MOODS } from '../src/ui/portraitSprites.js';
 
 let failures = 0;
 function check(label, ok, detail = '') {

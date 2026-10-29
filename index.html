@@ -70,6 +70,59 @@
                 to { transform: translate(var(--drift-x, 8%), var(--drift-y, 8%)); }
             }
 
+            #loading-parade {
+                position: absolute;
+                inset-inline: 0;
+                bottom: 0;
+                height: var(--sprite-height);
+                box-sizing: border-box;
+                display: none;
+                align-items: flex-end;
+                justify-content: space-evenly;
+                gap: clamp(0.25rem, 2vw, 1.5rem);
+                padding-inline: 1.5vw;
+                overflow: hidden;
+                pointer-events: none;
+                z-index: 1;
+            }
+            #overlay.loading #loading-parade { display: flex; }
+            #loading-parade.around-screen {
+                position: absolute;
+                inset: 0;
+                height: auto;
+            }
+            #loading-parade.around-screen .loading-sprite {
+                position: absolute;
+                animation-name: loading-sprite-hop-around;
+            }
+            #loading-parade.around-screen .loading-sprite:nth-child(1) { top: 11%; left: 50%; }
+            #loading-parade.around-screen .loading-sprite:nth-child(2) { top: 26%; left: 82%; }
+            #loading-parade.around-screen .loading-sprite:nth-child(3) { top: 59%; left: 90%; }
+            #loading-parade.around-screen .loading-sprite:nth-child(4) { top: 85%; left: 68%; }
+            #loading-parade.around-screen .loading-sprite:nth-child(5) { top: 85%; left: 32%; }
+            #loading-parade.around-screen .loading-sprite:nth-child(6) { top: 59%; left: 10%; }
+            #loading-parade.around-screen .loading-sprite:nth-child(7) { top: 26%; left: 18%; }
+            .loading-sprite {
+                display: block;
+                flex: 0 1 auto;
+                height: var(--sprite-height);
+                max-width: 16vw;
+                background-repeat: no-repeat;
+                animation: loading-sprite-hop 0.8s ease-in-out infinite;
+                filter: saturate(1.28) contrast(1.08) drop-shadow(0 2px 5px rgba(18, 10, 28, 0.5));
+                will-change: transform;
+            }
+            .loading-sprite:nth-child(2n) { animation-delay: -0.27s; }
+            .loading-sprite:nth-child(3n) { animation-delay: -0.53s; }
+            @keyframes loading-sprite-hop {
+                0%, 100% { transform: translateY(0); }
+                50% { transform: translateY(-4px); }
+            }
+            @keyframes loading-sprite-hop-around {
+                0%, 100% { transform: translate(-50%, -50%); }
+                50% { transform: translate(-50%, calc(-50% - 4px)); }
+            }
+
             #room-picker {
                 display: flex;
                 gap: 1em;

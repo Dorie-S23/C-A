@@ -1,19 +1,19 @@
-import './tools/testCanvas.mjs';
+import '../tools/testCanvas.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { computeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
-import { createDormHallPreview, loadDormHallPreview, DORM_PREVIEW_POSITION } from './src/rooms/dormHallPreview.js';
-import { loadPomniRoom } from './src/rooms/pomniRoom.js';
-import { loadRagatha } from './src/characters/ragatha.js';
-import { createRagathaEntrance } from './src/cinematics/ragathaEntrance.js';
+import { createDormHallPreview, loadDormHallPreview, DORM_PREVIEW_POSITION } from '../src/rooms/dormHallPreview.js';
+import { loadPomniRoom } from '../src/rooms/pomniRoom.js';
+import { loadRagatha } from '../src/characters/ragatha.js';
+import { createRagathaEntrance } from '../src/cinematics/ragathaEntrance.js';
 
 globalThis.ProgressEvent??=class{};
 THREE.Mesh.prototype.raycast=acceleratedRaycast;
 GLTFLoader.prototype.load=function(url,onLoad,_progress,onError){
  try{
-  const bytes=fs.readFileSync(new URL(url.replace(/^\.\//,''),new URL('./public/',import.meta.url)));
+  const bytes=fs.readFileSync(new URL(url.replace(/^\.\//,''),new URL('../public/',import.meta.url)));
   const n=bytes.readUInt32LE(12),j=JSON.parse(bytes.subarray(20,20+n));
   j.buffers[0].uri='data:application/octet-stream;base64,'+bytes.subarray(n+28).toString('base64');
   delete j.images;delete j.textures;j.materials=j.materials.map(({name,doubleSided})=>({name,doubleSided}));

@@ -10,8 +10,8 @@
 const DIR = './models/game%20screens/sprites/';
 
 const CAST = [
-  // Swinging left spans three near-identical frames (7, 0, 1, back to back
-  // across the loop) but right only one (4), so hold 4 as long.
+  // Hold the speaking-arm pose for a few extra beats so Caine's short sheet
+  // doesn't snap through the gesture while the rest of the cast is running.
   { sheet: 'caine.png', columns: 3, rows: 3, frames: 8, sequence: [0, 1, 2, 3, 4, 4, 4, 5, 6, 7] },
   { sheet: 'pomni.png', columns: 5, rows: 4, frames: 17 },
   // Frame 1 is drawn smaller and lower than the rest: a dip that read as a
@@ -23,22 +23,26 @@ const CAST = [
   { sheet: 'kinger.png', columns: 4, rows: 3, frames: 11 },
 ];
 
-const FPS = 8;
+const FPS = 12;
 const HEIGHT = 'min(20vh, 170px)'; // every character drawn this tall
 
 /** Adds the parade to the overlay and runs it while the overlay is loading. */
 export function createLoadingSprites(overlay) {
   const parade = document.createElement('div');
   parade.id = 'loading-parade';
+  parade.classList.add('around-screen');
   parade.setAttribute('aria-hidden', 'true');
   overlay.append(parade);
 
-  const actors = CAST.map((entry) => {
+  const actors = CAST.map((entry, index) => {
     const el = document.createElement('div');
     el.className = 'loading-sprite';
     parade.append(el);
     const sequence = entry.sequence ?? Array.from({ length: entry.frames }, (_, i) => i);
-    const actor = { ...entry, el, sequence, step: 0, frame: sequence[0] };
+    // Start each runner on a different part of its cycle so the whole row
+    // doesn't march in sync.
+    const step = (index * 2) % sequence.length;
+    const actor = { ...entry, el, sequence, step, frame: sequence[step] };
     // Sized from the sheet itself, once it's loaded: each frame keeps its
     // own proportions at the shared height.
     const image = new Image();

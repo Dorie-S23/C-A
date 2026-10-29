@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LoadingManager } from 'three';
-import { installGltfBlobCleanup, releaseTextures } from './src/rooms/assetLifecycle.js';
+import { installGltfBlobCleanup, releaseTextures } from '../src/rooms/assetLifecycle.js';
 
 test('decoded embedded images revoke their resolved blob URL while preserving load progress', () => {
   const progress = [], revoked = [];

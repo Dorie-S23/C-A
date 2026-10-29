@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as THREE from 'three';
-import { runLevel1 } from './src/levels/level1.js';
-import { createLevel1Attempt } from './src/state/level1Attempt.js';
-import { level1RibbitDialogue } from './src/data/dialogues.js';
-import { getLevelPoints, setLevelPoints, resetEscapeThreshold } from './src/state/escapeThreshold.js';
-import { createObjectiveController } from './src/game/objectives.js';
-import { createStoryProgress } from './src/game/storyProgress.js';
+import { runLevel1 } from '../src/levels/level1.js';
+import { createLevel1Attempt } from '../src/state/level1Attempt.js';
+import { level1RibbitDialogue } from '../src/data/dialogues.js';
+import { getLevelPoints, setLevelPoints, resetEscapeThreshold } from '../src/state/escapeThreshold.js';
+import { createObjectiveController } from '../src/game/objectives.js';
+import { createStoryProgress } from '../src/game/storyProgress.js';
 
 const choices = level1RibbitDialogue.filter(n => n.type === 'choice');
 const best = choices.map(n => n.options.find(o => o.points === 1));

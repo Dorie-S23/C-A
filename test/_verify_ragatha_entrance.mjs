@@ -1,17 +1,17 @@
-import './tools/testCanvas.mjs';
+import '../tools/testCanvas.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import * as THREE from 'three';
 import { computeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { loadPomniRoom } from './src/rooms/pomniRoom.js';
-import { createRagathaEntrance } from './src/cinematics/ragathaEntrance.js';
-import { createEntranceAudioSession, ENTRANCE_CUES } from './src/cinematics/openingAudio.js';
+import { loadPomniRoom } from '../src/rooms/pomniRoom.js';
+import { createRagathaEntrance } from '../src/cinematics/ragathaEntrance.js';
+import { createEntranceAudioSession, ENTRANCE_CUES } from '../src/cinematics/openingAudio.js';
 
 globalThis.ProgressEvent ??= class {};
 GLTFLoader.prototype.load = function(url, onLoad, _progress, onError) {
   try {
-    const bytes = fs.readFileSync(new URL(url.replace(/^\.\//, ''), new URL('./public/', import.meta.url)));
+    const bytes = fs.readFileSync(new URL(url.replace(/^\.\//, ''), new URL('../public/', import.meta.url)));
     const length = bytes.readUInt32LE(12), data = JSON.parse(bytes.subarray(20, 20 + length));
     data.buffers[0].uri = 'data:application/octet-stream;base64,' + bytes.subarray(length + 28).toString('base64');
     delete data.images; delete data.textures;

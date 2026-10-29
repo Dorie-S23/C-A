@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { createOpeningAudio } from './src/cinematics/openingAudio.js';
+import { createOpeningAudio } from '../src/cinematics/openingAudio.js';
 
 // Use Three.js's real Audio/PositionalAudio with a deterministic Web Audio
 // clock/graph double. Includes the disconnect errors native nodes can raise.

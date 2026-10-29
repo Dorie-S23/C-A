@@ -1,11 +1,11 @@
 // KAN-44: exercise the same collection and Kaufmo interaction code as the
-// game, without starting WebGL or loading rooms. Run: node --test _verify_level2.mjs
+// game, without starting WebGL or loading rooms. Run: node --test test/_verify_level2.mjs
 import assert from 'node:assert/strict';
 import { beforeEach, test } from 'node:test';
-import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT, PHOTO_THRESHOLD } from './src/state/level2Items.js';
+import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT, PHOTO_THRESHOLD } from '../src/state/level2Items.js';
 import {
   getEscapeTotal, getLevelPoints, resetEscapeThreshold, setLevelPoints,
-} from './src/state/escapeThreshold.js';
+} from '../src/state/escapeThreshold.js';
 
 const PICTURES = Array.from({ length: PHOTO_COUNT }, (_, i) => `ca${i + 1}`);
 

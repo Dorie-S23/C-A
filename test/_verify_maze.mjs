@@ -1,10 +1,10 @@
 // Exercises generateMaze()'s connectivity and the new loop-adding pass.
-// Run: node --test _verify_maze.mjs
+// Run: node --test test/_verify_maze.mjs
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { generateMaze } from './src/maze/generateMaze.js';
-import { createSeededRandom as makeRng } from './src/maze/seededRandom.js';
-import { getReachableCells, selectMazeCell } from './src/maze/mazePlacements.js';
+import { generateMaze } from '../src/maze/generateMaze.js';
+import { createSeededRandom as makeRng } from '../src/maze/seededRandom.js';
+import { getReachableCells, selectMazeCell } from '../src/maze/mazePlacements.js';
 
 test('maze random streams are repeatable, independent and stay in [0, 1)', () => {
   for (const seed of [0, 1, 12345, 0xffffffff]) {

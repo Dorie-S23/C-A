@@ -2,7 +2,7 @@
  * Pure state machine over a dialogue script: given an array of nodes, it
  * tracks the current node and exposes advance()/choose() to move through
  * it. Kept free of DOM/Three.js so the branching logic is testable on its
- * own (see _verify_dialogue.mjs) and so DialogueUI only has to render
+ * own (see test/_verify_dialogue.mjs) and so DialogueUI only has to render
  * whatever node is current, never work out what comes next itself.
  *
  * Node shapes:

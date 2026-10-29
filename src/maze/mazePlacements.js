@@ -37,6 +37,32 @@ export function getReachableCells(maze, from) {
 }
 
 /**
+ * The shortest corridor route between two {r, c} cells, both ends
+ * included (just [from] when they're the same cell), or null if `to`
+ * can't be reached. Reads the current walls, like getReachableCells.
+ */
+export function findMazePath(maze, from, to) {
+  const origin = cellAt(maze, from);
+  const goal = cellAt(maze, to);
+  const cameFrom = new Map([[origin, null]]);
+  const queue = [origin];
+  for (let i = 0; i < queue.length && !cameFrom.has(goal); i++) {
+    const cell = queue[i];
+    for (const { wall, opposite, dr, dc } of DIRECTIONS) {
+      if (cell.walls[wall]) continue;
+      const neighbor = maze.cells[cell.r + dr]?.[cell.c + dc];
+      if (!neighbor || neighbor.walls[opposite] || cameFrom.has(neighbor)) continue;
+      cameFrom.set(neighbor, cell);
+      queue.push(neighbor);
+    }
+  }
+  if (!cameFrom.has(goal)) return null;
+  const path = [];
+  for (let cell = goal; cell; cell = cameFrom.get(cell)) path.unshift(cell);
+  return path;
+}
+
+/**
  * Pick a reachable cell within inclusive corridor-distance limits.
  * excludedCells accepts an iterable of {r, c} coordinates, not object identity.
  * Return {cell, distance}, or null if no cell meets the constraints. A failed

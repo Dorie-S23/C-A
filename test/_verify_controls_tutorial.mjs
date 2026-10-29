@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { createControlsTutorial } from './src/game/controlsTutorial.js';
-import { createTutorialHUD } from './src/ui/tutorialHUD.js';
+import { createControlsTutorial } from '../src/game/controlsTutorial.js';
+import { createTutorialHUD } from '../src/ui/tutorialHUD.js';
 
 const t = createControlsTutorial();
 t.move(5, true); t.look(3); t.interact();

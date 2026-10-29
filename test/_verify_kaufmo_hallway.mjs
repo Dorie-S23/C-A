@@ -1,18 +1,18 @@
-import './tools/testCanvas.mjs';
+import '../tools/testCanvas.mjs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import fs from 'node:fs';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { loadDormHallRoom } from './src/rooms/dormHallRoom.js';
-import { kaufmoHallwayPlan, playKaufmoHallwayCutscene } from './src/cutscenes/kaufmoHallwayCutscene.js';
+import { loadDormHallRoom } from '../src/rooms/dormHallRoom.js';
+import { kaufmoHallwayPlan, playKaufmoHallwayCutscene } from '../src/cutscenes/kaufmoHallwayCutscene.js';
 
 globalThis.ProgressEvent ??= class ProgressEvent { constructor(type, data = {}) { this.type = type; Object.assign(this, data); } };
 
 // Parse the shipped geometry in Node; skip browser-only image decoding.
 GLTFLoader.prototype.load = function(url, onLoad, _progress, onError) {
   try {
-    const bytes = fs.readFileSync(new URL(url.replace(/^\.\//, ''), new URL('./public/', import.meta.url)));
+    const bytes = fs.readFileSync(new URL(url.replace(/^\.\//, ''), new URL('../public/', import.meta.url)));
     const length = bytes.readUInt32LE(12);
     const json = JSON.parse(bytes.subarray(20, 20 + length));
     json.buffers[0].uri = 'data:application/octet-stream;base64,' + bytes.subarray(28 + length).toString('base64');

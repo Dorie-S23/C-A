@@ -73,8 +73,8 @@ Verification:
 ```sh
 npm test
 node tools/verify_level1_browser.mjs # Vite on 5173; installed Chrome
-node _verify_objectives.mjs
-node _verify_caine_interaction.mjs
+node test/_verify_objectives.mjs
+node test/_verify_caine_interaction.mjs
 npm run build
 ```
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { createObjectiveController } from './src/game/objectives.js';
-import { createObjectiveHUD, shouldShowObjective } from './src/ui/objectiveHUD.js';
+import { createObjectiveController } from '../src/game/objectives.js';
+import { createObjectiveHUD, shouldShowObjective } from '../src/ui/objectiveHUD.js';
 
 const objectives = createObjectiveController(); let notifications = 0;
 const unsubscribe = objectives.subscribe(() => notifications++);

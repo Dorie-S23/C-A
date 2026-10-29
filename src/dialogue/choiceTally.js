@@ -2,7 +2,7 @@
  * Scores the player's picks in a graded dialogue script: each choice
  * node's correct answer is its highest-`points` option, and every pick is
  * checked against it as it's made. Like dialogueEngine, it's kept free of
- * DOM/Three.js so it can be tested in Node (see _verify_dialogue.mjs).
+ * DOM/Three.js so it can be tested in Node (see test/_verify_dialogue.mjs).
  *
  * Feed it from DialogueUI's onChoice callback, which hands back the picked
  * option object itself; the tally looks up which choice that option

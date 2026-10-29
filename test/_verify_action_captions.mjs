@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { actionCaption, createActionCaptions } from './src/ui/actionCaptions.js';
-import { preLevel1Dialogue } from './src/data/dialogues.js';
+import { actionCaption, createActionCaptions } from '../src/ui/actionCaptions.js';
+import { preLevel1Dialogue } from '../src/data/dialogues.js';
 const opening=elapsed=>({phase:'playing',elapsed});
 assert.equal(actionCaption({opening:opening(0)}),'Snoring…');
 assert.equal(actionCaption({opening:opening(4.99)}),'Snoring…');

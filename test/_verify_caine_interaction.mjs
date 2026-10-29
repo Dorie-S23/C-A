@@ -1,11 +1,11 @@
-import './tools/testCanvas.mjs';
+import '../tools/testCanvas.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { createObjectiveController } from './src/game/objectives.js';
-import { createCaineConversation } from './src/game/caineConversation.js';
-import { loadDormHallRoom } from './src/rooms/dormHallRoom.js';
+import { createObjectiveController } from '../src/game/objectives.js';
+import { createCaineConversation } from '../src/game/caineConversation.js';
+import { loadDormHallRoom } from '../src/rooms/dormHallRoom.js';
 const objectives=createObjectiveController();let story=false,current=true,refuse=false,fail=false;
 const calls=[],hints=[];
 const caine=createCaineConversation({objectives,isStorySession:()=>story,showHint:t=>hints.push(t),playDialogue:(key,options)=>{calls.push({key,options});if(fail)throw Error('optional start failure');return !refuse;}});
@@ -28,7 +28,7 @@ globalThis.ProgressEvent ??= class {};
 // Browser checks exercise the real TextureLoader and door icons.
 const originalTextureLoad = THREE.TextureLoader.prototype.load;
 THREE.TextureLoader.prototype.load = function () { return new THREE.Texture(); };
-GLTFLoader.prototype.load=function(url,onLoad,_progress,onError){try{const b=fs.readFileSync(new URL(url.replace(/^\.\//,''),new URL('./public/',import.meta.url)));let j;if(b.readUInt32LE(0)===0x46546c67){const l=b.readUInt32LE(12);j=JSON.parse(b.subarray(20,20+l));j.buffers[0].uri='data:application/octet-stream;base64,'+b.subarray(28+l).toString('base64');}else j=JSON.parse(b);delete j.images;delete j.textures;j.materials=j.materials?.map(({name,doubleSided})=>({name,doubleSided}));new GLTFLoader().parseAsync(JSON.stringify(j),'').then(onLoad,onError);}catch(e){onError(e)}};
+GLTFLoader.prototype.load=function(url,onLoad,_progress,onError){try{const b=fs.readFileSync(new URL(url.replace(/^\.\//,''),new URL('../public/',import.meta.url)));let j;if(b.readUInt32LE(0)===0x46546c67){const l=b.readUInt32LE(12);j=JSON.parse(b.subarray(20,20+l));j.buffers[0].uri='data:application/octet-stream;base64,'+b.subarray(28+l).toString('base64');}else j=JSON.parse(b);delete j.images;delete j.textures;j.materials=j.materials?.map(({name,doubleSided})=>({name,doubleSided}));new GLTFLoader().parseAsync(JSON.stringify(j),'').then(onLoad,onError);}catch(e){onError(e)}};
 const room = await loadDormHallRoom(undefined, { from: 'pomni' });
 assert.equal(room.group.getObjectByName('Caine'), undefined);
 assert.equal(room.interactables.some(i => i.prompt() === 'Talk to Caine'), false);

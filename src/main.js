@@ -25,6 +25,7 @@ import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold }
 import { createStoryProgress } from './game/storyProgress.js';
 import { createSaveSlots } from './game/saveGame.js';
 import { createLoadingBackgrounds } from './ui/loadingBackgrounds.js';
+import { createLoadingSprites } from './ui/loadingSprites.js';
 import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.js';
 import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT, PHOTO_THRESHOLD } from './state/level2Items.js';
 import { createMazeItems, MAZE_FINDABLES } from './state/mazeItems.js';
@@ -88,7 +89,7 @@ const PREVIEW_CAMERA_OFFSET = 0.5;
 const PLAYER_RADIUS = 0.35;
 // Faster than her Walk/Run clips are authored at (WALK_CLIP_SPEED/RUN_CLIP_SPEED);
 // updatePomniWalk speeds the clips up to match, so her feet stay planted.
-const WALK_SPEED = 4.2; // metres per second
+const WALK_SPEED = 3.6; // metres per second
 const SPRINT_MULTIPLIER = 2.0; // running speed = WALK_SPEED × this
 // Dev builds only (npm run dev): crosses rooms fast for playtesting. Kept
 // moderate — every frame's step still goes through the wall probes, and a
@@ -199,7 +200,8 @@ let pomniHipsHeight = 0.8; // hips above her feet when standing; measured on loa
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlaySubtitle = document.getElementById('overlay-subtitle');
-createLoadingBackgrounds(overlay); // (the cast's sprites, ui/loadingSprites.js, are off for now)
+createLoadingBackgrounds(overlay);
+createLoadingSprites(overlay);
 const roomPicker = document.getElementById('room-picker');
 const dialoguePicker = document.getElementById('dialogue-picker');
 const pauseMenu = document.getElementById('pause-menu');
@@ -3131,7 +3133,11 @@ function checkTriggers(player) {
     const dz = player.position.z - hazard.mesh.position.z;
     if (Math.hypot(dx, dz) < hazard.radius + PLAYER_RADIUS) {
       caught = true;
-      endLevel('Abstracted!', 'A patrolling hazard caught you — try again.');
+      const title = hazard.mesh.userData?.isGloink ? 'Gloinked!' : 'Abstracted!';
+      const subtitle = hazard.mesh.userData?.isGloink
+        ? 'A patrolling gloink caught you — try again.'
+        : 'A patrolling hazard caught you — try again.';
+      endLevel(title, subtitle);
       return;
     }
   }
@@ -3710,7 +3716,10 @@ function animate() {
   fastForwardCutscenes();
   if (!paused) {
     updateMovers(delta);
-    if (!activeOpening?.active) roomUpdate?.(delta, player.position);
+    // playerActive: she's actually in play, so maze Gloinks may see her.
+    if (!activeOpening?.active) roomUpdate?.(delta, player.position, {
+      playerActive: isLocked && readyToPlay && !dialogueUI.isActive && !activeCutscene && !stageBusy(),
+    });
     refreshDynamicColliders();
   }
   if (!paused && stageDelay) {

@@ -1,22 +1,22 @@
-import './tools/testCanvas.mjs';
+import '../tools/testCanvas.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { computeBoundsTree } from 'three-mesh-bvh';
-import { loadPomniRoom } from './src/rooms/pomniRoom.js';
-import { loadJax } from './src/characters/jax.js';
-import { loadRagatha } from './src/characters/ragatha.js';
-import { createDormHallPreview } from './src/rooms/dormHallPreview.js';
-import { createRagathaEntrance } from './src/cinematics/ragathaEntrance.js';
-import { createJaxBedroomPass, JAX_PASS_BEAT, JAX_PASS_RESUME } from './src/cinematics/jaxBedroomPass.js';
-import { preLevel1Dialogue } from './src/data/dialogues.js';
-import { createDialogueEngine } from './src/dialogue/dialogueEngine.js';
+import { loadPomniRoom } from '../src/rooms/pomniRoom.js';
+import { loadJax } from '../src/characters/jax.js';
+import { loadRagatha } from '../src/characters/ragatha.js';
+import { createDormHallPreview } from '../src/rooms/dormHallPreview.js';
+import { createRagathaEntrance } from '../src/cinematics/ragathaEntrance.js';
+import { createJaxBedroomPass, JAX_PASS_BEAT, JAX_PASS_RESUME } from '../src/cinematics/jaxBedroomPass.js';
+import { preLevel1Dialogue } from '../src/data/dialogues.js';
+import { createDialogueEngine } from '../src/dialogue/dialogueEngine.js';
 
 globalThis.ProgressEvent ??= class {};
 GLTFLoader.prototype.load = function(url, ready, progress, failed) {
   try {
-    const b=fs.readFileSync(new URL(url.replace(/^\.\//,''),new URL('./public/',import.meta.url)));
+    const b=fs.readFileSync(new URL(url.replace(/^\.\//,''),new URL('../public/',import.meta.url)));
     const n=b.readUInt32LE(12),j=JSON.parse(b.subarray(20,20+n));
     j.buffers[0].uri='data:application/octet-stream;base64,'+b.subarray(n+28).toString('base64');
     delete j.images;delete j.textures;j.materials=j.materials.map(({name,doubleSided})=>({name,doubleSided}));

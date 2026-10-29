@@ -1,6 +1,6 @@
 // Node verification harness for the main.js wall-probe/slide/floor-follow
 // logic: exercises it against real three.js meshes (no DOM needed).
-// Run with `node _verify_collision.mjs`.
+// Run with `node test/_verify_collision.mjs`.
 import * as THREE from 'three';
 
 const PLAYER_RADIUS = 0.35;

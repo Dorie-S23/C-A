@@ -3,12 +3,12 @@ import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { loadPomni } from './src/characters/pomni.js';
-import { createPomniSpeaking } from './src/characters/pomniSpeaking.js';
+import { loadPomni } from '../src/characters/pomni.js';
+import { createPomniSpeaking } from '../src/characters/pomniSpeaking.js';
 globalThis.ProgressEvent ??= class {};
 GLTFLoader.prototype.load = function(url,onLoad,_progress,onError) {
   try {
-    const bytes=fs.readFileSync(new URL(url.replace(/^\.\//,''),new URL('./public/',import.meta.url)));
+    const bytes=fs.readFileSync(new URL(url.replace(/^\.\//,''),new URL('../public/',import.meta.url)));
     const length=bytes.readUInt32LE(12),data=JSON.parse(bytes.subarray(20,20+length));
     data.buffers[0].uri='data:application/octet-stream;base64,'+bytes.subarray(length+28).toString('base64');
     delete data.images;delete data.textures;data.materials=data.materials.map(({name,doubleSided})=>({name,doubleSided}));

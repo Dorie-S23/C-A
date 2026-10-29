@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createObjectiveController } from './src/game/objectives.js';
-import { createStoryProgress } from './src/game/storyProgress.js';
+import { createObjectiveController } from '../src/game/objectives.js';
+import { createStoryProgress } from '../src/game/storyProgress.js';
 
 function fixture() {
   const objectives = createObjectiveController();
@@ -58,7 +58,7 @@ test('new run clears completed encounters and Kaufmo introduction eligibility', 
   assert.equal(progress.finishKaufmoIntro(), false);
 });
 
-// Real-hall geometry/animation checks: _verify_kaufmo_hallway.mjs.
+// Real-hall geometry/animation checks: test/_verify_kaufmo_hallway.mjs.
 // Browser win/failure/cancellation checks: tools/verify_level1_browser.mjs.
 
 test('Kaufmo pass-by is unavailable before a win and can be claimed only once', () => {

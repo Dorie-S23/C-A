@@ -1,20 +1,20 @@
 // Real room geometry, without browser-only image decoding. Rendered appearance
 // and texture/reflection quality still need a browser check.
-import './tools/testCanvas.mjs';
+import '../tools/testCanvas.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { loadRoomModel } from './src/rooms/loadRoomModel.js';
-import { createBedroomLighting } from './src/rooms/bedroomLighting.js';
-import { loadPomniRoom } from './src/rooms/pomniRoom.js';
-import { loadDormHallRoom } from './src/rooms/dormHallRoom.js';
-import { loadTadcRoom } from './src/rooms/tadcRoom.js';
+import { loadRoomModel } from '../src/rooms/loadRoomModel.js';
+import { createBedroomLighting } from '../src/rooms/bedroomLighting.js';
+import { loadPomniRoom } from '../src/rooms/pomniRoom.js';
+import { loadDormHallRoom } from '../src/rooms/dormHallRoom.js';
+import { loadTadcRoom } from '../src/rooms/tadcRoom.js';
 
 globalThis.ProgressEvent ??= class {};
 GLTFLoader.prototype.load = function (url, onLoad, onProgress, onError) {
   try {
-    const file = new URL(url.replace(/^\.\//, ''), new URL('./public/', import.meta.url));
+    const file = new URL(url.replace(/^\.\//, ''), new URL('../public/', import.meta.url));
     const bytes = fs.readFileSync(file);
     let data;
     if (bytes.readUInt32LE(0) === 0x46546c67) {

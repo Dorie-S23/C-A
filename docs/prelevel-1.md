@@ -48,13 +48,13 @@ preserves the final blanket state and continues to the invitation/entrance.
 Run existing dialogue/collision checks with `npm test`. Additional checks:
 
 ```sh
-node _verify_bedroom_lighting.mjs
-node _verify_pomni_opening.mjs
-node _verify_opening_audio.mjs
-node _verify_ragatha_entrance.mjs
-node _verify_objectives.mjs
-node _verify_caine_interaction.mjs
-node _verify_controls_tutorial.mjs
+node test/_verify_bedroom_lighting.mjs
+node test/_verify_pomni_opening.mjs
+node test/_verify_opening_audio.mjs
+node test/_verify_ragatha_entrance.mjs
+node test/_verify_objectives.mjs
+node test/_verify_caine_interaction.mjs
+node test/_verify_controls_tutorial.mjs
 node tools/verify_pomni_door.mjs
 node tools/verify_ragatha_geometry.mjs
 npm run build
@@ -100,7 +100,7 @@ morning conversation without awarding Find Caine or unlocking tutorial tips.
 Skipping R5 before the seated hold retains the standing invitation/entrance path.
 New Game resets the sequence; room re-entry retains the settled cover.
 
-Run `node _verify_opening_choreography.mjs` for focused marker, hold, synchronized
+Run `node test/_verify_opening_choreography.mjs` for focused marker, hold, synchronized
 resume, disposal and skip checks. With Vite running, use
 `node tools/verify_opening_choreography_browser.mjs` for the normal story path,
 seated pause/cancellation, doorway travel and re-entry. It pauses a real rendered
@@ -148,7 +148,7 @@ The retained view is a local section, not a seamless world; extreme viewpoints
 beyond the tested frontal and oblique views may expose cropped ends. The small
 original threshold/baseboard lip and documented door-trim swing contact remain.
 
-Run `node _verify_dorm_hall_preview.mjs` for geometry, ownership and fallback
+Run `node test/_verify_dorm_hall_preview.mjs` for geometry, ownership and fallback
 checks. With Vite running, run
 `node tools/verify_dorm_hall_preview_browser.mjs` for rendering, E travel,
 re-entry and repeated-load checks; add `--fallback-only` for a failed-download
@@ -182,7 +182,7 @@ Home, room disposal and New Game stop the pass and its audio without invoking a
 stale continuation. One-shot GPU bone textures are released at completion or
 disposal; generic room cleanup retains ownership of model meshes/materials.
 
-Run `node _verify_jax_bedroom_pass.mjs` for real-model geometry, timing, floor,
+Run `node test/_verify_jax_bedroom_pass.mjs` for real-model geometry, timing, floor,
 pause/skip/disposal and resource tests. With Vite running, use
 `node tools/verify_jax_bedroom_browser.mjs`; screenshots and its report are in
 `artifacts/jax-bedroom-pass/`. The existing bedroom doorway browser regression
@@ -207,8 +207,8 @@ pause and menus. No arrival/departure narration or additional audio is added.
 Jax's bedroom pass uses a relaxed walk with hands near his overall pockets;
 his original running style remains the default for other cutscenes.
 
-Run `node _verify_pomni_speaking.mjs`, `node _verify_action_captions.mjs` and
-`node _verify_jax_bedroom_pass.mjs` for targeted checks. With Vite running,
+Run `node test/_verify_pomni_speaking.mjs`, `node test/_verify_action_captions.mjs` and
+`node test/_verify_jax_bedroom_pass.mjs` for targeted checks. With Vite running,
 `node tools/verify_prelevel_compatibility_browser.mjs` checks the combined
 bedroom story, short captions, gestures, Jax, walk-through travel, automatic Caine
 arrival/cancellation/retry, Find Ribbit and Level 1's Knock interaction.
