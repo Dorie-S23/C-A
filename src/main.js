@@ -8,6 +8,7 @@ import { loadTadcRoom } from './rooms/tadcRoom.js';
 import { loadMazeRoom } from './rooms/mazeRoom.js';
 import { loadKaufmoRoom } from './rooms/kaufmoRoom.js';
 import { loadPomni } from './characters/pomni.js';
+import { createPomniJump } from './characters/pomniJump.js';
 import { createPomniSpeaking } from './characters/pomniSpeaking.js';
 import { OPENING_HANDOFF } from './cinematics/pomniOpening.js';
 import { createOpeningAudio } from './cinematics/openingAudio.js';
@@ -177,11 +178,13 @@ scene.add(player);
 let pomni = null;
 let pomniMixer = null;
 let pomniSpeaking = null;
+let pomniJump = null;
 const pomniActions = {}; // lower-cased clip name -> AnimationAction
 let currentAction = null;
 const pomniReady = loadPomni().then(({ pomni: model, animations }) => {
   pomni = model;
   pomniSpeaking = createPomniSpeaking(pomni);
+  pomniJump = createPomniJump(pomni);
   pomni.position.y = -PLAYER_HEIGHT; // feet on the floor
   player.add(pomni);
 
@@ -2520,6 +2523,7 @@ const move = { forward: false, back: false, left: false, right: false, sprint: f
 let jumpQueued = false;
 let airborne = false;
 let verticalVelocity = 0;
+let jumpsUsed = 0;
 
 window.addEventListener('keydown', (e) => {
   if (activeCinematic()?.active) {
@@ -3136,9 +3140,10 @@ function settleOnGround(player) {
  * body probes with them, which is what lets her clear a ledge mid-air.
  */
 function applyJump(deltaSeconds) {
-  if (jumpQueued && !airborne) {
+  if (jumpQueued && jumpsUsed < 2) {
     airborne = true;
     verticalVelocity = JUMP_SPEED;
+    jumpsUsed++;
   }
   jumpQueued = false;
   if (!airborne) return;
@@ -3149,6 +3154,7 @@ function applyJump(deltaSeconds) {
 function land() {
   airborne = false;
   verticalVelocity = 0;
+  jumpsUsed = 0;
 }
 
 /**
@@ -3763,12 +3769,9 @@ function updateMovement(deltaSeconds) {
   if (wishDirection.lengthSq() > 1e-8) {
     const targetYaw = Math.atan2(wishDirection.x, wishDirection.z);
     pomni.rotation.y = dampAngle(pomni.rotation.y, targetYaw, TURN_SHARPNESS, deltaSeconds);
-  } else if (!firstPerson) {
-    // Stepping backward/sideways can leave her facing the camera; once
-    // she's not being steered anywhere, ease back to the standard
-    // over-the-shoulder framing so the player can still read "forward".
-    pomni.rotation.y = dampAngle(pomni.rotation.y, cameraYaw + Math.PI, TURN_SHARPNESS * 0.4, deltaSeconds);
   }
+  // Standing still, she keeps facing whichever way she last walked: looking
+  // around with the mouse moves only the camera, never her.
 
   const frameStartX = player.position.x;
   const frameStartZ = player.position.z;
@@ -3865,8 +3868,9 @@ function updatePomniWalk(dt, speed) {
   if (paused) dt = 0;
   if (pomniMixer) {
     pomniSpeaking?.remove();
+    pomniJump?.remove();
     animSpeed = THREE.MathUtils.damp(animSpeed, speed, 12, dt);
-    if (animSpeed < 0.2) {
+    if (airborne || animSpeed < 0.2) {
       playAction('idle');
     } else if (animSpeed > RUN_THRESHOLD && pomniActions.run) {
       playAction('run');
@@ -3877,17 +3881,20 @@ function updatePomniWalk(dt, speed) {
     }
     pomniMixer.update(dt);
     applyStagePose(dt);
+    pomniJump?.update(dt, airborne, verticalVelocity, jumpsUsed, animSpeed);
     pomniSpeaking?.update(dt, dialogueUI.currentSpeaker === 'pomni' && player.visible
       && !activeOpening?.active && !stageWalk && !stageGesture && stageSeatY === null && animSpeed < .2,
     dialogueUI.currentMood);
     return;
   }
 
-  walkAmount = THREE.MathUtils.damp(walkAmount, speed > 0.1 ? 1 : 0, 10, dt);
+  pomniJump?.remove();
+  walkAmount = THREE.MathUtils.damp(walkAmount, !airborne && speed > 0.1 ? 1 : 0, 10, dt);
   walkPhase += speed * dt * STEPS_PER_METRE * Math.PI;
 
   pomni.position.y = -PLAYER_HEIGHT + Math.abs(Math.sin(walkPhase)) * WALK_BOB_HEIGHT * walkAmount;
   pomni.rotation.z = Math.sin(walkPhase) * WALK_SWAY * walkAmount;
+  pomniJump?.update(dt, airborne, verticalVelocity, jumpsUsed, speed);
 }
 
 /** Cross-fades from whatever Pomni is playing to the named clip. */
