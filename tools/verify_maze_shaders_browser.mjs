@@ -6,15 +6,16 @@ const output='artifacts/maze-step5';
 fs.mkdirSync(`${output}/comparison-before`,{recursive:true});
 fs.mkdirSync(`${output}/comparison-after`,{recursive:true});
 const browser=await chromium.launch({channel:'msedge',headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']});
-const errors=[], report={seeds:[],reentry:[],performance:{}};
+const testPixelRatio=Number(process.env.MAZE_WEBGL_TEST_PIXEL_RATIO??0.8);
+const errors=[], report={seeds:[],reentry:[],performance:{},testPixelRatio};
 try {
-  const page=await browser.newPage({viewport:{width:1100,height:780}});
+  const page=await browser.newPage({viewport:{width:1100,height:780}});page.setDefaultNavigationTimeout(90000);
   page.on('pageerror',e=>errors.push(String(e)));
   page.on('console',m=>{ if(m.type()==='error' && /shader|WebGLProgram|GL_INVALID/i.test(m.text())) errors.push(m.text()); });
-  await page.route('**/src/main.js',async route=>{
+  await page.route('**/src/main.js*',async route=>{
     const response=await route.fetch();
     await route.fulfill({response,body:await response.text()+`
-      renderer.setPixelRatio(0.8);
+      renderer.setPixelRatio(${testPixelRatio});
       const realRender=renderer.render.bind(renderer);
       let shaderCamera=null;
       renderer.render=(s,c)=>realRender(s,shaderCamera??c);
@@ -23,6 +24,7 @@ try {
         Object.defineProperty(document,'pointerLockElement',{configurable:true,value:value?renderer.domElement:null});
         document.dispatchEvent(new Event('pointerlockchange'));
       };
+      window.__shaderLoad=()=>({key:currentRoomKey,ready:readyToPlay,title:overlayTitle.textContent,room:!!currentRoomInfo});
       window.__shaderReview={
         ready:()=>currentRoomKey==='maze'&&readyToPlay,
         status:()=>({...effects().state,paused,seed:currentRoomInfo.mazeSeed,
@@ -87,7 +89,7 @@ try {
   async function load(seed){
     await page.goto(`http://127.0.0.1:5174/?dev=1&mazeSeed=${seed}`,{waitUntil:'domcontentloaded'});
     await page.locator('button[data-room="maze"]').click();
-    await page.waitForFunction(()=>window.__shaderReview?.ready(),null,{timeout:90000});
+    try{await page.waitForFunction(()=>window.__shaderReview?.ready(),null,{timeout:90000});}catch(error){console.log(JSON.stringify({seed,errors,loading:await page.evaluate(()=>window.__shaderLoad?.()??{apiMissing:true,title:document.title})}));throw error;}
     await page.evaluate(()=>window.__shaderReview.lock(false));
   }
   await load(123);

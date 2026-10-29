@@ -29,6 +29,7 @@ import { createLoadingBackgrounds } from './ui/loadingBackgrounds.js';
 import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.js';
 import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT, PHOTO_THRESHOLD } from './state/level2Items.js';
 import {createMazeEncounter} from './levels/mazeEncounter.js';
+import {createMazeObjectiveHUD} from './ui/mazeObjectiveHUD.js';
 import { createMazeItems, createMazeSearch, MAZE_FINDABLES } from './state/mazeItems.js';
 import { runLevel1 } from './levels/level1.js';
 import { kaufmoHallwayPlan, preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
@@ -1544,7 +1545,7 @@ const storyProgress = createStoryProgress({ objectives, isStorySession: () => pr
 // changes lifecycle as itemState above.
 let mazeEncounter=null,lastMazeExitHint=0;
 const mazeItems = createMazeItems({
-  onChange(){currentRoomInfo?.jaxBoundary?.sync();},
+  onChange(){currentRoomInfo?.jaxBoundary?.sync();takeCheckpoint();},
   onCollect: (id, count, total) => {
     const label = MAZE_FINDABLES.find((findable) => findable.id === id)?.label ?? 'something';
     showHint(`Found the ${label}. (${count}/${total})`);
@@ -1555,6 +1556,7 @@ let mazeAttemptSeed = null;
 let mazeClockWasPlayable = false;
 document.addEventListener('visibilitychange', () => { mazeClockWasPlayable = false; });
 
+const mazeHUD=createMazeObjectiveHUD({root:document.getElementById('maze-objective-hud'),items:mazeItems});
 
 // --- Saving and loading -------------------------------------------------
 // Checkpoints only: the game keeps a snapshot of the story so far, taken
@@ -1573,13 +1575,17 @@ const ROOM_NAMES = {
 };
 
 function takeCheckpoint() {
-  if (!preLevel1Session || restoringSave || !openingCompleted || !ROOM_NAMES[currentRoomKey]) return;
+  // Preserve story checkpoint rules; the raw maze review can also save its
+  // own Level 3 progression without replaying the preceding story.
+  const mazeCheckpoint=currentRoomKey==='maze';
+  if ((!preLevel1Session&&!mazeCheckpoint) || restoringSave || (!openingCompleted&&!mazeCheckpoint) || !ROOM_NAMES[currentRoomKey]) return;
   checkpoint = {
     room: currentRoomKey,
     from: currentRoomFrom,
     objectives: objectives.snapshot(),
     story: storyProgress.snapshot(),
     items: itemState.snapshot(),
+    maze: mazeItems.snapshot(),
     escape: snapshotEscapeThreshold(),
     morningDialoguePending,
     // Shown on the slot, so a save says what it was.
@@ -1602,6 +1608,7 @@ function loadGame(data) {
     objectives.restore(data.objectives);
     storyProgress.restore(data.story);
     itemState.restore(data.items);
+    mazeItems.restore(data.maze);
     restoreEscapeThreshold(data.escape);
     morningDialoguePending = Boolean(data.morningDialoguePending);
     openingCompleted = true;
@@ -1976,7 +1983,7 @@ function roomLoadOptions(roomKey, { from, preview, openingMode }) {
   return {
     from, playDialogue: playRoomDialogue, preview, endLevel, stage, items: itemState, travel: travelTo,
     objectives, showLevelComplete, playChime: openingAudio.playChime, mazeItems,
-    seed: roomKey === 'maze' ? mazeAttemptSeed ?? devMazeSeed : undefined,
+    seed: roomKey === 'maze' ? mazeItems.ensureSeed(mazeAttemptSeed ?? devMazeSeed) : undefined,
     ribbitStory: {
       complete: () => storyProgress.ribbitComplete,
       points: () => storyProgress.ribbitPoints,
@@ -3978,10 +3985,8 @@ function animate() {
   const photoReturn = objectives.active?.id === 'collect-photos' && itemState.totalFound() >= PHOTO_COUNT
     ? { title: 'Return to Kaufmo', detail: 'Go through the Dorm Hall to his room. Press E on Kaufmo to deliver the photos before time runs out.' }
     : objectives.active;
-  const mazeHUD = currentRoomKey === 'maze';
-  objectiveHUD.update(mazeHUD ? { ...hudContext, session: true,
-    menu: hudContext.menu || !savePanel.hidden || document.hidden } : hudContext,
-    roomShowsMinimap(currentRoomKey), mazeHUD ? mazeSearchInstructions() : photoReturn);
+  objectiveHUD.update({...hudContext,room:currentRoomKey==='maze'?null:hudContext.room}, roomShowsMinimap(currentRoomKey), photoReturn);
+  mazeHUD.update(hudContext,currentRoomKey);
   tutorialHUD.update(hudContext, focusedBedroomDoor());
   updateMazeItemsCounter(hudContext);
   updatePictureCounter();

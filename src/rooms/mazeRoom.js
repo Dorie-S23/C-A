@@ -188,7 +188,7 @@ function buildMaze(jaxApi, mazeItems, seed, rng) {
   group.add(jax);
   ownMazeShadowPass(jax);
   jaxApi.setDistressed(true);
-  const jaxBoundary=createJaxStageBoundary({position:jaxCenter,colliders,isUnlocked:()=>['bowling-ball','hot-chocolate-mug'].every(id=>mazeItems?.hasCollected(id))});
+  const jaxBoundary=createJaxStageBoundary({position:jaxCenter,colliders,isUnlocked:()=>Boolean(mazeItems?.hasAllRequired())});
   group.add(jaxBoundary.group);
 
   const exitCenter = cellCenter(maze.exit.r, maze.exit.c);
