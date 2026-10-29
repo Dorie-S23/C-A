@@ -28,7 +28,7 @@ import { createSaveSlots } from './game/saveGame.js';
 import { createLoadingBackgrounds } from './ui/loadingBackgrounds.js';
 import { createLoadingSprites } from './ui/loadingSprites.js';
 import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.js';
-import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT, PHOTO_THRESHOLD } from './state/level2Items.js';
+import { createLevel2Items, pickKaufmoScript, photoUrls, PHOTO_COUNT, PHOTO_THRESHOLD } from './state/level2Items.js';
 import {createMazeEncounter} from './levels/mazeEncounter.js';
 import {createMazeObjectiveHUD} from './ui/mazeObjectiveHUD.js';
 import { createMazeItems, createMazeSearch, MAZE_FINDABLES } from './state/mazeItems.js';
@@ -1472,7 +1472,7 @@ function talkToKaufmo(kaufmoApi, token) {
  */
 function handInActor(kaufmoApi, room) {
   room.handInPhotos?.dispose();
-  const urls = itemState.snapshot().presented.map((id) => `./models/objects/${id}.png`);
+  const urls = photoUrls(itemState.snapshot().presented);
   const photos = createHandInPhotos(urls, {
     kaufmo: kaufmoApi.kaufmo,
     kaufmoHands: kaufmoApi.hands,

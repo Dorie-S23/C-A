@@ -3,6 +3,7 @@ import { loadRoomModel } from './loadRoomModel.js';
 import { loadKaufmoTalk, WRITE_SECONDS } from '../characters/kaufmoTalk.js';
 import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { createDoorPortal } from './portals.js';
+import { photoUrls } from '../state/level2Items.js';
 import { createAbstractionEffect } from '../effects/abstraction.js';
 import { createTheoryWall } from '../props/theoryWall.js';
 import { findWallSpot } from '../props/officePicture.js';
@@ -109,7 +110,7 @@ export function loadKaufmoRoom(onProgress, {
       room.group.add(theoryWall.group);
       // Once he has the photos, they're up on the wall with the rest.
       const presented = items?.snapshot?.().presented ?? [];
-      if (items?.isDone?.() && presented.length) theoryWall.pin(presented.map((id) => `./models/objects/${id}.png`));
+      if (items?.isDone?.() && presented.length) theoryWall.pin(photoUrls(presented));
       room.theoryWall = theoryWall;
       room.kaufmoRoutine = createWallRoutine(kaufmoApi, wallSpot, theoryWall);
       room.kaufmoRoutine.resume();

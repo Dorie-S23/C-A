@@ -6,6 +6,29 @@ export const PHOTO_COUNT = 5;
 export const PHOTO_THRESHOLD = 4;
 
 /**
+ * Each photo's image. Spelled out in full, not built from the id: the
+ * packager (tools/package.mjs) finds the files the game loads by their
+ * paths in the code, and a `${id}` path can't be followed. ca6.png exists
+ * alongside these but isn't used.
+ */
+export const PHOTO_URLS = {
+  ca1: './models/objects/ca1.png',
+  ca2: './models/objects/ca2.png',
+  ca3: './models/objects/ca3.png',
+  ca4: './models/objects/ca4.png',
+  ca5: './models/objects/ca5.png',
+};
+
+/**
+ * The images for a list of photo ids. Development shortcuts collect
+ * stand-in ids (the Level 3 jump), which get the real photos in turn.
+ */
+export function photoUrls(ids) {
+  const all = Object.values(PHOTO_URLS);
+  return ids.map((id, i) => PHOTO_URLS[id] ?? all[i % all.length]);
+}
+
+/**
  * One run's Level 2 pictures, shared by every room. Held and handed-in
  * pictures both stay found, but only handed-in pictures earn Escape points.
  * onCollect lets the browser show its pickup hint without coupling this
