@@ -46,9 +46,12 @@ const DIALOGUE_ICON_DOORS = ['Kaufmo', 'Ribbit'];
 // connectRooms.js) instead of reached through a portal and a loading
 // screen: open the door and the room is right there. Each needs a loader
 // with an `embedded` mode that leaves its own door out and reports its
-// doorway. Pomni's door isn't one of these: it opens onto her real room,
-// which main.js swaps in as she walks through (see walkIntoPomniRoom).
+// doorway. The WALK_IN_ROOMS aren't these either.
 const CONNECTED_ROOMS = {};
+// Rooms whose door opens onto the real room, which main.js loads in the
+// background, shows behind the open door and swaps in as Pomni walks
+// through (see walkIntoRoom there): no portal, no loading screen.
+const WALK_IN_ROOMS = new Set(['pomni', 'kaufmo']);
 // How close (metres from the doorway) a connected room keeps its mirrors
 // reflecting and its shadows updating while Pomni's out in the hall with
 // the door open. Each of those re-renders the whole scene, hall and all,
@@ -78,6 +81,7 @@ export function loadDormHallRoom(onProgress, { from, items, travel } = {}) {
     });
 
     room.hallDoors = {};
+    room.walkInDoorways = {};
     room.mapMarkers = [];
     const joins = [];
     let arrival = null;
@@ -95,20 +99,25 @@ export function loadDormHallRoom(onProgress, { from, items, travel } = {}) {
       if (!door) continue;
       const guest = guestRooms[to];
       const doorway = guest?.doorway;
-      // Pomni's own door opens onto her room itself (main.js walks her in
-      // through it), and a connected room's doorway just leads into it:
-      // neither needs a portal.
-      const walkIn = to === 'pomni';
+      // A walk-in door opens onto the room itself, and a connected room's
+      // doorway just leads into it: neither needs a portal.
+      const walkIn = WALK_IN_ROOMS.has(to);
       const portal = doorway || walkIn ? null : createDoorPortal(room.group, door.frameBox, inFront, to);
       if (portal) portals.push(portal);
       // Shut until Pomni walks up and opens it; the character's icon swings with it.
       const control = makeDoorOpenable(room, door, { portal, attach: [room.group.getObjectByName(icon)] });
       room.hallDoors[to] = { portal, control, shut: () => control.lock(), open: () => control.open() };
-      if (walkIn) room.pomniDoorway = walkInDoorway(door.frameBox, inFront, control);
+      if (walkIn) {
+        // Hidden while the room behind is shown from inside it: the room's
+        // own door is the one in this doorway then.
+        const parts = [frameObject, door.slab.parent];
+        room.walkInDoorways[to] = walkInDoorway(door.frameBox, inFront, control, parts);
+      }
 
-      if (doorway) {
+      // Pomni's has its marker and arrival below (createDoorConnection).
+      if (doorway || (walkIn && to !== 'pomni')) {
         const intoHall = new THREE.Vector3(Math.sign(HALL_CENTRE_X - centre.x), 0, 0);
-        joins.push({ guest, control, hostDoor: { frameBox: door.frameBox, intoRoom: intoHall }, doorway });
+        if (doorway) joins.push({ guest, control, hostDoor: { frameBox: door.frameBox, intoRoom: intoHall }, doorway });
         room.mapMarkers.push({ to, box: door.frameBox });
         // Back from the room played on its own (the room picker / a
         // dialogue preview): out in the hall by its door, which is open.
@@ -146,6 +155,7 @@ export function loadDormHallRoom(onProgress, { from, items, travel } = {}) {
 
     // No Caine waiting here: in the story he swoops in once Pomni's had a
     // look around (main.js's triggerCaineArrival).
+    room.pomniDoorway = room.walkInDoorways.pomni;
     // No portal or hallDoors entry for this one, so mark it for the minimap.
     const bedroomFrame = room.group.getObjectByName('Door_Frame068');
     if (bedroomFrame) room.mapMarkers.push({ to: 'pomni', box: new THREE.Box3().setFromObject(bedroomFrame) });
@@ -241,11 +251,6 @@ function onlyRenderWhenSeen(room, guest, control, roomBounds, doorway) {
   };
 }
 
-/**
- * Pomni's door, opened with E like the others, as main.js needs it to walk
- * her through into her room: whether it's open, and when she's stepped
- * past it. `hallSide` is any point out in the hall.
- */
 /** Flips a door leaf end for end across its own width, knob and all. */
 function mirrorLeaf(slab) {
   if (!slab) return;
@@ -262,24 +267,35 @@ function mirrorLeaf(slab) {
   slab.updateMatrixWorld(true);
 }
 
-function walkInDoorway(frameBox, hallSide, control) {
+/**
+ * A walk-in door (WALK_IN_ROOMS), opened with E like the others, as main.js
+ * needs it to walk Pomni through into the room: whether it's open, where
+ * it is, and when she's stepped past it. `hallSide` is any point out in the
+ * hall; `parts` are the door's frame and leaf.
+ */
+function walkInDoorway(frameBox, hallSide, control, parts) {
   const size = frameBox.getSize(new THREE.Vector3());
   const centre = frameBox.getCenter(new THREE.Vector3());
   const axis = size.x < size.z ? 'x' : 'z';
   const wide = axis === 'x' ? 'z' : 'x';
-  const inward = hallSide[axis] < centre[axis] ? 1 : -1; // into her room
+  const inward = hallSide[axis] < centre[axis] ? 1 : -1; // into the room
   const into = new THREE.Vector3();
   into[axis] = inward;
   return {
     control,
     into,
+    parts,
+    /** The doorway's floor, centre. */
+    sill: sill(frameBox),
+    centre,
     /**
      * The hall's wall line here; her room, shown behind it, is clipped to
      * its far side. Set a little into the room: her walls sit right on the
      * line and would otherwise flicker through the hall's as thin dashes.
+     * (Kaufmo's room sits wholly behind the wall as it is.)
      */
     wallPlane: new THREE.Plane(into.clone(), -centre[axis] * inward - 0.15),
-    /** How far a point is past the doorway, into her room. */
+    /** How far a point is past the doorway, into the room. */
     depthPast: (point) => (point[axis] - centre[axis]) * inward,
     crossed: (point) => (point[axis] - centre[axis]) * inward > 0
       && Math.abs(point[wide] - centre[wide]) < size[wide] / 2,

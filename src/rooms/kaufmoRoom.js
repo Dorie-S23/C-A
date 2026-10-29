@@ -90,7 +90,22 @@ export function loadKaufmoRoom(onProgress, {
       }
       // Shut until Pomni opens it with E (see makeDoorOpenable).
       doorControl = makeDoorOpenable(room, door, { portal });
+      // For main.js to show the real Dorm Hall through it and walk her out
+      // (walkInLink.js), the portal's only taken while that's not ready.
+      // Hidden from the hall's side: its own door is the one in the doorway.
+      room.hallDoor = {
+        frameBox: door.frameBox, inside: defaultSpawn.clone(), control: doorControl, portal,
+        parts: [door.frame, door.slab.parent,
+          room.group.getObjectByName('Kaufmo_Icon'), portal.glimpse].filter(Boolean),
+      };
+      // Walking in from the hall: it stands open, as the hall's does.
+      room.openDoorway = () => doorControl.open({ immediate: true });
     }
+    // The hall's environment lighting, at nothing: it looks as it always
+    // has, but its shaders are the hall's kind, so either room can be seen
+    // from the other, and main.js eases between the two as she walks through.
+    room.environment = true;
+    room.environmentIntensity = 0;
 
     placeInMiddleOfRoom(kaufmo, { group: room.group, spawn: defaultSpawn });
     // Found before he's in the room, so the ray can't catch him instead.
@@ -428,6 +443,10 @@ function paintGraffiti(group, art) {
   panels.name = 'KaufmoGraffiti';
   const main = wallPanelFrame(room, out);
   const far = wallPanelFrame(room, out.clone().negate());
+  // Nothing's painted across his doorway: the hall shows through it.
+  const doorFrame = group.getObjectByName(DOOR_FRAME_NAME);
+  const doorBox = doorFrame && new THREE.Box3().setFromObject(doorFrame);
+  const exitPanel = (frame, texture, fade) => wallExitPanel(frame, texture, fade, doorwayOn(frame, doorBox));
 
   panels.add(exitPanel(main, art.exit, () => 1));
   panels.add(exitPanel(far, art.exit, () => FAR_WALL_EXIT));
@@ -474,11 +493,14 @@ function panelMesh(frame, width, height, material, offset = new THREE.Vector2())
   return mesh;
 }
 
-/** The EXIT scrawl across a whole wall, its opacity `fade(u)` across it (u 0 = left). */
-function exitPanel(frame, texture, fade) {
+/**
+ * The EXIT scrawl across a whole wall, its opacity `fade(u)` across it (u 0 =
+ * left), and none over `doorway` (doorwayOn) if the wall has one.
+ */
+function wallExitPanel(frame, texture, fade, doorway) {
   const alpha = document.createElement('canvas');
   alpha.width = 256;
-  alpha.height = 4;
+  alpha.height = 64;
   const ctx = alpha.getContext('2d');
   const gradient = ctx.createLinearGradient(0, 0, 256, 0);
   for (let i = 0; i <= 8; i++) {
@@ -486,7 +508,9 @@ function exitPanel(frame, texture, fade) {
     gradient.addColorStop(i / 8, `rgb(${level}, ${level}, ${level})`);
   }
   ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 256, 4);
+  ctx.fillRect(0, 0, 256, 64);
+  // The canvas's top is the panel's top.
+  if (doorway) ctx.clearRect(doorway.left * 256, (1 - doorway.top) * 64, (doorway.right - doorway.left) * 256, 64);
   // Scaled to the wall's height, keeping the scrawl's proportions: a wall
   // narrower than the image shows a stretch of it, a wider one repeats it.
   const map = texture.clone();
@@ -499,6 +523,20 @@ function exitPanel(frame, texture, fade) {
     roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1,
   });
   return panelMesh(frame, frame.width, frame.height, material);
+}
+
+/**
+ * Where a doorway (its frame's bounds) is in this wall's panel, as
+ * fractions of it: across from its left, and its top up from the panel's
+ * bottom. Null if it's in another wall.
+ */
+function doorwayOn(frame, doorBox) {
+  if (!doorBox) return null;
+  const centre = doorBox.getCenter(new THREE.Vector3());
+  if (Math.abs(centre.sub(frame.position).dot(frame.inward)) > 0.5) return null;
+  const across = [doorBox.min, doorBox.max].map((corner) => corner.clone().sub(frame.position).dot(frame.right) / frame.width + 0.5);
+  const bottom = frame.position.y - frame.height / 2;
+  return { left: Math.min(...across), right: Math.max(...across), top: (doorBox.max.y - bottom) / frame.height };
 }
 
 /** A single picture (NO WAY OUT, the doodle) placed on a wall. */

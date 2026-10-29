@@ -166,6 +166,8 @@ export function makeDoorOpenable(room, hinged, { portal, attach = [] } = {}) {
   const control = {
     interactable,
     get isOpen() { return target !== 0; },
+    /** Not shut yet: open, or still swinging either way. */
+    get ajar() { return target !== 0 || Math.abs(angle) > 1e-3; },
     open({ immediate = false } = {}) {
       target = openAngle;
       if (immediate) angle = openAngle;
