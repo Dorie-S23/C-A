@@ -1,4 +1,4 @@
-// Exercises scatterPictures()'s wall-sweep + randomization without starting
+// Exercises scatterPictures()'s floor-sweep + randomization without starting
 // WebGL or loading a real room .glb. Run: node --test test/_verify_picture_scatter.mjs
 import '../tools/testCanvas.mjs';
 import assert from 'node:assert/strict';
@@ -20,10 +20,15 @@ const SPAWN = { x: 0, y: 0, z: 0 };
 // Production's defaults (gridStep 10, gridRadius 4, spacing 16) are tuned
 // for the real Circus Lobby, which is enormous — scaled down to match this
 // test's small 10x10 room instead of the production room it isn't.
-const SMALL_ROOM_OPTIONS = { spacing: 2, gridStep: 3, gridRadius: 1, maxDistance: 8 };
+const SMALL_ROOM_OPTIONS = { spacing: 2, gridStep: 3, gridRadius: 1 };
 
-/** A plain 10x10 square room (four thin walls), fresh each call so one
- * trial's placed pictures can't shadow the next trial's raycasts. */
+/**
+ * A plain 10x10 square room (four thin walls, floor split into four 5x5
+ * quadrant tiles rather than one slab, so zoneOf's default — the mesh a
+ * spot lands on — has something to dedupe against, the way four separate
+ * walls used to). Fresh each call so one trial's placed pictures can't
+ * shadow the next trial's raycasts.
+ */
 function buildRoom() {
   const group = new THREE.Group();
   const size = 10, half = size / 2, thickness = 0.2, height = 3;
@@ -38,6 +43,13 @@ function buildRoom() {
     wall.position.set(x, height / 2, z);
     group.add(wall);
   }
+  const offset = half / 2;
+  for (const qx of [-1, 1]) for (const qz of [-1, 1]) {
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(half, thickness, half));
+    floor.position.set(qx * offset, -thickness / 2, qz * offset);
+    floor.name = `Floor${qx > 0 ? 'E' : 'W'}${qz > 0 ? 'S' : 'N'}`;
+    group.add(floor);
+  }
   group.updateMatrixWorld(true);
   return { group, interactables: [] };
 }
@@ -46,18 +58,26 @@ function placedPictures(room) {
   return room.group.children.filter(child => child.name === 'OfficePicture');
 }
 
-test('places all three pictures, each its own wall spot, none in the keep-clear zone', () => {
+/** A placed picture's local face normal in world space — ~(0,1,0) lying
+ * flat and face-up on the floor, allowing for the small random tilt. */
+function faceNormal(picture) {
+  return new THREE.Vector3(0, 0, 1).applyQuaternion(picture.quaternion);
+}
+
+test('places all three pictures on the floor, each its own spot, none in the keep-clear zone', () => {
   const room = buildRoom();
   const items = createLevel2Items();
   const keepClear = [{ x: 0, z: -4.5 }]; // right against the north wall's midpoint
   scatterPictures(room, items, PICTURES, SPAWN, keepClear, SMALL_ROOM_OPTIONS);
 
   const pictures = placedPictures(room);
-  assert.equal(pictures.length, 3, 'all three should find a free wall spot in an empty square room');
+  assert.equal(pictures.length, 3, 'all three should find a free floor spot in an empty square room');
   assert.equal(room.interactables.length, 3);
 
   for (const picture of pictures) {
-    assert.ok(picture.position.distanceTo(new THREE.Vector3(0, 1.5, -4.5)) >= 1.5, 'stays clear of the kept-clear spot');
+    assert.ok(picture.position.y >= 0 && picture.position.y < 0.1, 'rests on the floor, not at head height');
+    assert.ok(faceNormal(picture).y > 0.9, 'lies flat, face up — not standing against a wall');
+    assert.ok(Math.hypot(picture.position.x - 0, picture.position.z - -4.5) >= 1.5, 'stays clear of the kept-clear spot');
   }
   for (let i = 0; i < pictures.length; i++) {
     for (let j = i + 1; j < pictures.length; j++) {
@@ -75,7 +95,7 @@ test('a replay scatters them differently, not back to the same three spots', () 
     const [first] = placedPictures(room);
     firstSpotKeys.add(`${first.position.x.toFixed(2)},${first.position.z.toFixed(2)}`);
   }
-  // A fixed sweep (no randomization) would land ca1 on the exact same wall
+  // A fixed sweep (no randomization) would land ca1 on the exact same floor
   // spot all 30 times; a real retry has to actually look somewhere new.
   assert.ok(firstSpotKeys.size > 1, `expected varied placement across replays, got ${firstSpotKeys.size} distinct spot(s)`);
 });
@@ -85,7 +105,7 @@ test('an already-collected picture is not placed again', () => {
   const items = createLevel2Items();
   items.collect('ca1');
   scatterPictures(room, items, PICTURES, SPAWN, [], SMALL_ROOM_OPTIONS);
-  assert.equal(placedPictures(room).length, 2, 'only the two not-yet-collected pictures get hung');
+  assert.equal(placedPictures(room).length, 2, 'only the two not-yet-collected pictures get dropped');
 });
 
 test('partial pickups and deliveries preserve every remaining slot across room reloads', () => {
@@ -118,26 +138,25 @@ test('partial pickups and deliveries preserve every remaining slot across room r
   assert.notDeepEqual(placedPictures(retry).map(snapshot), original);
 });
 
-/** Which of buildRoom()'s four walls a picture hangs on. */
-function wallOf(picture) {
-  const { x, z } = picture.position;
-  return Math.abs(x) > Math.abs(z) ? (x > 0 ? 'east' : 'west') : (z > 0 ? 'south' : 'north');
+/** Which of buildRoom()'s four floor quadrants a picture landed on. */
+function quadrantOf(picture) {
+  return `${picture.position.x >= 0 ? 'E' : 'W'}${picture.position.z >= 0 ? 'S' : 'N'}`;
 }
 
-test('no two pictures share a wall while there are walls to spare', () => {
-  // Spacing alone (2m here) lets a 10m wall take two or three pictures:
-  // the Lobby's version of this was three photos on one stack of toy blocks.
+test('no two pictures share a floor quadrant while there are quadrants to spare', () => {
+  // Spacing alone (2m here) lets a 5x5 quadrant take two or three pictures:
+  // the Lobby's version of this was three photos on one patch of floor.
   for (let trial = 0; trial < 30; trial++) {
     const room = buildRoom();
     scatterPictures(room, createLevel2Items(), PICTURES, SPAWN, [], { ...SMALL_ROOM_OPTIONS, rng: createSeededRandom(trial + 1) });
-    const walls = placedPictures(room).map(wallOf);
-    assert.equal(new Set(walls).size, 3, `trial ${trial + 1} doubled up a wall: ${walls.join(', ')}`);
+    const quadrants = placedPictures(room).map(quadrantOf);
+    assert.equal(new Set(quadrants).size, 3, `trial ${trial + 1} doubled up a quadrant: ${quadrants.join(', ')}`);
   }
 });
 
 test('zones group meshes, and too few zones still places every picture', () => {
   const room = buildRoom();
-  // North and south walls as one zone, east and west as another.
+  // North and south halves as one zone, east and west as another.
   const axis = spot => (Math.abs(spot.position.z) > Math.abs(spot.position.x) ? 'north-south' : 'east-west');
   scatterPictures(room, createLevel2Items(), PICTURES, SPAWN, [], { ...SMALL_ROOM_OPTIONS, zoneOf: axis });
   const pictures = placedPictures(room);
@@ -153,16 +172,16 @@ test('Lobby landmarks: nearest by footprint, earlier wins an overlap, none past 
 });
 
 test('a spot the room calls unreachable never gets a picture', () => {
-  // Stands in for a gap sealed inside the Lobby's toy blocks: the north wall
-  // is in range of the sweep but can't be got to.
+  // Stands in for a gap sealed inside the Lobby's toy blocks: the north
+  // half of the floor is in range of the sweep but can't be got to.
   for (let trial = 0; trial < 10; trial++) {
     const room = buildRoom();
     scatterPictures(room, createLevel2Items(), PICTURES, SPAWN, [], {
       ...SMALL_ROOM_OPTIONS, rng: createSeededRandom(trial + 1), isReachable: spot => spot.position.z > -4,
     });
-    const walls = placedPictures(room).map(wallOf);
-    assert.equal(walls.length, 3);
-    assert.ok(!walls.includes('north'), `trial ${trial + 1} used the unreachable wall`);
+    const pictures = placedPictures(room);
+    assert.equal(pictures.length, 3);
+    assert.ok(pictures.every(p => p.position.z > -4), `trial ${trial + 1} used the unreachable north half`);
   }
 });
 

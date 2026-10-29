@@ -144,6 +144,23 @@ export function findSpotNear(group, anchorName, offset) {
 }
 
 /**
+ * Finds the floor straight down from (x, z) — these photos are scattered
+ * round the room, not hung on a wall, so a spot is just "is there floor
+ * here". Takes the lowest hit (same reasoning as findSpotNear: a shelf or
+ * low ceiling on the way down shouldn't be mistaken for the floor).
+ * Returns null if nothing is hit within `far`. `object` is the mesh the
+ * spot is on.
+ */
+export function findFloorSpot(group, x, z, { aboveY = 20, far = 40 } = {}) {
+  wallRaycaster.set(new THREE.Vector3(x, aboveY, z), new THREE.Vector3(0, -1, 0));
+  wallRaycaster.far = far;
+  const hits = wallRaycaster.intersectObject(group, true);
+  const hit = hits[hits.length - 1];
+  if (!hit) return null;
+  return { position: new THREE.Vector3(x, hit.point.y + FRAME_DEPTH / 2 + 0.01, z), object: hit.object };
+}
+
+/**
  * Places a pickupable office picture in a loaded room and wires it into
  * the E-interact system: picking it up removes it from the scene and
  * records it in the shared item state (see itemState in main.js). Does
@@ -154,22 +171,23 @@ export function findSpotNear(group, anchorName, offset) {
  * @param {{ hasCollected: (id: string) => boolean, collect: (id: string) => void }} items
  * @param {string} itemId unique id, also used as the collected/presented key
  * @param {string} imageUrl
- * @param {THREE.Vector3} position
+ * @param {THREE.Vector3} position floor height (see findFloorSpot)
  * @param {number} rotationY
- * @param {{ tiltBack?: number }} [options] tiltBack: radians to lean the
- *   top back, e.g. a picture propped against a wall rather than standing
+ * @param {{ tilt?: number }} [options] tilt: a small extra lean off dead
+ *   flat (radians), so a kicked-around photo doesn't look laid out by hand
  * @returns {THREE.Group | null} the placed picture (for pulseGlow), or
  *   null if it was already collected and nothing was placed
  */
-export function placeOfficePicture(room, items, itemId, imageUrl, position, rotationY, { tiltBack = 0 } = {}) {
+export function placeOfficePicture(room, items, itemId, imageUrl, position, rotationY, { tilt = 0 } = {}) {
   if (items.hasCollected(itemId)) return null;
 
   const picture = createOfficePicture(imageUrl);
   picture.position.copy(position);
-  // Yaw first, then the lean about its own left-right axis; -X tips the
-  // top away from the photo's face (+Z).
+  // Face-up on the floor (the photo's local +Z, flipped onto world +Y by
+  // the -90° lean), yawed around that same up axis, plus a small extra
+  // tilt off dead flat.
   picture.rotation.order = 'YXZ';
-  picture.rotation.set(-tiltBack, rotationY, 0);
+  picture.rotation.set(-Math.PI / 2 + tilt, rotationY, 0);
   room.group.add(picture);
   picture.updateMatrixWorld(true);
 
@@ -197,28 +215,27 @@ export function placeOfficePicture(room, items, itemId, imageUrl, position, rota
 }
 
 /**
- * Hangs each not-yet-collected picture on a different wall, found by
- * sweeping outward from a grid of origins around `spawn` rather than just
- * `spawn` itself — measured against the real Circus Lobby, a single
- * central sweep found a usable wall on only 2 of 16 rays within a sensible
- * mounting distance (it's a large, mostly-open room, not a tight one), so
- * one origin alone can't reliably find enough spots for 5 pictures. A grid
+ * Drops each not-yet-collected picture on the floor somewhere in the room
+ * (not hung on a wall — these are scattered/kicked around the circus, not
+ * a gallery), found by sweeping a grid of origins around `spawn` rather
+ * than just `spawn` itself — measured against the real Circus Lobby, a
+ * single central sweep found a usable spot on only 2 of 16 rays within a
+ * sensible range (it's a large, mostly-open room, not a tight one), so one
+ * origin alone can't reliably find enough spots for 5 pictures. A grid
  * (origins spread `gridStep` apart out to `gridRadius` steps from spawn,
- * swept in a random order) pools far more candidates than needed, and
- * which of them actually get used is itself randomized — measured against
- * the real Lobby, these defaults reliably spread the 5 picked spots 10m+
- * apart, often 50m+ end to end, instead of landing in one cluster (an
- * earlier, tighter grid technically found enough candidates but they were
- * all close together, which read as "neatly scattered" rather than
- * actually scattered around the room). The wider sweep is a one-time cost
- * at room load (measured ~400-600ms against the real Lobby), not a
- * per-frame one.
+ * swept in a random order, each sampled at several random points within
+ * its own cell rather than just its centre) pools far more candidates than
+ * needed, and which of them actually get used is itself randomized —
+ * measured against the real Lobby, these defaults reliably spread the 5
+ * picked spots well past the minimum `spacing` apart, often 50m+ end to
+ * end, instead of landing in one cluster.
  *
  * Spacing alone doesn't keep the pictures apart in the Lobby: its toy
- * blocks are 16m cubes stacked into walls, so spots 8m+ apart could still
- * all be on the same block wall. At most one picture goes on each `zoneOf`
- * zone (by default the mesh it hangs on; the Lobby maps spots to its named
- * landmarks), unless there are fewer zones than pictures.
+ * blocks are 16m cubes stacked into walls, so two floor spots that far
+ * apart could still read as "the same patch of floor". At most one
+ * picture goes on each `zoneOf` zone (by default the mesh it's resting on;
+ * the Lobby maps spots to its named landmarks), unless there are fewer
+ * zones than pictures.
  *
  * A room that knows where the player can walk passes `isOpen` and
  * `isReachable`: grid origins off that floor are skipped (some land sealed
@@ -246,17 +263,17 @@ export function scatterPictures(room, items, pictures, spawn, keepClear = [], {
   // are right there too). The wider grid sweep above already pools
   // candidates well past this range, so there's still enough of a pool to
   // choose from at the larger spacing.
-  height = 1.5, spacing = 16, keepClearRadius = 4, maxDistance = 12,
+  spacing = 16, keepClearRadius = 4,
   gridStep = 10, gridRadius = 4, rng = Math.random, zoneOf = (spot) => spot.object,
   isOpen = () => true, isReachable = () => true,
 } = {}) {
   const layout = items.getPhotoLayout(() => choosePictureSpots(room, pictures, spawn, keepClear, {
-    height, spacing, keepClearRadius, maxDistance, gridStep, gridRadius, rng, zoneOf, isOpen, isReachable,
+    spacing, keepClearRadius, gridStep, gridRadius, rng, zoneOf, isOpen, isReachable,
   }));
   const placed = [];
   for (const { id, url } of pictures) {
     const spot = layout.find(entry => entry?.id === id);
-    const picture = spot && placeOfficePicture(room, items, id, url, spot.position, spot.rotationY);
+    const picture = spot && placeOfficePicture(room, items, id, url, spot.position, spot.rotationY, { tilt: spot.tilt });
     if (picture) placed.push(picture);
   }
   let elapsed = 0;
@@ -269,15 +286,19 @@ export function scatterPictures(room, items, pictures, spawn, keepClear = [], {
   };
 }
 
+const FLOOR_SEARCH_ABOVE = 25; // clears the Lobby's 16 m toy-block stacks with room to spare
+const FLOOR_SEARCH_FAR = 45;
+const TILT_RANGE = 0.1; // ~6°, so a dropped/kicked photo doesn't look laid out by hand
+
 function choosePictureSpots(room, pictures, spawn, keepClear, {
-  height, spacing, keepClearRadius, maxDistance, gridStep, gridRadius, rng, zoneOf, isOpen, isReachable,
+  spacing, keepClearRadius, gridStep, gridRadius, rng, zoneOf, isOpen, isReachable,
 }) {
-  const avoid = keepClear.filter(Boolean).map((point) => new THREE.Vector3(point.x, spawn.y + height, point.z));
+  const avoid = keepClear.filter(Boolean);
 
   const origins = [];
   for (let gx = -gridRadius; gx <= gridRadius; gx++) {
     for (let gz = -gridRadius; gz <= gridRadius; gz++) {
-      const origin = new THREE.Vector3(spawn.x + gx * gridStep, spawn.y + height, spawn.z + gz * gridStep);
+      const origin = new THREE.Vector3(spawn.x + gx * gridStep, spawn.y, spawn.z + gz * gridStep);
       if (isOpen(origin)) origins.push(origin);
     }
   }
@@ -286,6 +307,7 @@ function choosePictureSpots(room, pictures, spawn, keepClear, {
     [origins[i], origins[j]] = [origins[j], origins[i]];
   }
 
+  const aboveY = spawn.y + FLOOR_SEARCH_ABOVE;
   const spots = [];
   const zones = new Set();
   const wanted = pictures.length * 3; // a bigger pool than needed, so the spacing/keep-clear filters still have real room to choose from
@@ -294,12 +316,18 @@ function choosePictureSpots(room, pictures, spawn, keepClear, {
     const startAngle = rng() * Math.PI * 2;
     for (let i = 0; i < 16; i++) {
       const angle = startAngle + (i / 16) * Math.PI * 2;
-      const spot = findWallSpot(room.group, origin, new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle)), maxDistance);
+      // Spread candidates across the whole grid cell, not a thin ring
+      // around its centre (sqrt() keeps them uniform over the disc area
+      // instead of bunched near the middle).
+      const radius = (gridStep / 2) * Math.sqrt(rng());
+      const x = origin.x + Math.sin(angle) * radius, z = origin.z + Math.cos(angle) * radius;
+      const spot = findFloorSpot(room.group, x, z, { aboveY, far: FLOOR_SEARCH_FAR });
       if (!spot) continue;
-      const flat = new THREE.Vector3(spot.position.x, spawn.y + height, spot.position.z);
-      if (avoid.some((point) => point.distanceTo(flat) < keepClearRadius)) continue;
+      if (avoid.some((point) => Math.hypot(point.x - spot.position.x, point.z - spot.position.z) < keepClearRadius)) continue;
       if (spots.some((other) => other.position.distanceTo(spot.position) < spacing)) continue;
       if (!isReachable(spot)) continue;
+      spot.rotationY = rng() * Math.PI * 2;
+      spot.tilt = (rng() * 2 - 1) * TILT_RANGE;
       spot.zone = zoneOf(spot);
       zones.add(spot.zone);
       spots.push(spot);
@@ -327,6 +355,6 @@ function choosePictureSpots(room, pictures, spawn, keepClear, {
   }
   return pictures.map(({ id }, i) => {
     const spot = chosen[i];
-    return spot ? { id, position: spot.position, rotationY: spot.rotationY } : null;
+    return spot ? { id, position: spot.position, rotationY: spot.rotationY, tilt: spot.tilt } : null;
   });
 }

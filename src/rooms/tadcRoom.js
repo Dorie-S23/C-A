@@ -11,10 +11,10 @@ import { decodeReachMap } from './reachMap.js';
 import { PHOTO_URLS } from '../state/level2Items.js';
 
 // Level 2's five office photos (see PHOTO_COUNT in level2Items.js),
-// scattered round the lobby rather than sitting in Kaufmo's own room — a
-// real search, not a hand-in on arrival. scatterPictures() keeps wall spots
-// in the shared item state for the whole attempt. Only a retry or New Game
-// picks new positions.
+// scattered on the floor round the lobby rather than sitting in Kaufmo's
+// own room — a real search, not a hand-in on arrival. scatterPictures()
+// keeps the floor spots in the shared item state for the whole attempt.
+// Only a retry or New Game picks new positions.
 const PICTURES = Object.entries(PHOTO_URLS).map(([id, url]) => ({ id, url }));
 
 // The castle's brick walls (arched windows, battlements), taken from the
@@ -44,12 +44,12 @@ const LANDMARK_REACH = 6;
 const lobbyReach = decodeReachMap(LOBBY_REACH);
 const PHOTO_VIEW_DISTANCE = 2.5;
 const EYE_HEIGHT = 1.5;
-// ...and out in the open, not tucked behind a building: seen face-on from
-// at least PHOTO_OPEN_MIN points of a PHOTO_OPEN_STEP grid of walkable
-// floor within PHOTO_OPEN_RADIUS. A spot with nothing in the way sees ~56,
-// so this is half of that. Measured against the real Lobby, the old
-// close-up check alone let ~5% of spots through that only a narrow pocket
-// of floor could see, and a few facing a wall no one could see at all.
+// ...and out in the open, not tucked behind a building: seen from at
+// least PHOTO_OPEN_MIN points of a PHOTO_OPEN_STEP grid of walkable floor
+// within PHOTO_OPEN_RADIUS. A spot with nothing in the way sees ~56, so
+// this is half of that. Measured against the real Lobby, the close-up
+// check alone let a few spots through that only a narrow pocket of floor
+// could see.
 const PHOTO_OPEN_RADIUS = 12;
 const PHOTO_OPEN_STEP = 2;
 const PHOTO_OPEN_MIN = 28;
@@ -111,16 +111,15 @@ export function loadTadcRoom(onProgress, { from, items } = {}) {
 const viewRaycaster = new THREE.Raycaster();
 
 /**
- * Walkable floor cells within `radius` of a photo spot on a `step` grid,
- * in front of its face only: from behind, the frame hides the photo (and
- * a spot on the far side of a wall isn't findable from the near side).
+ * Walkable floor cells within `radius` of a photo spot on a `step` grid.
+ * Lying flat and face-up, a photo is visible from any direction (unlike a
+ * wall mount, there's no "behind the frame" side to exclude).
  */
-function floorInFront({ position, rotationY }, radius, step) {
-  const facing = { x: Math.sin(rotationY), z: Math.cos(rotationY) };
+function floorAround({ position }, radius, step) {
   const cells = [];
   for (let dx = -radius; dx <= radius; dx += step) {
     for (let dz = -radius; dz <= radius; dz += step) {
-      if (Math.hypot(dx, dz) > radius || dx * facing.x + dz * facing.z <= 0) continue;
+      if (Math.hypot(dx, dz) > radius) continue;
       const x = position.x + dx, z = position.z + dz;
       if (lobbyReach.has(x, z)) cells.push({ x, z });
     }
@@ -150,21 +149,20 @@ function photoSeenFrom(group, position, x, z, floorY) {
 
 /**
  * Whether some walkable floor within PHOTO_VIEW_DISTANCE of a photo spot
- * sees it unobstructed, trying the floor straight out in front of it
- * first. Without this a spot could be on the inside of a sealed gap in
- * the toy blocks: near the floor plan's walkable cells, but out of sight.
+ * sees it unobstructed, trying the nearest floor cells first. Without this
+ * a spot could be on the inside of a sealed gap in the toy blocks: near
+ * the floor plan's walkable cells, but out of sight.
  */
 function photoInView(group, spot, floorY) {
-  const { position, rotationY } = spot;
-  const front = { x: position.x + Math.sin(rotationY) * 1.5, z: position.z + Math.cos(rotationY) * 1.5 };
-  const cells = floorInFront(spot, PHOTO_VIEW_DISTANCE, lobbyReach.step);
-  cells.sort((a, b) => Math.hypot(a.x - front.x, a.z - front.z) - Math.hypot(b.x - front.x, b.z - front.z));
+  const { position } = spot;
+  const cells = floorAround(spot, PHOTO_VIEW_DISTANCE, lobbyReach.step);
+  cells.sort((a, b) => Math.hypot(a.x - position.x, a.z - position.z) - Math.hypot(b.x - position.x, b.z - position.z));
   return cells.some(({ x, z }) => photoSeenFrom(group, position, x, z, floorY));
 }
 
 /** Whether enough of the floor around a photo spot sees it (PHOTO_OPEN_MIN). */
 function photoInOpen(group, spot, floorY) {
-  const cells = floorInFront(spot, PHOTO_OPEN_RADIUS, PHOTO_OPEN_STEP);
+  const cells = floorAround(spot, PHOTO_OPEN_RADIUS, PHOTO_OPEN_STEP);
   let seen = 0;
   for (const [i, { x, z }] of cells.entries()) {
     if (photoSeenFrom(group, spot.position, x, z, floorY) && ++seen >= PHOTO_OPEN_MIN) return true;
