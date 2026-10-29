@@ -1212,6 +1212,7 @@
             <div id="pause-menu" hidden>
                 <p id="caine-pause-joke" class="caine-memory-text" role="status" aria-live="polite" hidden></p>
                 <button id="btn-resume">&#9654; Resume</button>
+                <button id="maze-hints-button" type="button" aria-haspopup="dialog" aria-controls="maze-hints-panel" aria-expanded="false" hidden>Hints</button>
                 <button id="btn-save">&#128190; Save Game</button>
                 <button id="btn-pause-load">Load Game</button>
                 <button id="btn-home">&#8962; Back to Home</button>
@@ -1296,6 +1297,15 @@
             </div>
         </div>
         <div id="crosshair" hidden></div>
+        <aside id="maze-hints-reminder" hidden>H: Hints &middot; Esc: Pause</aside>
+        <dialog id="maze-hints-panel" aria-labelledby="maze-hints-title">
+            <header><div><p class="maze-hints-kicker">LEVEL 3 &middot; A LITTLE DIRECTION</p><h2 id="maze-hints-title">Funhouse hints</h2><small class="maze-hints-count" data-hints-count></small></div><button type="button" data-close-hints>Back &middot; Esc</button></header>
+            <p data-hint-text></p>
+            <section data-maze-map aria-label="Maze floor plan" hidden>
+                <div class="maze-map-layout"><div data-map-drawing></div><ul class="maze-map-key" data-map-legend></ul></div>
+            </section>
+            <button type="button" data-next-hint></button>
+        </dialog>
         <aside id="maze-objective-hud" role="status" aria-live="polite" aria-atomic="true" hidden>
             <p class="maze-kicker">LEVEL 3: THE LAST ACT</p>
             <h2 data-maze-title></h2><p id="maze-items-counter" data-maze-count hidden></p><p id="maze-search-timer" role="timer" aria-live="off" hidden></p><ul data-maze-checklist></ul>
