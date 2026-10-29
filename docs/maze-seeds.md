@@ -114,7 +114,7 @@ it does not test visibility, move actors, start timers, or resolve story phases.
 ## Verification
 
 ```sh
-node --test _verify_maze.mjs
+node --test test/_verify_maze.mjs
 node tools/verify_maze_findables.mjs
 npm test
 npm run build

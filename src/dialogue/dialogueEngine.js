@@ -2,7 +2,7 @@
  * Pure state machine over a dialogue script: given an array of nodes, it
  * tracks the current node and exposes advance()/choose() to move through
  * it. Kept free of DOM/Three.js so the branching logic is testable on its
- * own (see _verify_dialogue.mjs) and so DialogueUI only has to render
+ * own (see test/_verify_dialogue.mjs) and so DialogueUI only has to render
  * whatever node is current, never work out what comes next itself.
  *
  * Node shapes:
@@ -24,6 +24,10 @@
  * begins at that node id instead of the first node, and reaching the
  * `stopAt` node id ends this part (without showing it) as if the script
  * had finished there.
+ *
+ * jump(id) moves straight to a node the script doesn't route to itself —
+ * for branches decided outside it, e.g. Level 1's 'l1_shut_out' ending
+ * once Ribbit's distress hits its limit (see src/levels/level1.js).
  *
  * @param {Array} script
  * @param {{ startAt?: string, stopAt?: string }} [options]
@@ -71,6 +75,11 @@ export function createDialogueEngine(script, { startAt, stopAt } = {}) {
       if (!option) return null;
       index = resolve(option.next, index);
       return option;
+    },
+    jump(id) {
+      if (index === null) return;
+      const target = lookup(id);
+      index = target === stopIndex ? null : target;
     },
   };
 }

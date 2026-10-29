@@ -8,19 +8,14 @@ import { createStaircase } from '../props/accessStairs.js';
 import { LOBBY_LANDMARKS, nearestLandmark } from './lobbyLandmarks.js';
 import { LOBBY_REACH } from './lobbyReach.js';
 import { decodeReachMap } from './reachMap.js';
+import { PHOTO_URLS } from '../state/level2Items.js';
 
 // Level 2's five office photos (see PHOTO_COUNT in level2Items.js),
 // scattered round the lobby rather than sitting in Kaufmo's own room — a
 // real search, not a hand-in on arrival. scatterPictures() keeps wall spots
 // in the shared item state for the whole attempt. Only a retry or New Game
-// picks new positions. ca6.png exists alongside these but isn't used.
-const PICTURES = [
-  { id: 'ca1', url: './models/objects/ca1.png' },
-  { id: 'ca2', url: './models/objects/ca2.png' },
-  { id: 'ca3', url: './models/objects/ca3.png' },
-  { id: 'ca4', url: './models/objects/ca4.png' },
-  { id: 'ca5', url: './models/objects/ca5.png' },
-];
+// picks new positions.
+const PICTURES = Object.entries(PHOTO_URLS).map(([id, url]) => ({ id, url }));
 
 // The castle's brick walls (arched windows, battlements), taken from the
 // Sketchfab "The Digital Circus" model. The lobby's own export only has a

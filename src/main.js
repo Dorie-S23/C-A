@@ -26,14 +26,16 @@ import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold }
 import { createStoryProgress } from './game/storyProgress.js';
 import { createSaveSlots } from './game/saveGame.js';
 import { createLoadingBackgrounds } from './ui/loadingBackgrounds.js';
+import { createLoadingSprites } from './ui/loadingSprites.js';
 import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.js';
-import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT, PHOTO_THRESHOLD } from './state/level2Items.js';
+import { createLevel2Items, pickKaufmoScript, photoUrls, PHOTO_COUNT, PHOTO_THRESHOLD } from './state/level2Items.js';
 import {createMazeEncounter} from './levels/mazeEncounter.js';
 import {createMazeObjectiveHUD} from './ui/mazeObjectiveHUD.js';
 import { createMazeItems, createMazeSearch, MAZE_FINDABLES } from './state/mazeItems.js';
 import { runLevel1 } from './levels/level1.js';
 import { kaufmoHallwayPlan, preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
 import { preloadJaxFleeCutscene, playJaxFleeCutscene } from './cutscenes/jaxFleeCutscene.js';
+import { loadHallwayGatheringCast, hallwayGatheringPlan, stageHallwayGathering } from './cutscenes/hallwayGatheringCutscene.js';
 import { createMinimap } from './ui/minimap.js';
 import { nearestLandmark } from './rooms/lobbyLandmarks.js';
 import { createObjectiveController } from './game/objectives.js';
@@ -44,10 +46,12 @@ import { createTutorialHUD } from './ui/tutorialHUD.js';
 import { createActionCaptions } from './ui/actionCaptions.js';
 import { createCaineConversation } from './game/caineConversation.js';
 import { createCaineMemory } from './state/caineMemory.js';
+import { distressFromDialogue } from './effects/abstraction.js';
+import { createHandInPhotos } from './props/handInPhotos.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
   level2IdleDialogue, level2CompleteDialogue, level2ReturnAndSendoffDialogue, level2AbstractionDialogue,
-  level3JaxDialogue, level3JaxFinalDialogue,
+  level2TimeUpDialogue, level3JaxDialogue, level3JaxFinalDialogue,
   level2HallwayDialogue, level2RoomOpeningDialogue, ribbitFollowupDialogue,
 } from './data/dialogues.js';
 
@@ -73,7 +77,8 @@ const DIALOGUE_SCRIPTS = {
   level2Complete: { script: level2CompleteDialogue, room: 'kaufmo' },
   level2Return: { script: level2ReturnAndSendoffDialogue, room: 'kaufmo' },
   level2Abstraction: { script: level2AbstractionDialogue, room: 'kaufmo' },
-  level3Jax: { script: level3JaxDialogue, room: 'tadc' },
+  level2TimeUp: { script: level2TimeUpDialogue, room: 'kaufmo' },
+  level3Jax: { script: level3JaxDialogue, room: 'dorm' },
   level3JaxFinal: {script:level3JaxFinalDialogue,room:'maze'},
 };
 
@@ -93,7 +98,7 @@ const PREVIEW_CAMERA_OFFSET = 0.5;
 const PLAYER_RADIUS = 0.35;
 // Faster than her Walk/Run clips are authored at (WALK_CLIP_SPEED/RUN_CLIP_SPEED);
 // updatePomniWalk speeds the clips up to match, so her feet stay planted.
-const WALK_SPEED = 4.2; // metres per second
+const WALK_SPEED = 3.6; // metres per second
 const SPRINT_MULTIPLIER = 2.0; // running speed = WALK_SPEED × this
 // Dev builds only (npm run dev): crosses rooms fast for playtesting. Kept
 // moderate — every frame's step still goes through the wall probes, and a
@@ -195,7 +200,7 @@ const pomniReady = loadPomni().then(({ pomni: model, animations }) => {
   }
 });
 const pomniBones = {
-  Hips: null, RightArm: null, RightForeArm: null,
+  Hips: null, RightArm: null, RightForeArm: null, RightHand: null, LeftArm: null, LeftForeArm: null, LeftHand: null,
   LeftUpLeg: null, RightUpLeg: null, LeftLeg: null, RightLeg: null,
   Neck: null, Head: null,
 };
@@ -204,7 +209,8 @@ let pomniHipsHeight = 0.8; // hips above her feet when standing; measured on loa
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlaySubtitle = document.getElementById('overlay-subtitle');
-createLoadingBackgrounds(overlay); // (the cast's sprites, ui/loadingSprites.js, are off for now)
+createLoadingBackgrounds(overlay);
+createLoadingSprites(overlay);
 const roomPicker = document.getElementById('room-picker');
 const dialoguePicker = document.getElementById('dialogue-picker');
 const pauseMenu = document.getElementById('pause-menu');
@@ -360,7 +366,7 @@ document.getElementById('btn-level3').addEventListener('click', (event) => {
   storyProgress.finishRibbit(4);
   storyProgress.finishKaufmoIntro();
   // Carrying all five: talking to him hands them in and plays the real
-  // success scene, then the Level 2 card and the Lobby scene before the maze.
+  // success scene, then the Level 2 card and the Dorm Hall gathering before the maze.
   for (let i = 0; i < PHOTO_COUNT; i++) itemState.collect(`dev-level3-priming-${i}`);
   titleScreen.hide();
   selectRoom('kaufmo', { onReady: (room) => talkToKaufmo(room.kaufmoApi, loadToken) });
@@ -1137,18 +1143,18 @@ function triggerCaineArrival() {
  * straight through to DialogueUI: onComplete for a finished conversation,
  * onCancel for one abandoned with Escape, onChoice for each option picked,
  * distressFor to shake/tint a line by how upset its speaker is (0-3),
- * onNode for each node as it's shown (to act out its `action`), and
- * startAt/stopAt to play only part of the script (see createDialogueEngine).
+ * onNode for each node as it's shown (to act out its `action`), nextFor
+ * to send the script somewhere it wouldn't route itself, and startAt/stopAt to play only part of the script (see createDialogueEngine).
  *
  * @param {string} key a DIALOGUE_SCRIPTS key
  * @param {{ lookAt?: THREE.Vector3, onChoice?: (option, nextNode) => void,
  *   onComplete?: () => void, onCancel?: () => void,
  *   distressFor?: (lineNode) => number, onNode?: (node) => void,
- *   startAt?: string, stopAt?: string }} [options]
+ *   nextFor?: (node) => string | undefined, startAt?: string, stopAt?: string }} [options]
  */
 let dialogueGeneration = 0;
 function playRoomDialogue(key, {
-  lookAt, onChoice, onComplete, onCancel, distressFor, lineFor, onNode, startAt, stopAt,
+  lookAt, onChoice, onComplete, onCancel, distressFor, lineFor, nextFor, onNode, startAt, stopAt,
 } = {}) {
   const entry = DIALOGUE_SCRIPTS[key];
   if (!entry || dialogueUI.isActive) return false;
@@ -1163,7 +1169,7 @@ function playRoomDialogue(key, {
   resetMoveState();
   if (lookAt) turnPomniTowards(lookAt);
   dialogueUI.play(entry.script, {
-    onChoice, onComplete: finish(onComplete), onCancel: finish(onCancel), distressFor, lineFor, startAt, stopAt,
+    onChoice, onComplete: finish(onComplete), onCancel: finish(onCancel), distressFor, lineFor, nextFor, startAt, stopAt,
     onNode: withHallwayCutscene(key, onNode),
   });
   return true;
@@ -1338,10 +1344,17 @@ function talkToKaufmo(kaufmoApi, token) {
   // as Ribbit's/Caine's own faceTowards/setSpeaking — previously he just
   // stood there frozen through the whole conversation.
   kaufmoApi.faceTowards(player.position);
+  // Between conversations he's at his theory wall (kaufmoRoom.js
+  // createWallRoutine); a conversation takes him off it.
+  const room = currentRoomInfo;
+  const routine = room?.kaufmoRoutine;
+  let actHandIn = null; // acts out the photos for level2Return/level2Abstraction (see handInActor)
   const onNode = (node) => {
     const speaking = node.speaker === 'kaufmo';
     kaufmoApi.setSpeaking(speaking);
+    kaufmoApi.setListening(node.speaker === 'pomni');
     kaufmoApi.setPose(speaking ? (node.mood || 'neutral') : 'neutral');
+    actHandIn?.(node);
     // Jax bolting past is a wordless cutaway, same technique as Pre-Level
     // 1's jaxPassByText: returning a promise here hides the dialogue box
     // and holds this beat until the cutscene resolves, then its own
@@ -1356,13 +1369,14 @@ function talkToKaufmo(kaufmoApi, token) {
       }).catch((error) => console.warn('Jax flee cutscene unavailable; continuing dialogue.', error));
     }
   };
-  const stopTalking = () => { kaufmoApi.setSpeaking(false); kaufmoApi.setPose('neutral'); };
+  const stopTalking = () => { kaufmoApi.setSpeaking(false); kaufmoApi.setListening(false); kaufmoApi.setPose('neutral'); };
   // The conversation has its own shot: the room's staging if it has one
   // (Pomni put on her mark, the camera at the bed's corner — see
   // kaufmoRoom.js talkShot), else a two-shot (see twoShotCamera). The
   // follow camera comes back when it ends, however it ends.
   const talk = (key, { onComplete, onCancel, distressFor }) => {
     if (dialogueUI.isActive) return false;
+    routine?.pause();
     const staging = currentRoomInfo?.talkShot;
     let faceThis = lookAt;
     if (staging) {
@@ -1377,18 +1391,23 @@ function talkToKaufmo(kaufmoApi, token) {
       stage.lookWithHead(staging.pomniHeadAt);
     }
     const shot = staging ? { position: staging.camera.clone(), target: staging.target.clone() } : twoShotCamera(lookAt);
-    const release = () => {
+    // Back to his wall as the camera cuts back, unless the scene ends the
+    // level: then he stays as it left him, behind the card.
+    const release = (backToWall) => {
       if (stageCamera === shot) stageCamera = null;
       if (staging) stage.lookWithHead(null);
+      if (backToWall && room === currentRoomInfo) routine?.resume();
     };
+    const endsLevel = key === 'level2Return' || key === 'level2Abstraction';
     const started = playRoomDialogue(key, {
       lookAt: faceThis,
       onNode,
       distressFor,
-      onComplete() { release(); return onComplete(); },
-      onCancel() { release(); onCancel(); },
+      onComplete() { release(!endsLevel); return onComplete(); },
+      onCancel() { release(key !== 'level2Abstraction'); onCancel(); },
     });
     if (started) stageCamera = shot;
+    else release(true);
     return started;
   };
 
@@ -1418,6 +1437,7 @@ function talkToKaufmo(kaufmoApi, token) {
   if (key === 'level2Complete' && !itemState.isDone()) key = 'level2Return';
   storyProgress.presentedPhotos(itemState.totalPresented());
   if (key === 'level2Return') openingAudio.playChime('handIn');
+  if (key === 'level2Return' || key === 'level2Abstraction') actHandIn = handInActor(kaufmoApi, room);
   const finished = () => {
     if (!valid()) return;
     if (key === 'level2Return' && !itemState.isDone()) {
@@ -1432,8 +1452,94 @@ function talkToKaufmo(kaufmoApi, token) {
     distressFor: (line) => line.distress ?? 0,
     onComplete() { stopTalking(); finished(); },
     // He's already had the photos: backing out can't undo what happens.
-    onCancel() { stopTalking(); if (key === 'level2Abstraction') finished(); },
+    // Out of the success scene, though, it plays again from the top.
+    onCancel() {
+      stopTalking();
+      if (key === 'level2Abstraction') finished();
+      else if (room?.handInPhotos) { room.handInPhotos.dispose(); room.handInPhotos = null; }
+    },
   });
+}
+
+/**
+ * Acts out the photos changing hands on the beats level2Return and
+ * level2Abstraction mark (their ids in dialogues.js): Pomni holds them
+ * out and Kaufmo takes them; then he kneels and spreads them over the
+ * floor, taps one, gathers them up and clutches them to his chest — or,
+ * short of enough, looks them over and lets them fall. Each cue sets the
+ * whole state it needs, so a beat skipped before its motion finished
+ * doesn't leave the next one wrong. Returns the onNode hook.
+ */
+function handInActor(kaufmoApi, room) {
+  room.handInPhotos?.dispose();
+  const urls = photoUrls(itemState.snapshot().presented);
+  const photos = createHandInPhotos(urls, {
+    kaufmo: kaufmoApi.kaufmo,
+    kaufmoHands: kaufmoApi.hands,
+    pomniHands: () => (pomniBones.LeftHand && pomniBones.RightHand ? [pomniBones.LeftHand, pomniBones.RightHand] : null),
+    floorY: kaufmoApi.kaufmo.position.y,
+  });
+  room.group.add(photos.group);
+  room.handInPhotos = photos;
+
+  let cue = 0;
+  // A step of the current cue, dropped if a later cue has already started.
+  const later = (seconds, step) => {
+    const mine = cue;
+    photos.after(seconds, () => { if (mine === cue) step(); });
+  };
+  const act = (name) => kaufmoApi.setActivity(name);
+  const handOver = () => {
+    void stage.gesture('handOver');
+    act('receive');
+    later(0.3, () => photos.setMode('pomni'));
+    later(1.0, () => photos.setMode('kaufmo'));
+  };
+  return (node) => {
+    switch (node.id) {
+      case 'handsOver':
+        cue++;
+        handOver();
+        later(1.5, () => act('spread'));
+        later(1.9, () => photos.setMode('floor'));
+        break;
+      case 'tapsPicture':
+        cue++;
+        act('tap');
+        photos.setMode('floor');
+        photos.tap(2);
+        break;
+      case 'gathersPictures':
+        cue++;
+        act('kneel');
+        photos.setMode('kaufmo');
+        later(0.7, () => { act('clutch'); photos.setMode('chest'); });
+        break;
+      case 'turnsBack':
+        cue++;
+        act('study');
+        photos.setMode('kaufmo');
+        break;
+      case 'clutchingPictures':
+        cue++;
+        act('clutch');
+        photos.setMode('chest');
+        break;
+      case 'holdsOut':
+        cue++;
+        handOver();
+        later(1.3, () => act('study'));
+        break;
+      case 'itDoesntClose':
+        cue++;
+        act(null);
+        photos.setMode('dropped');
+        break;
+      default:
+        // Done tapping: back to kneeling over them as he talks.
+        if (node.type === 'line' && kaufmoApi.activity === 'tap') act('kneel');
+    }
+  };
 }
 
 // Talking to someone frames them both: the camera stands off Pomni's right
@@ -1487,20 +1593,77 @@ function clearView(from, to) {
 }
 
 /**
- * After the success scene: the Level 2 card, then the Lobby, where Pomni
- * finds Jax by the tent and Ribbit catches up at the maze entrance
- * (level3Jax), then into the maze for Level 3. The Lobby scene is dialogue
- * over the room for now; Jax and Ribbit aren't staged there in 3D yet.
+ * After the success scene: the Level 2 card, then the Dorm Hall, where
+ * Pomni, Ribbit and Kaufmo gather and find Jax (level3Jax, staged by
+ * playHallwayGathering), then into the maze for Level 3.
  */
 async function finishKaufmoLevel(token) {
   const title = 'Level 2 Complete';
   const subtitle = 'Kaufmo has his missing pieces. Now someone should check on Jax.';
-  if (!await showLevelComplete(title, subtitle, { resume: false }) || token !== loadToken) return;
-  const lobby = await missionApi.travel('tadc', { from: null });
-  if (!lobby) return;
+  // The cast loads behind the card.
+  const casting = loadHallwayGatheringCast().catch((error) => {
+    console.warn('Hallway gathering cast unavailable; dialogue only.', error);
+    return null;
+  });
+  const disposeCast = (cast) => {
+    if (cast) for (const object of [cast.kaufmoApi.kaufmo, cast.ribbitApi.ribbit, cast.jaxApi.jax]) disposeObject3D(object);
+  };
+  if (!await showLevelComplete(title, subtitle, { resume: false }) || token !== loadToken) {
+    void casting.then(disposeCast);
+    return;
+  }
+  const cast = await casting;
+  if (token !== loadToken) { disposeCast(cast); return; }
+  const hall = await missionApi.travel('dorm', { from: null });
+  if (!hall) { disposeCast(cast); return; }
   const here = loadToken;
   const intoTheMaze = () => { if (here === loadToken) void missionApi.travel('maze'); };
-  if (!playRoomDialogue('level3Jax', { onComplete: intoTheMaze, onCancel: intoTheMaze })) intoTheMaze();
+  if (!playHallwayGathering(hall, cast, intoTheMaze)) {
+    disposeCast(cast);
+    intoTheMaze();
+  }
+}
+
+/**
+ * The gathering: the cast on their marks in the hall (they go with the
+ * room when it's left), Pomni held on hers, and the scene's own shots in
+ * place of the follow camera. Without the cast it's the dialogue alone.
+ */
+function playHallwayGathering(room, cast, onDone) {
+  let plan = null;
+  try {
+    if (cast) plan = hallwayGatheringPlan(room);
+  } catch (error) {
+    console.warn('Hallway gathering marks unavailable; dialogue only.', error);
+  }
+  if (!plan) return playRoomDialogue('level3Jax', { onComplete: onDone, onCancel: onDone });
+  const token = loadToken;
+  const gathering = stageHallwayGathering(room, cast, plan);
+  const roomOwnUpdate = roomUpdate;
+  roomUpdate = (deltaSeconds, at) => {
+    roomOwnUpdate?.(deltaSeconds, at);
+    gathering.update(deltaSeconds);
+  };
+  resetMoveState();
+  stage.hold(true);
+  stage.place({ x: plan.pomni.x, z: plan.pomni.z, lookAt: plan.jax });
+  stage.frame({ position: plan.shots.approach.position.toArray(), target: plan.shots.approach.target.toArray() });
+  const end = () => {
+    if (token !== loadToken) return;
+    stage.hold(false);
+    stage.releaseCamera();
+    onDone();
+  };
+  return playRoomDialogue('level3Jax', {
+    onNode(node) {
+      const cue = gathering.onNode(node);
+      if (cue.pomniLooksAt) stage.lookAt(cue.pomniLooksAt);
+      if (cue.shot) stage.frame({ position: cue.shot.position.toArray(), target: cue.shot.target.toArray() });
+      return cue.wait;
+    },
+    onComplete: end,
+    onCancel: end,
+  });
 }
 
 /** Too few photos: Kaufmo abstracts. Game Over, then the search starts over. */
@@ -1708,11 +1871,11 @@ document.getElementById('btn-save-slots-back').addEventListener('click', (event)
   if (savePanelFromTitle) titleOptions.hidden = false;
 });
 
-// The photo search times out before all five photos are delivered: a
-// "LEVEL 2 FAILED" card (see restartPhotoSearch) and a restart (new spots,
-// same objective, back to the Lobby) — not yet the real "abstraction"
-// fail effect, which is a later pass. Objective changes arm/disarm the
-// clock; a retry resets it explicitly because the objective stays active.
+// The photo search times out before the photos are delivered: Kaufmo runs
+// out of patience and abstracts (see kaufmoOutOfTime), and Level 2 starts
+// again from the beginning. Objective changes arm/disarm the clock; a
+// retry after too few photos resets it explicitly because the objective
+// stays active.
 // Includes delivery through Dorm Hall; see docs/story-flow.md for timing checks.
 const SEARCH_TIMER_SECONDS = 240;
 let searchTimeLeft = null; // seconds left, or null while it isn't the active objective
@@ -1790,7 +1953,7 @@ function updateSearchTimer(deltaSeconds) {
   searchTimeLeft -= deltaSeconds;
   if (searchTimeLeft <= 0) {
     searchTimeLeft = null;
-    restartPhotoSearch();
+    void kaufmoOutOfTime();
   }
 }
 
@@ -1803,6 +1966,82 @@ async function restartPhotoSearch() {
   );
   if (!continued || token !== loadToken) return; // the player had already moved on by the time this landed
   await resetPhotoSearch(memoryTicket);
+}
+
+/**
+ * Time's up before Pomni is back: a cutaway to Kaufmo alone in his room
+ * (level2TimeUpDialogue), the shared abstraction effect following his
+ * distress line by line until he abstracts on the last beat. Then Game
+ * Over, and Level 2 from the beginning (restartLevel2). Escape skips to
+ * the end: he's gone either way.
+ */
+async function kaufmoOutOfTime() {
+  const session = storySessionId;
+  const room = currentRoomKey === 'kaufmo' ? currentRoomInfo : await missionApi.travel('kaufmo', { from: null });
+  if (!room?.kaufmoApi || session !== storySessionId) return;
+  const token = loadToken;
+  const memoryTicket = caineMemory.revision;
+  const { kaufmoApi, talkShot: staging } = room;
+  const { kaufmo, abstraction } = kaufmoApi;
+  resetMoveState();
+  room.kaufmoRoutine?.pause(); // off his wall, onto his mark
+  // Just him: she isn't back yet.
+  player.visible = false;
+  if (staging) {
+    kaufmo.position.x = staging.kaufmo.x;
+    kaufmo.position.z = staging.kaufmo.z;
+    kaufmo.updateMatrixWorld(true);
+    kaufmoApi.faceTowards(staging.kaufmoLooksAt);
+  }
+  stageCamera = {
+    position: staging?.camera.clone() ?? camera.position.clone(),
+    target: kaufmo.position.clone().setY(kaufmo.position.y + 1.2),
+  };
+
+  let over = false;
+  const gameOver = async () => {
+    if (over || token !== loadToken) return;
+    over = true;
+    kaufmoApi.setSpeaking(false);
+    abstraction.setProgress(1);
+    abstraction.setDistress(1, { immediate: true });
+    const retry = await showLevelComplete(
+      'Kaufmo has abstracted.',
+      'Time ran out before you got the photos back to him. Level 2 starts again from the beginning.',
+      { resume: false, chime: 'fail', buttonLabel: 'Retry Level 2', memoryRetry: 'level2' },
+    );
+    if (retry && token === loadToken) {
+      await restartLevel2();
+      caineMemory.recordRetry('level2', memoryTicket);
+    }
+  };
+  const started = playRoomDialogue('level2TimeUp', {
+    distressFor: (line) => line.distress ?? 0,
+    onNode(node) {
+      // A line without a level leaves him as upset as the last one.
+      if (node.distress !== undefined) abstraction.setDistress(distressFromDialogue(node.distress));
+      const speaking = node.speaker === 'kaufmo';
+      kaufmoApi.setSpeaking(speaking);
+      kaufmoApi.setPose(speaking ? (node.mood || 'neutral') : 'neutral');
+      // Holds the beat (its text hidden) while he comes apart.
+      if (node.id === 'abstracts') return abstraction.abstract();
+    },
+    onComplete: gameOver,
+    onCancel: gameOver,
+  });
+  if (!started) void gameOver();
+}
+
+/**
+ * Level 2 from its first beat, as if Pomni had just left Ribbit's room:
+ * Kaufmo hurrying past in the Dorm Hall, then his introduction, then a
+ * fresh search with new spots and a full clock. Level 1 is kept.
+ */
+async function restartLevel2() {
+  itemState.reset();
+  if (!storyProgress.restartLevel2()) return;
+  // Arriving from Ribbit's room plays the hallway pass-by (see selectRoom).
+  await missionApi.travel('dorm', { from: 'ribbit' });
 }
 
 /** A fresh photo search: new spots, a full clock and hints, back in the Lobby. */
@@ -2108,9 +2347,9 @@ function applyLoadedRoom({
   // GLB rooms' meshes: the wall probes and floor raycast only test the
   // few entries whose boxes the query overlaps, padded by the player
   // radius so a mesh the player is touching is never skipped.
-  collisionMeshes = (roomCollisionMeshes ?? []).map((entry) => ({
-    mesh: entry.mesh,
-    box: entry.box,
+  // The room's own entries, not copies: her bedroom's wall cut-out swaps
+  // an entry's mesh when the door's opened, and that has to reach here.
+  collisionMeshes = (roomCollisionMeshes ?? []).map((entry) => Object.assign(entry, {
     paddedBox: entry.box.clone().expandByScalar(PLAYER_RADIUS),
     dynamic: entry.dynamic ?? false,
   }));
@@ -3179,6 +3418,7 @@ function dropRoomPreload() {
 function showRoomBehindDoor(entry, show) {
   entry.peeking = show;
   const { group, hallLink } = entry.result;
+  if (hallLink.door) hallLink.door.visible = !show;
   if (!show) {
     group.removeFromParent();
     bedroomClip.copy(KEEP_ALL);
@@ -3279,12 +3519,13 @@ function walkIntoHall(link) {
   // Still getting ready: the widened bounds hold her at the threshold.
   if (!roomReady(entry)) return;
 
-  // The hall's own copy of her door is shut, so she comes out just clear
-  // of it — it reads as having closed behind her.
+  // She comes out just clear of the doorway, and the hall's copy of her
+  // door stands open into her room, just as she left her own.
   const past = link.depthPast(player.position);
   const pose = carryPose(link.toHall, link.yawToHall);
   pose.feet.addScaledVector(link.outward, Math.max(0, HALL_DOOR_CLEARANCE - past));
   enterPreloadedRoom(entry, pose);
+  currentRoomInfo.hallDoors?.pomni?.control.open({ immediate: true });
   armCaineArrival();
 }
 
@@ -3301,6 +3542,7 @@ function walkIntoPomniRoom(entry, doorway) {
   const pose = carryPose(link.toHall.clone().invert(), -link.yawToHall);
   // Just clear of her (open) door's leaf and the doorway, inside.
   pose.feet.addScaledVector(link.outward, -Math.max(0, BEDROOM_DOOR_CLEARANCE - past));
+  if (link.door) link.door.visible = true; // the hall's copy goes with the hall
   enterPreloadedRoom(entry, pose);
   // Looking back out, the hall's right there through the open door.
   currentRoom.userData.dormHallPreview?.setVisible(true);
@@ -3341,7 +3583,11 @@ function checkTriggers(player) {
       const failedSeed = mazeAttemptSeed;
       const seed = Math.floor(Math.random() * 0x100000000);
       resetMazeAttempt(seed === failedSeed ? (seed + 1) >>> 0 : seed);
-      endLevel('Abstracted!', 'A patrolling hazard caught you — try again.');
+      const title = hazard.mesh.userData?.isGloink ? 'Gloinked!' : 'Abstracted!';
+      const subtitle = hazard.mesh.userData?.isGloink
+        ? 'A patrolling gloink caught you — try again.'
+        : 'A patrolling hazard caught you — try again.';
+      endLevel(title, subtitle);
       return;
     }
   }
@@ -3508,7 +3754,8 @@ function updatePomniWalk(dt, speed) {
     pomniMixer.update(dt);
     applyStagePose(dt);
     pomniSpeaking?.update(dt, dialogueUI.currentSpeaker === 'pomni' && player.visible
-      && !activeOpening?.active && !stageWalk && !stageGesture && stageSeatY === null && animSpeed < .2);
+      && !activeOpening?.active && !stageWalk && !stageGesture && stageSeatY === null && animSpeed < .2,
+    dialogueUI.currentMood);
     return;
   }
 
@@ -3537,6 +3784,11 @@ function playAction(name) {
 const STAGE_WALK_SPEED = 1.6;   // m/s: an unhurried walk
 const KNOCK_DURATION = 1.4;     // seconds: raise, three taps, lower
 const KNOCK_TAPS = 3;
+// Handing something over: both hands out in front of her, together,
+// held while it's taken (the photos, see handInActor), then lowered.
+// Seconds.
+const HAND_OVER = { raise: 0.45, hold: 0.8, lower: 0.5 };
+const HAND_OVER_DURATION = HAND_OVER.raise + HAND_OVER.hold + HAND_OVER.lower;
 const SEAT_CLEARANCE = 0.06;    // her hips this far above the seat
 const SIT_SHARPNESS = 6;
 
@@ -3580,7 +3832,7 @@ const stage = {
     });
   },
 
-  /** Plays a gesture on top of her idle. 'knock' calls onTap at each rap. */
+  /** Plays a gesture on top of her idle: 'knock' (calls onTap at each rap) or 'handOver'. */
   gesture(name, { onTap } = {}) {
     stageGesture?.resolve(false);
     return new Promise((resolve) => {
@@ -3744,7 +3996,18 @@ function applyStagePose(dt) {
     bendBone(pomniBones.RightArm, pomni, SIDEWAYS, -1.25 * raise);
     bendBone(pomniBones.RightForeArm, pomni, SIDEWAYS, (-0.9 + 0.35 * rap) * raise);
   }
-  if (gesture.time >= KNOCK_DURATION) {
+  if (gesture.name === 'handOver') {
+    const t = gesture.time;
+    const raise = THREE.MathUtils.smoothstep(t, 0, HAND_OVER.raise)
+      * (1 - THREE.MathUtils.smoothstep(t, HAND_OVER_DURATION - HAND_OVER.lower, HAND_OVER_DURATION));
+    for (const [side, sign] of [['Left', 1], ['Right', -1]]) {
+      bendBone(pomniBones[`${side}Arm`], pomni, SIDEWAYS, -0.95 * raise);
+      bendBone(pomniBones[`${side}ForeArm`], pomni, SIDEWAYS, -0.45 * raise);
+      bendBone(pomniBones[`${side}ForeArm`], pomni, UP, -sign * 0.45 * raise); // in toward the other hand
+      bendBone(pomniBones[`${side}Hand`], pomni, SIDEWAYS, 0.4 * raise); // palms up, flat
+    }
+  }
+  if (gesture.time >= (gesture.name === 'handOver' ? HAND_OVER_DURATION : KNOCK_DURATION)) {
     stageGesture = null;
     gesture.resolve(true);
   }
@@ -3943,7 +4206,10 @@ function animate() {
   fastForwardCutscenes();
   if (!paused) {
     updateMovers(delta);
-    if (!activeOpening?.active) roomUpdate?.(delta, player.position);
+    // playerActive: she's actually in play, so maze Gloinks may see her.
+    if (!activeOpening?.active) roomUpdate?.(delta, player.position, {
+      playerActive: isLocked && readyToPlay && !dialogueUI.isActive && !activeCutscene && !stageBusy(),
+    });
     refreshDynamicColliders();
   }
   if (!paused && stageDelay) {
@@ -4035,7 +4301,7 @@ function roomShowsMinimap(roomKey) {
 }
 
 function focusedBedroomDoor() {
-  return currentRoomKey === 'pomni' && focusedInteractable?.prompt() === 'Exit to Hallway';
+  return currentRoomKey === 'pomni' && Boolean(focusedInteractable?.bedroomExit);
 }
 
 /** Development-only A/B review: no gameplay/input settings or production API. */

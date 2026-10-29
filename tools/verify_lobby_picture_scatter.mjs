@@ -1,5 +1,5 @@
 // Regression check against the REAL Circus Lobby geometry, not a synthetic
-// stand-in (see _verify_picture_scatter.mjs for that) — catches exactly the
+// stand-in (see test/_verify_picture_scatter.mjs for that) — catches exactly the
 // bug this was written for: scatterPictures()'s old single-origin sweep
 // found a usable wall spot within a sensible mounting distance on only 2 of
 // 16 rays from the Lobby's actual spawn (it's a large, mostly-open room),
