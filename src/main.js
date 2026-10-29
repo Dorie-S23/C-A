@@ -3585,12 +3585,8 @@ function checkTriggers(player) {
     if (Math.hypot(dx, dz) < hazard.radius + PLAYER_RADIUS) {
       caught = true;
       // A hazard catch fails the attempt outright, same as the countdown
-      // expiring: reseed so the next try gets a fresh layout and keepsake
-      // placement, and clear the clock so it starts the full countdown
-      // again instead of resuming already-expired.
-      const failedSeed = mazeAttemptSeed;
-      const seed = Math.floor(Math.random() * 0x100000000);
-      resetMazeAttempt(seed === failedSeed ? (seed + 1) >>> 0 : seed);
+      // expiring: retryMaze shows the fail card, then reseeds (a fresh
+      // layout, both keepsakes back) and restarts the full countdown.
       const title = hazard.mesh.userData?.isGloink ? 'Gloinked!' : 'Abstracted!';
       const subtitle = hazard.mesh.userData?.isGloink
         ? 'A patrolling gloink caught you — try again.'
