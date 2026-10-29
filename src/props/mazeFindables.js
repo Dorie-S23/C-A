@@ -109,6 +109,11 @@ export function placeMazeFindable(room, items, itemId, label, createMesh, positi
     // Looking at a 10cm floor prop should not require pixel-perfect aiming.
     anchor: mesh,
     radius: 2.2,
+    // The line-of-sight check's own default aims at head height above the
+    // anchor (right for an NPC, whose anchor is its feet) — for a prop
+    // already sitting right at that height, that reads as "blocked" under
+    // any overhang the prop itself is in plain view under.
+    sightHeight: 0.3,
     enabled: () => Boolean(mesh.parent) && !items.hasCollected(itemId),
     prompt: () => `Pick up ${label}`,
     interact: () => {

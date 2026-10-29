@@ -10,6 +10,12 @@ const FRAME_HEIGHT = 0.76;
 const FRAME_DEPTH = 0.035;
 const FRAME_BORDER = 0.07;
 
+// Same proximity-pickup numbers mazeFindables.js already uses for its own
+// floor props: close enough to be standing right over the photo, not so
+// far it triggers from across the room.
+const PICKUP_RADIUS = 2.2;
+const PICKUP_SIGHT_HEIGHT = 0.3;
+
 // A found-but-not-yet-collected picture glows softly — emissive warmth on
 // the photo itself, pulsing slowly so it reads as "something's here"
 // without looking like a blinking alarm. See pulseGlow(), driven from the
@@ -198,6 +204,13 @@ export function placeOfficePicture(room, items, itemId, imageUrl, position, rota
 
   const pickup = {
     objects,
+    // Same forgiving proximity+line-of-sight focus mazeFindables.js uses:
+    // a photo lying flat on a big floor shouldn't need pixel-perfect
+    // crosshair aim to pick up, just E while standing near it.
+    anchor: picture,
+    radius: PICKUP_RADIUS,
+    sightHeight: PICKUP_SIGHT_HEIGHT,
+    enabled: () => Boolean(picture.parent),
     prompt: () => 'Pick up photo',
     interact: () => {
       picture.removeFromParent();

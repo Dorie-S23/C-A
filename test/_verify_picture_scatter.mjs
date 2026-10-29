@@ -84,6 +84,14 @@ test('places all three pictures on the floor, each its own spot, none in the kee
       assert.ok(pictures[i].position.distanceTo(pictures[j].position) >= 2, 'each picture is its own find, not stacked on another');
     }
   }
+
+  // Picking one up shouldn't need pixel-perfect crosshair aim: same
+  // proximity+line-of-sight focus the maze's findables already use.
+  for (const pickup of room.interactables) {
+    assert.ok(pickup.anchor, 'anchored, so standing near it alone can focus it');
+    assert.ok(pickup.radius > 0, 'has a real proximity radius');
+    assert.equal(typeof pickup.sightHeight, 'number', 'checks sight near floor level, not head height above it');
+  }
 });
 
 test('a pinned picture always lands near its fixed point, others still keep spacing clear of it', () => {

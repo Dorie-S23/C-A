@@ -4281,10 +4281,15 @@ function nearestInRange(available = interactables) {
 
 /** Chest-height ray from Pomni to anchorPosition, ignoring the target's own meshes. */
 function hasLineOfSight(interactable) {
-  // Head to head height: furniture between them (a desk, a rocking horse)
-  // shouldn't hide someone standing right there; walls still do.
+  // Head to head height by default: furniture between them (a desk, a
+  // rocking horse) shouldn't hide someone standing right there; walls
+  // still do. That default assumes the anchor is a person's feet, though —
+  // a floor-level prop (a dropped photo, a maze keepsake) gives its own
+  // sightHeight instead, or checking a point ~1.6m above a 3cm-tall photo
+  // would read as "blocked" under any overhang/shelf the photo itself
+  // sits in plain view under.
   sightOrigin.set(player.position.x, player.position.y - 0.1, player.position.z);
-  sightTarget.set(anchorPosition.x, anchorPosition.y + PLAYER_HEIGHT - 0.1, anchorPosition.z);
+  sightTarget.set(anchorPosition.x, anchorPosition.y + (interactable.sightHeight ?? PLAYER_HEIGHT - 0.1), anchorPosition.z);
   sightDirection.subVectors(sightTarget, sightOrigin);
   const distance = sightDirection.length();
   if (distance < 1e-6) return true;
