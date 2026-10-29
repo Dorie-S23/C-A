@@ -25,7 +25,7 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const OUT_DIR = path.join(ROOT, 'public', 'audio', 'voice');
 const MANIFEST = path.join(OUT_DIR, 'manifest.json');
 // Every module that exports dialogue scripts (arrays of nodes).
-const SCRIPT_MODULES = ['src/data/dialogues.js', 'src/cinematics/pomniInvitation.js'];
+const SCRIPT_MODULES = ['src/data/dialogues.js', 'src/cinematics/pomniInvitation.js', 'src/data/introStory.js'];
 
 // Flash: half the credits per character of ElevenLabs' other models, so the
 // whole script (~9,900 characters) fits the free plan's monthly 10,000
@@ -47,6 +47,7 @@ const CAST = {
     kaufmo: { voice: 'Callum', speed: 1.08, stability: 0.3 }, // jittery clown
     ribbit: { voice: 'Lily', speed: 0.92, stability: 0.55 },  // withdrawn
     jax: { voice: 'Chris', speed: 1, stability: 0.35 },       // sarcastic, cutting
+    narrator: { voice: 'George', speed: 0.95, stability: 0.6 }, // the intro story: calm storyteller
   },
   edge: {
     pomni: { voice: 'en-US-AvaNeural', pitch: 4, rate: 0 },
@@ -55,6 +56,7 @@ const CAST = {
     kaufmo: { voice: 'en-US-EricNeural', pitch: 12, rate: 10 },
     ribbit: { voice: 'en-CA-ClaraNeural', pitch: 2, rate: -8 },
     jax: { voice: 'en-US-AndrewNeural', pitch: -4, rate: -2 },
+    narrator: { voice: 'en-GB-ThomasNeural', pitch: -2, rate: -6 },
   },
 };
 

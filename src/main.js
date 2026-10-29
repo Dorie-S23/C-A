@@ -22,6 +22,7 @@ import { ICONS } from './ui/portraitIcons.js';
 import { createVoicePlayer } from './audio/voicePlayer.js';
 import { createAmbience } from './audio/ambience.js';
 import { createTitleScreen } from './ui/titleScreen.js';
+import { createIntroStory } from './ui/introStory.js';
 import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold } from './state/escapeThreshold.js';
 import { createStoryProgress } from './game/storyProgress.js';
 import { createSaveSlots } from './game/saveGame.js';
@@ -236,6 +237,8 @@ const mazeSearchTimer = document.getElementById('maze-search-timer');
 const searchTimer = document.getElementById('search-timer');
 const hintKey = document.getElementById('hint-key');
 const dialogueVoice = createVoicePlayer();
+// The narrated backstory a new game opens with (PLAY or Options > New Game).
+const introStory = createIntroStory({ root: document.getElementById('intro-story'), voice: dialogueVoice });
 // Escape mid-game pauses (it frees the mouse) rather than backing out of a
 // conversation; it only cancels on the menu screens (dialogue previews).
 // The browser may report the unlock just before or just after the key.
@@ -445,7 +448,7 @@ const titleScreen = createTitleScreen({
   isBlocked: () => !titleOptions.hidden || !titleQuit.hidden || !creditsPanel.classList.contains('hidden'),
   onAction: (action) => {
     if (action === 'play') {
-      startNewGame();
+      startNewGameWithStory();
     } else if (action === 'options') {
       titleOptions.hidden = false;
     } else if (action === 'quit') {
@@ -585,7 +588,7 @@ document.getElementById('btn-replay-intro').addEventListener('click', () => {
 document.getElementById('btn-new-game').addEventListener('click', (event) => {
   event.stopPropagation();
   titleOptions.hidden = true;
-  startNewGame();
+  startNewGameWithStory();
 });
 document.getElementById('btn-room-previews').addEventListener('click', () => {
   titleOptions.hidden = true;
@@ -721,6 +724,22 @@ function returnToHome({ toRoomPicker = false } = {}) {
  * PLAY, Options > New Game and the room picker's story
  * button all start here.
  */
+/**
+ * PLAY and Options > New Game: the intro story (src/ui/introStory.js) first,
+ * then the new game. It starts and ends on black, like the title's fade
+ * into the tent and Pomni's dark bedroom on either side of it. Dev mode's
+ * skip-cutscenes setting and the dev story button go straight to the game.
+ */
+function startNewGameWithStory() {
+  if (devSkipCutscenesInput.checked) {
+    startNewGame();
+    return;
+  }
+  openingAudio.unlock(); // while this click/keypress still counts as a user gesture
+  titleScreen.hide();
+  introStory.play(() => startNewGame());
+}
+
 function startNewGame() {
   skipIntroRequested = false;
   // Hidden score and Level 2's photos start over too.
@@ -4191,6 +4210,7 @@ function animate() {
   updateCaineArrival(delta);
   updateSearchTimer(delta);
   updateMazeSearch(rawDelta);
+  introStory.update(delta);
   fastForwardCutscenes();
   if (!paused) {
     updateMovers(delta);
