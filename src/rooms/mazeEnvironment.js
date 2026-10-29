@@ -295,6 +295,13 @@ export function createMazeEnvironment({ maze, layout, cellCenter, cellSize }) {
   const carpet = mesh(stage, geometry.disc, palette.magenta, 0, 0.01, 2.13, 1.8, 1.8, 1); carpet.rotation.x = -Math.PI / 2;
   const rim = mesh(stage, geometry.ring, palette.gold, 0, 0.012, 2.13, 1.8, 1.8, 1.8); rim.rotation.x = -Math.PI / 2;
   stage.updateMatrixWorld(true);
+  // A four-way Jax cell may need a different wall for its backdrop. The
+  // floor stage still belongs under Jax, not under that alternate wall.
+  if(stageCell!==maze.jax){
+    carpet.position.copy(stage.worldToLocal(jc.clone().setY(0.01)));
+    rim.position.copy(stage.worldToLocal(jc.clone().setY(0.012)));
+  }
+  root.userData.jaxStageCentre=stage.localToWorld(carpet.position.clone()).toArray();
   views.jax = { position: stage.localToWorld(new THREE.Vector3(0, 1.9, 6.4)).toArray(), target: [jc.x, 1.65, jc.z] };
 
   // Merge identical static primitives into instanced batches. The entire maze

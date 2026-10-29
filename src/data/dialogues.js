@@ -903,3 +903,13 @@ export const level2ReturnAndSendoffDialogue = [
   ...level2ReturnDialogue.map((node, i, all) => (i === all.length - 1 ? { ...node, next: undefined } : node)),
   ...level2SendoffDialogue,
 ];
+
+// Provisional Last Act encounter; intentionally separate from the Lobby intro.
+export const level3JaxFinalDialogue = [
+  {id:'jaxFinal1',type:'line',speaker:'pomni',side:'left',mood:'worried',text:"Jax? I've been looking everywhere for you."},
+  {id:'jaxFinal2',type:'line',speaker:'jax',side:'right',text:'...Well, congratulations. You found me.'},
+  {id:'jaxFinal3',type:'line',speaker:'pomni',side:'left',mood:'worried',text:'Are you okay?'},
+  {id:'jaxFinal4',type:'line',speaker:'jax',side:'right',text:'Do I look okay to you?'},
+  {id:'jaxFinal5',type:'line',speaker:'pomni',side:'left',mood:'neutral',text:'I found everything. We can leave now.'},
+  {id:'jaxFinal6',type:'line',speaker:'jax',side:'right',text:'...You really came all this way?',next:null},
+];
