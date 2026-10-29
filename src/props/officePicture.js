@@ -242,7 +242,11 @@ export function placeOfficePicture(room, items, itemId, imageUrl, position, rota
  *   where the pictures not yet picked up are (for hints).
  */
 export function scatterPictures(room, items, pictures, spawn, keepClear = [], {
-  height = 1.5, spacing = 8, keepClearRadius = 1.5, maxDistance = 12,
+  // Raised from 8/1.5 (playtest feedback: too easy, find one and the rest
+  // are right there too). The wider grid sweep above already pools
+  // candidates well past this range, so there's still enough of a pool to
+  // choose from at the larger spacing.
+  height = 1.5, spacing = 16, keepClearRadius = 4, maxDistance = 12,
   gridStep = 10, gridRadius = 4, rng = Math.random, zoneOf = (spot) => spot.object,
   isOpen = () => true, isReachable = () => true,
 } = {}) {

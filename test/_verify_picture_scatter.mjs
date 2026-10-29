@@ -17,7 +17,7 @@ const PICTURES = [
   { id: 'ca3', url: './models/objects/ca3.png' },
 ];
 const SPAWN = { x: 0, y: 0, z: 0 };
-// Production's defaults (gridStep 10, gridRadius 4, spacing 8) are tuned
+// Production's defaults (gridStep 10, gridRadius 4, spacing 16) are tuned
 // for the real Circus Lobby, which is enormous — scaled down to match this
 // test's small 10x10 room instead of the production room it isn't.
 const SMALL_ROOM_OPTIONS = { spacing: 2, gridStep: 3, gridRadius: 1, maxDistance: 8 };
