@@ -1,30 +1,12 @@
-/**
- * The maze's two hidden keepsakes (the storyline outline's "bowling ball
- * and a hot chocolate mug") — small finds along the way, not scored
- * against the Escape Threshold like Level 2's photos. One of each, not a
- * counted collectible set.
- */
-export const MAZE_FINDABLES = [
-  { id: 'bowling-ball', label: 'bowling ball' },
-  { id: 'hot-chocolate-mug', label: 'mug of hot chocolate' },
-];
-
-/** One run's maze finds, shared by the maze room the same way
- * createLevel2Items() shares Level 2's photos. */
-export function createMazeItems({ onCollect = () => {} } = {}) {
-  const collected = new Set();
-  return {
-    hasCollected: (id) => collected.has(id),
-    collect(id) {
-      if (collected.has(id)) return;
-      collected.add(id);
-      onCollect(id, collected.size, MAZE_FINDABLES.length);
-    },
-    totalFound: () => collected.size,
-    reset() { collected.clear(); },
-  };
+export const MAZE_FINDABLES=[{id:'bowling-ball',label:'bowling ball'},{id:'hot-chocolate-mug',label:'mug of hot chocolate'}];
+export function createMazeItems({onCollect=()=>{},onChange=()=>{}}={}){
+ const collected=new Set();let jaxComplete=false;
+ const hasAllRequired=()=>MAZE_FINDABLES.every(item=>collected.has(item.id));
+ return {hasCollected:id=>collected.has(id),hasAllRequired,get jaxComplete(){return jaxComplete;},totalFound:()=>collected.size,
+ collect(id){if(!MAZE_FINDABLES.some(item=>item.id===id)||collected.has(id))return false;collected.add(id);onCollect(id,collected.size,MAZE_FINDABLES.length);onChange();return true;},
+ completeJax(){if(!hasAllRequired()||jaxComplete)return false;jaxComplete=true;onChange();return true;},
+ reset(){collected.clear();jaxComplete=false;onChange();}};
 }
-
 export const MAZE_SEARCH_SECONDS = 180;
 
 /** Per-attempt gameplay clock; reaching Jax is not a Level 3 completion. */
