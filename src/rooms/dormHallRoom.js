@@ -4,6 +4,9 @@ import { createCurtainPortal, createDoorPortal, createDoorConnection } from './p
 import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { attachRoomBehindDoor, sill } from './connectRooms.js';
 import { ICONS } from '../ui/portraitIcons.js';
+import { loadJax } from '../characters/jax.js';
+import { loadRibbit } from '../characters/ribbit.js';
+import { hallwayGatheringPlan } from '../cutscenes/hallwayGatheringCutscene.js';
 
 // Exported from "Dorm Hall V7.blend" by tools/blender/export_dorm_hall_v7.py,
 // which converts the materials the glTF exporter can't read — re-run it
@@ -59,13 +62,25 @@ const WALK_IN_ROOMS = new Set(['pomni', 'kaufmo']);
 const VIEW_RANGE = 15;
 const ARRIVAL_DISTANCE = 1.8; // matches portals.js's door arrivals
 
-export function loadDormHallRoom(onProgress, { from, items, travel } = {}) {
+// Level 2 into 3 (levels/level3Hallway.js): Pomni steps out of Kaufmo's
+// room to find Jax down the hall by Ribbit's door, back turned, and he
+// bolts back up it past her, on the route the hall gathering staged
+// (cutscenes/hallwayGatheringCutscene.js hallwayGatheringPlan). Ribbit comes
+// up from her own door's end and stops beside her.
+const RIBBIT_MARK = { x: -0.2, z: -96.5 };
+
+/**
+ * @param {{ from?: string, items?: object, travel?: Function, jaxHallway?: boolean }} [options]
+ *   jaxHallway: load Jax and Ribbit for the hall scene that starts Level 3
+ */
+export function loadDormHallRoom(onProgress, { from, items, travel, jaxHallway } = {}) {
   const connected = Object.entries(CONNECTED_ROOMS).map(([key, load]) =>
     load(null, { items, embedded: true }).then((guest) => [key, guest]));
   return Promise.all([
     loadRoomModel(DORM_HALL_URL, onProgress, { spawnAt: SPAWN }),
     Promise.all(connected),
-  ]).then(([room, guests]) => {
+    jaxHallway ? Promise.all([loadJax(), loadRibbit()]) : null,
+  ]).then(([room, guests, cast]) => {
     const guestRooms = Object.fromEntries(guests);
     // The door handles and light fittings are real metals.
     room.environment = true;
@@ -163,8 +178,50 @@ export function loadDormHallRoom(onProgress, { from, items, travel } = {}) {
       room.spawn = bedroom.arrival.spawn;
       room.spawnFacing = bedroom.arrival.facing;
     }
+    const kaufmoDoor = portals.find((portal) => portal.to === 'kaufmo');
+    if (cast && kaufmoDoor) addJaxHallway(room, cast, kaufmoDoor.arrival.spawn);
     return room;
   });
+}
+
+/**
+ * Jax and Ribbit for the hall scene: Jax on his mark, glitching, his back
+ * to Kaufmo's door (once he's run, he's hidden with his light kept in the
+ * scene, dimmed, so it never changes the light count), Ribbit hidden at
+ * hers until her beat. Both build their shaders with the room's (warmUp).
+ * The scene hooks in through room.storyUpdate.
+ */
+function addJaxHallway(room, [jaxApi, ribbitApi], outsideKaufmo) {
+  const { jax, jaxRun } = hallwayGatheringPlan(room);
+  const marks = {
+    pomni: outsideKaufmo.clone(),
+    jax,
+    jaxRun,
+    ribbit: new THREE.Vector3(RIBBIT_MARK.x, outsideKaufmo.y, RIBBIT_MARK.z),
+  };
+  jaxApi.jax.position.copy(jax);
+  jaxApi.jax.rotation.y = Math.atan2(jax.x - marks.pomni.x, jax.z - marks.pomni.z); // back turned
+  jaxApi.setShown(true);
+  jaxApi.setGlitching(true);
+  ribbitApi.ribbit.position.copy(marks.ribbit);
+  ribbitApi.ribbit.visible = false;
+  room.group.add(jaxApi.jax, ribbitApi.ribbit);
+  room.jaxHallway = { jaxApi, ribbitApi, marks };
+
+  const warmUp = room.warmUp;
+  room.warmUp = (renderer, scene, camera) => {
+    warmUp?.(renderer, scene, camera);
+    ribbitApi.ribbit.visible = true;
+    renderer.compile(scene, camera);
+    ribbitApi.ribbit.visible = false;
+  };
+  const update = room.update;
+  room.update = (deltaSeconds, playerPosition) => {
+    update?.(deltaSeconds, playerPosition);
+    jaxApi.update(deltaSeconds);
+    ribbitApi.update(deltaSeconds);
+    room.storyUpdate?.(deltaSeconds, playerPosition);
+  };
 }
 
 /**

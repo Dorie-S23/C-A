@@ -34,7 +34,7 @@ try{
  async function load(seed){await page.goto(`http://127.0.0.1:5174/?dev=1&mazeSeed=${seed}`,{waitUntil:'domcontentloaded'});await page.locator('button[data-room="maze"]').click();await page.waitForFunction(()=>window.__lastAct?.ready(),null,{timeout:90000});await page.evaluate(()=>window.__lastAct.lock(true));}
  const status=()=>page.evaluate(()=>window.__lastAct.status());
  async function shot(name){await page.waitForTimeout(140);await page.screenshot({path:`${output}/${name}.png`,timeout:60000});report.screenshots.push(name);}
- await load(123);await page.evaluate(()=>window.__lastAct.pickupView(1,2.8));await page.waitForTimeout(300);assert.equal(await page.locator('#prompt').isVisible(),false);
+ await load(123);await page.evaluate(()=>window.__lastAct.pickupView(1,4.6));await page.waitForTimeout(300);assert.equal(await page.locator('#prompt').isVisible(),false);
  await page.evaluate(()=>window.__lastAct.pickupView(1));await page.waitForFunction(()=>!document.getElementById('prompt').hidden&&document.getElementById('prompt').textContent.includes('mug'));
  await page.screenshot({path:`${output}/mug-larger-pickup-prompt.png`,timeout:60000});await page.keyboard.press('KeyE');await page.waitForFunction(()=>window.__lastAct.status().items.collected.includes('hot-chocolate-mug'));
  assert.equal((await status()).items.collected.length,1);await page.screenshot({path:`${output}/mug-collected-with-E.png`,timeout:60000});

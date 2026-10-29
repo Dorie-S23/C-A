@@ -8,6 +8,8 @@ import { createStaircase } from '../props/accessStairs.js';
 import { LOBBY_LANDMARKS, nearestLandmark } from './lobbyLandmarks.js';
 import { LOBBY_REACH } from './lobbyReach.js';
 import { decodeReachMap } from './reachMap.js';
+import { createLobbyMazeDoor } from './lobbyMazeDoor.js';
+import { loadJax } from '../characters/jax.js';
 import { PHOTO_URLS } from '../state/level2Items.js';
 
 // Level 2's five office photos (see PHOTO_COUNT in level2Items.js),
@@ -53,12 +55,44 @@ const EYE_HEIGHT = 1.5;
 const PHOTO_OPEN_RADIUS = 12;
 const PHOTO_OPEN_STEP = 2;
 const PHOTO_OPEN_MIN = 28;
+// One photo always lands on top of the small red/orange stair landing
+// near the stage (playtest request, confirmed by screenshot) — an
+// unnamed six-step staircase, not in lobbyReach (it's not flat ground,
+// so the walkable-floor map skips it). y is explicit rather than found
+// by the usual downward raycast: real floor is visible underneath the
+// landing through the open stair structure, and "lowest hit" (the right
+// call almost everywhere else, to skip a shelf/ceiling above the real
+// floor) finds that lower floor instead of the landing itself here.
+const STAGE_STEPS_SPOT = { x: 2, y: 2.24, z: 8.6 };
 
-export function loadTadcRoom(onProgress, { from, items } = {}) {
+// Level 3's way into the maze (lobbyMazeDoor.js): one of the bedroom doors
+// on the long wall that runs south from the Dorm Hall arch, a different
+// one each time the game runs, out of the five round the middle of the
+// row (z -6 to 28; the row's 18 ground-floor doors run from z -48 to 94).
+const MAZE_DOORS = ['Plane119', 'Plane120', 'Plane122', 'Plane123', 'Plane124'];
+const MAZE_DOOR = MAZE_DOORS[Math.floor(Math.random() * MAZE_DOORS.length)];
+// Where Pomni finds Jax (levels/level3Lobby.js): alone in the corner the
+// toy blocks make with that wall's north end, a few steps from the arch,
+// back turned to the Lobby. He runs off south along the doors.
+const JAX_CORNER = {
+  spot: { x: 163.3, z: -42.6 },
+  facing: { x: 165.2, z: -44.4 },
+  runTo: { x: 163.6, z: -12 },
+};
+
+/**
+ * @param {{ from?: string, items?: object, mazeDoor?: 'jax' | 'open' | null }} [options]
+ *   mazeDoor: none before Level 3; 'jax' while Jax is here to be found
+ *   (he's loaded for that scene), its door still leading nowhere; 'open'
+ *   once he's run through it
+ */
+export function loadTadcRoom(onProgress, { from, items, mazeDoor } = {}) {
+  const findJax = mazeDoor === 'jax';
   return Promise.all([
     loadRoomModel('./models/world/Circus%20Lobby%20V10%20colored.glb', onProgress),
     new GLTFLoader().loadAsync(CASTLE_WALLS_URL),
-  ]).then(([room, castleWalls]) => {
+    findJax ? loadJax() : null,
+  ]).then(([room, castleWalls, jaxApi]) => {
     // Captured before the arrival override below can replace it — the
     // search sweeps from the room's own default spawn regardless of which
     // door the player actually walked in through.
@@ -89,6 +123,7 @@ export function loadTadcRoom(onProgress, { from, items } = {}) {
         isOpen: (origin) => lobbyReach.has(origin.x, origin.z),
         isReachable: (spot) => photoInView(room.group, spot, defaultSpawn.y)
           && photoInOpen(room.group, spot, defaultSpawn.y),
+        pinned: { id: PICTURES[0].id, ...STAGE_STEPS_SPOT },
       });
       room.photoPositions = pictures.remaining;
       const doorsUpdate = room.update;
@@ -105,8 +140,51 @@ export function loadTadcRoom(onProgress, { from, items } = {}) {
     room.collisionMeshes.push(...stairs.colliders);
     room.stairs = stairs.zone; // main.js hints the backwards long jump here
     room.mapLandmarks = LOBBY_LANDMARKS;
+    if (mazeDoor) addMazeDoor(room, doors, { armed: !findJax, floorY: defaultSpawn.y, from, jaxApi });
     return room;
   });
+}
+
+/**
+ * This run's maze door and its portal, and while he's here to be found,
+ * Jax in his corner (visible from the start, so his shaders and light
+ * compile with the room's). The scene that drives him hooks in through
+ * room.storyUpdate.
+ */
+function addMazeDoor(room, doors, { armed, floorY, from, jaxApi }) {
+  const door = doors.get(MAZE_DOOR);
+  if (!door?.doorway) return;
+  const mazeDoor = Object.assign(createLobbyMazeDoor(door, { armed, floorY }), { frameName: MAZE_DOOR });
+  room.mazeDoor = mazeDoor;
+  room.portals = [...(room.portals ?? []), mazeDoor.portal];
+  if (from === 'maze' && armed) {
+    room.spawn = mazeDoor.portal.arrival.spawn;
+    room.spawnFacing = mazeDoor.portal.arrival.facing;
+    mazeDoor.openNow();
+  }
+  const updates = [mazeDoor.update];
+  const warmUp = room.warmUp;
+  room.warmUp = (renderer, scene, camera) => {
+    warmUp?.(renderer, scene, camera);
+    mazeDoor.warmUp(renderer, scene, camera);
+  };
+  if (jaxApi) {
+    const point = ({ x, z }) => new THREE.Vector3(x, floorY, z);
+    const corner = { spot: point(JAX_CORNER.spot), facing: point(JAX_CORNER.facing), runTo: point(JAX_CORNER.runTo) };
+    jaxApi.jax.position.copy(corner.spot);
+    jaxApi.jax.rotation.y = Math.atan2(corner.facing.x - corner.spot.x, corner.facing.z - corner.spot.z);
+    jaxApi.jax.visible = true;
+    jaxApi.setGlitching(true);
+    room.group.add(jaxApi.jax);
+    room.jaxCorner = { jaxApi, ...corner };
+    updates.push(jaxApi.update);
+  }
+  const roomUpdate = room.update;
+  room.update = (deltaSeconds, playerPosition) => {
+    roomUpdate(deltaSeconds, playerPosition);
+    for (const update of updates) update(deltaSeconds);
+    room.storyUpdate?.(deltaSeconds, playerPosition);
+  };
 }
 
 const viewRaycaster = new THREE.Raycaster();
