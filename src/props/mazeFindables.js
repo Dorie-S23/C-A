@@ -12,6 +12,13 @@ const GLOW_COLOR = 0xfff2c0;
 const GLOW_PULSE_HZ = 0.6;
 const GLOW_EMISSIVE_BASE = 0.4;
 const GLOW_EMISSIVE_SWING = 0.5;
+// Metres from a keepsake that "close enough to pick up" means. Both are
+// tiny floor props at the back of a side pocket, too small to aim the
+// crosshair at, so being near one with it in sight is enough: this covers
+// the whole pocket from the corridor outside it (cells are 4.5 m, so the
+// pocket's mouth is 2.25 m away), and main.js's line-of-sight check keeps
+// it from reaching through a wall.
+const PICKUP_RADIUS = 3;
 
 function glowMaterial(color, { roughness = 0.5, metalness = 0.1 } = {}) {
   return new THREE.MeshStandardMaterial({
@@ -80,6 +87,7 @@ export function pulseGlow(findables, elapsedSeconds) {
  * system, same shape as officePicture.js's placeOfficePicture: picking it
  * up removes it from the scene and records it in the shared maze item
  * state, and does nothing if it was already collected on a previous visit.
+ * Anchored like an NPC, so it's offered within PICKUP_RADIUS without aiming.
  *
  * @param {{ group: THREE.Group, interactables?: Array }} room
  * @param {{ hasCollected: (id: string) => boolean, collect: (id: string) => void }} items
@@ -105,10 +113,8 @@ export function placeMazeFindable(room, items, itemId, label, createMesh, positi
 
   const pickup = {
     objects,
-    // Reuse the existing same-floor, line-of-sight proximity focus.
-    // Looking at a 10cm floor prop should not require pixel-perfect aiming.
     anchor: mesh,
-    radius: 2.2,
+    radius: PICKUP_RADIUS,
     // The line-of-sight check's own default aims at head height above the
     // anchor (right for an NPC, whose anchor is its feet) — for a prop
     // already sitting right at that height, that reads as "blocked" under

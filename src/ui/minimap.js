@@ -51,6 +51,7 @@ const ROOM_LABELS = {
   ribbit: 'Ribbit',
   tadc: 'Lobby',
   dorm: 'Dorm Hall',
+  maze: 'Maze',
 };
 
 // Tracing a room's floor walks every triangle, so do it once per room.
@@ -256,7 +257,8 @@ export function createMinimap() {
 
   return {
     /**
-     * @param {Array<{ to: string, box: { min: {x,z}, max: {x,z} } }>} portals
+     * @param {Array<{ to: string, box: { min: {x,z}, max: {x,z} }, onMap?: boolean }>} portals
+     *   onMap false leaves one off (the Lobby's maze door is Pomni's to find)
      * @param {{ group: THREE.Object3D, floorY: number }} [room] whose floor to draw
      * @param {{ landmarks?: Array }} [options] landmarks: named footprints to label
      */
@@ -265,7 +267,7 @@ export function createMinimap() {
       doors = [];
       for (const portal of portals) {
         // A door can be both a portal and a marker; show it once.
-        if (seen.has(portal.to)) continue;
+        if (seen.has(portal.to) || portal.onMap === false) continue;
         seen.add(portal.to);
         doors.push({
           x: (portal.box.min.x + portal.box.max.x) / 2,
