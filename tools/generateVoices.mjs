@@ -46,6 +46,7 @@ const CAST = {
     caine: { voice: 'Liam', speed: 1.1, stability: 0.3 },     // manic ringmaster
     kaufmo: { voice: 'Callum', speed: 1.08, stability: 0.3 }, // jittery clown
     ribbit: { voice: 'Lily', speed: 0.92, stability: 0.55 },  // withdrawn
+    jax: { voice: 'Chris', speed: 1, stability: 0.35 },       // sarcastic, cutting
   },
   edge: {
     pomni: { voice: 'en-US-AvaNeural', pitch: 4, rate: 0 },
@@ -53,6 +54,7 @@ const CAST = {
     caine: { voice: 'en-GB-RyanNeural', pitch: 6, rate: 12 },
     kaufmo: { voice: 'en-US-EricNeural', pitch: 12, rate: 10 },
     ribbit: { voice: 'en-CA-ClaraNeural', pitch: 2, rate: -8 },
+    jax: { voice: 'en-US-AndrewNeural', pitch: -4, rate: -2 },
   },
 };
 
@@ -156,10 +158,18 @@ async function collectLines() {
     const mod = await import(pathToFileURL(path.join(ROOT, rel)).href);
     for (const script of Object.values(mod)) {
       if (!Array.isArray(script)) continue;
-      for (const node of script) {
+      const byId = new Map(script.map((node, i) => [node?.id, i]));
+      for (const [index, node] of script.entries()) {
         if (!node?.speaker) continue;
+        // An option is said aloud only when the script doesn't carry on with
+        // the chooser's own full line (DialogueUI's selectOption, same rule):
+        // a short label like "“It’s Pomni”" is never voiced itself.
+        const spokenOptions = (node.options ?? []).filter((option) => {
+          const next = script[option.next === undefined ? index + 1 : byId.get(option.next)];
+          return !(next?.type === 'line' && next.speaker === node.speaker);
+        });
         const texts = node.type === 'line' ? [node.text, node.altText]
-          : node.type === 'choice' ? [node.text, ...(node.options ?? []).map((option) => option.text)]
+          : node.type === 'choice' ? [node.text, ...spokenOptions.map((option) => option.text)]
           : [];
         for (const text of texts) {
           // Nothing to say ("…", "(Sit down…)"): the services return no audio for it.

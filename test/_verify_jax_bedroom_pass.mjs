@@ -26,7 +26,9 @@ GLTFLoader.prototype.load = function(url, ready, progress, failed) {
 const first=createDialogueEngine(preLevel1Dialogue,{startAt:'ragathaMorningGreeting',stopAt:JAX_PASS_BEAT});
 const seen=[];while(!first.done){seen.push(first.current.text);first.advance();}
 assert.equal(seen.length,4);assert.ok(seen.at(-1).includes('brilliant'));assert.ok(!seen.some(t=>t.includes('storms past')));
-const rest=createDialogueEngine(preLevel1Dialogue,{startAt:JAX_PASS_RESUME});assert.equal(rest.current.text,"...He's been like that for days now.");
+// Structure, not wording: the script's lines get rewritten, the split must not.
+const rest=createDialogueEngine(preLevel1Dialogue,{startAt:JAX_PASS_RESUME}),beat=preLevel1Dialogue.findIndex(n=>n.id===JAX_PASS_BEAT);
+assert.equal(rest.current,preLevel1Dialogue[beat+1],'Resumes on the line straight after the pass-by beat');assert.equal(rest.current.speaker,'ragatha','Ragatha reacts to Jax first');
 console.log('PASS Actual beat marker splits without dropping/repeating spoken lines');
 
 const room=await loadPomniRoom(null,{hallPreview:false});

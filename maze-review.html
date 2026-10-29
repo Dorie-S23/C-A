@@ -1,0 +1,25 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Wonder Maze · Review Tour</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#171222;color:#ffeac3;font:15px/1.5 system-ui,sans-serif;overflow:hidden}canvas{display:block}
+    aside{position:absolute;top:18px;left:18px;width:285px;max-height:calc(100vh - 36px);overflow:auto;padding:20px;background:#21182ef0;border:1px solid #9b7945;border-radius:14px;box-shadow:0 12px 50px #0006}
+    h1{font:25px Georgia,serif;margin:4px 0 12px}small{color:#e4b86e;letter-spacing:.12em;text-transform:uppercase;font-size:10px}p{color:#c9bfd2;font-size:13px;margin:10px 0 16px}
+    nav{display:grid;gap:7px}button{font:inherit;text-align:left;cursor:pointer;background:#34263f;color:#f6e2bf;padding:9px 12px;border:1px solid #67516c;border-radius:7px}button:hover,button[aria-pressed="true"]{background:#6b344b;border-color:#e5bb71}button:disabled{opacity:.45;cursor:wait}
+    #status{margin:16px 0 8px;color:#ffeac3}a{color:#e4b86e;font-size:12px}.links{display:flex;gap:15px}@media(max-width:600px){aside{top:8px;left:8px;width:230px;padding:12px;max-height:45vh}h1{font-size:20px}button{padding:6px 10px}}
+  </style>
+</head>
+<body>
+  <aside>
+    <small>Local review · seed <span id="seed">123</span></small>
+    <h1>The Wonder Maze</h1>
+    <p>Jump straight to any area. Drag to orbit, right-drag to pan, and scroll to zoom. This viewer has no collision or hazard failure.</p>
+    <nav id="stops" aria-label="Maze tour stops"></nav>
+    <p id="status" role="status">Loading the maze…</p>
+    <div class="links"><a href="/?dev=1&mazeSeed=123" id="game">Play this seed</a><a href="/artifacts/maze-step3/review.html">Screenshots</a></div>
+  </aside>
+  <script type="module" src="/tools/mazeReviewViewer.js"></script>
+</body>
+</html>

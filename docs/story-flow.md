@@ -18,10 +18,12 @@ The playable sequence is:
    plays through the closed door; consent moves the scene into her room.
 4. Pomni approaches the bed before dialogue resumes. Choosing to sit waits
    for her approach and seating pose. Fixed conversation shots frame both
-   characters. The four choices score at most four Escape points; poor
-   choices increase distress by 1 and correct choices reduce it by 1 (minimum 0).
-   Distress starts at 1. Reaching 3 immediately cancels the dialogue and shows
-   **Level 1 Failed** with **Retry Level**. Failure clears Level 1 points and
+   characters. The four choices score at most four Escape points. Correct
+   choices earn +1 and reduce distress by 1 (minimum 0); ordinary poor choices
+   earn zero and increase distress, capped at 2. Distress starts at 1. The
+   fourth option at each choice is a separate Game Over branch: it sets
+   distress to 3, plays its response lines, then shows **Game Over** with the
+   branch's message and **Retry Level**. Failure clears Level 1 points and
    never completes Find Ribbit or enables Find Kaufmo. Retry returns to the
    door and restarts the conversation with distress 1 and zero Level 1 points.
    Surviving paths steady Ribbit; successful points carry into Level 2.
@@ -37,34 +39,35 @@ The playable sequence is:
    to the Lobby's default spawn; time advances only during active play, with
    loading, pause, dialogue and cinematics excluded. All 5 photos (`PHOTO_COUNT`
    in `level2Items.js`) glow softly around the Circus Lobby. Their positions and
-   rotations stay fixed for this attempt, including visits after partial delivery.
+   rotations stay fixed for this attempt, including return visits to the Lobby.
    The HUD shows found and delivered totals separately and keeps the countdown
    visible throughout the return route, including Dorm Hall and detours.
    Finding the fifth photo changes the instruction to **Return to Kaufmo**;
-   the remaining time continues without resetting. E presents all held photos
-   immediately. Partial deliveries pause for dialogue and then resume the same
-   clock; reaching 5 delivered stops it before Kaufmo's reaction, even with one
-   second left. Early pickups are retained but do not bypass his introduction.
-   All 5 delivered enable **Hear Kaufmo’s Theory**; his stall/payoff conversations
-   resolve that objective and show **Level 2 Complete** once per run. Expiring
-   with fewer than 5 delivered fails even if all photos have been found. Continue
-   clears held/delivered photos and Level 2 points, chooses new spots, and restarts
-   at the same default Lobby spawn with 4 minutes. Level 1 points are preserved.
-   This remains a retry card, not the later "abstraction" effect.
+   the remaining time continues without resetting. E hands Kaufmo every held
+   photo at once, which stops the clock, even with one second left. With at
+   least 4 (`PHOTO_THRESHOLD`) he plays his success scene and send-off, then
+   **Level 2 Complete**. With fewer he abstracts and the attempt ends on a
+   **Retry Level 2** card. Early pickups are retained but do not bypass his
+   introduction. Expiring before the hand-in fails even if all photos have been
+   found. Either retry clears held/delivered photos and Level 2 points, chooses
+   new spots, and restarts at the same default Lobby spawn with 4 minutes.
+   Level 1 points are preserved.
 
 `src/game/storyProgress.js` owns the post-Caine milestones. Objectives and
 milestones survive room changes. Ribbit's completed pose and an unscored
 follow-up interaction are restored on re-entry. Re-entering cannot repeat the
 scored encounter or the completed hallway encounter.
 
-Escape during Ribbit's conversation cancels staged actions and restores the
-points from before that attempt. Inside the bedroom it returns Pomni to the
-hallway, where knocking retries the encounter. Leaving the session invalidates
-old dialogue, movement and asset-load callbacks before room disposal.
+Escape during live gameplay releases the pointer and pauses the conversation
+and staged actions. Resume continues the same attempt. Explicit dialogue
+cancellation (the dialogue API or an unlocked, unpaused preview) restores the
+points from before the attempt; cancellation inside Ribbit's bedroom returns
+Pomni to the hallway, where knocking retries the encounter. Leaving the session
+invalidates old dialogue, movement and asset-load callbacks before room disposal.
 
 Dialogue `onNode` hooks may return a Promise. While it is pending, advancing
 or selecting is blocked and the dialogue is hidden so the action is visible.
-Escape remains available. Staged movement, gestures and waits resolve `true`
+Pause remains available. Staged movement, gestures and waits resolve `true`
 on completion and `false` on cancellation. Animation and movement advance once
 per frame and stop while the game is paused.
 
@@ -88,11 +91,12 @@ review-only browser instrumentation positions the player between encounters.
 Screenshots and the report are written to ignored `artifacts/story-flow/`.
 
 `node tools/verify_photo_search_timer_browser.mjs` checks the initial countdown,
-two consecutive timeout/retry cycles and equal start positions, pause/loading/
-dialogue exclusion, actual photo pickup and Kaufmo interaction callbacks,
-stable positions after partial delivery, visible timing in Dorm Hall, failure
-with all photos held, immediate last-second final delivery, and cancellation
-of a pending retry by returning home. Its report and desktop/narrow-screen
+a too-small hand-in (Kaufmo abstracts, Retry Level 2), two consecutive
+timeout/retry cycles and equal start positions, pause/loading/dialogue
+exclusion, actual photo pickup and Kaufmo interaction callbacks, stable
+positions on a Lobby revisit, visible timing in Dorm Hall, failure with all
+photos held, immediate last-second final delivery, and cancellation of a
+pending retry by returning home. Its report and desktop/narrow-screen
 screenshots are written to `artifacts/photo-search-timer/`. The bridge skips
 walking distances and advances the game clock for deadline tests; these are
 functional checks, not human difficulty measurements.
@@ -130,7 +134,13 @@ origins can land sealed inside props (a pocket in the Toy Block Wall, the poles'
 hollow bases), so the Lobby checks spots against `src/rooms/lobbyReach.js`, a
 walkable-floor map flood-filled from the spawn. It's generated: rerun
 `node tools/buildLobbyReach.mjs` after changing the Lobby model, castle walls
-or staircase.
+or staircase. A spot also has to be out in the open, not behind a building:
+seen face-on from at least half the walkable floor in front of it within
+12 m (`PHOTO_OPEN_*` in `tadcRoom.js`). Sight lines are cast both ways, since
+the single-sided castle walls let a one-way ray through from behind; that
+let the occasional photo face a wall no floor could see. Photos are about
+1 m wide so they read from across a landmark. With these rules the same
+8-layout route estimate came to 84.8–160.4 seconds at walking speed.
 
 Room/cutscene cleanup releases unique geometries, skeletons, shadow targets,
 textures and decoded bitmap sources. A loading-manager hook also releases the
@@ -145,15 +155,27 @@ Developer cutscene skipping honours awaited actions and scores each choice once.
 Returning home or changing rooms cancels a pending completion card.
 
 
-Manual Level 1 win/loss check in Chrome:
+Manual Level 1 win/loss check in Chrome or Edge:
 
 - Start a New Game and follow Find Caine, then Find Ribbit to her door.
-- To lose quickly, choose B at the first dialogue choice and A at the second.
-  Distress moves 1 -> 2 -> 3. Level 1 Failed must appear immediately, without
-  recovery or Find Kaufmo. Click Retry Level: the door conversation restarts
-  without reloading the browser, at distress 1 and zero Level 1 points.
+- To lose quickly, choose D ("Nevermind") at the first dialogue choice.
+  Its response lines must play, then Game Over must show “Don’t be a bum”,
+  without recovery or Find Kaufmo.
+  Click Retry Level: the door conversation restarts without reloading the
+  browser, at distress 1 and zero Level 1 points.
 - On retry, choose A, B, A, A. Finish the dialogue, confirm Level 1 Complete,
   click Continue, and follow Find Kaufmo. The successful attempt earns 4 points
   that stay in the Escape Threshold through the Level 2 transition.
-- A, A, B, B fails on the fourth choice after earning one point; retry must
-  discard that point rather than adding it to the next attempt.
+- A, B, A, D fails on the fourth choice after earlier correct answers; retry
+  must discard the attempt's points rather than adding them to the next one.
+- B, A, B, B and C, C, C, C each survive with zero points. Ordinary zero-point
+  choices do not trigger Game Over in the current script.
+- Escape pauses a live conversation. Resume must retain its choice and points.
+
+For the KAN-30/KAN-48 review matrix and exact suggested Jira updates, see
+[tjeding-status.md](tjeding-status.md). With Vite running,
+`node tools/verify_level1_review_browser.mjs` writes its browser report and
+screenshots to ignored `artifacts/level1-review/rendered/`; `--no-render` runs
+the same state checks without drawing the 3D scene. The default audit draws
+real WebGL frames on demand for screenshots, suppressing continuous rendering
+and shader warm-up; it does not measure rendering performance.

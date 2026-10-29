@@ -3,11 +3,12 @@ import * as THREE from 'three';
 // One of the "real C&A office" reference photos (Level 2's five scattered
 // collectibles). Simple framed-photo prop: a wood box for the frame, a
 // textured plane for the photo, standing proud of the frame face so it
-// never z-fights.
-const FRAME_WIDTH = 0.55;
-const FRAME_HEIGHT = 0.42;
+// never z-fights. About 1 m wide: at the old 0.55 m, on the Lobby's 16 m
+// toy-block walls, a photo was a few pixels across from 8 m away.
+const FRAME_WIDTH = 1.0;
+const FRAME_HEIGHT = 0.76;
 const FRAME_DEPTH = 0.035;
-const FRAME_BORDER = 0.045;
+const FRAME_BORDER = 0.07;
 
 // A found-but-not-yet-collected picture glows softly — emissive warmth on
 // the photo itself, pulsing slowly so it reads as "something's here"

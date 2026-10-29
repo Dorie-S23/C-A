@@ -58,3 +58,20 @@ objectives.activate('find-ribbit'); assert.equal(title.textContent,'Find Ribbit'
 assert.ok(detail.textContent.includes('Knock'));
 hud.dispose(); assert.equal(root.hidden,true); objectives.reset(); assert.equal(title.textContent,'Find Ribbit');
 console.log('PASS HUD renders active state, preserves it while hidden, avoids minimap and releases subscription');
+
+const standaloneHUD = createObjectiveHUD({ objectives, root });
+const mazePresentation = { title: 'Find Jax’s keepsakes', detail: 'Find both items, then approach Jax.' };
+let standaloneNotifications = 0;
+const stopStandalone = objectives.subscribe(() => standaloneNotifications++);
+standaloneHUD.update(gameplay, false, mazePresentation);
+assert.equal(root.hidden, false); assert.equal(title.textContent, mazePresentation.title);
+assert.equal(detail.textContent, mazePresentation.detail);
+assert.equal(objectives.active, null);
+assert.equal(standaloneNotifications, 1, 'Maze guidance must not activate a campaign objective or reset Level 2 time');
+for (const [key, value] of Object.entries({ ready: false, locked: false, paused: true, cinematic: true, dialogue: true, menu: true })) {
+  standaloneHUD.update({ ...gameplay, [key]: value }, false, mazePresentation);
+  assert.equal(root.hidden, true, key);
+}
+standaloneHUD.update(gameplay); assert.equal(root.hidden, true); assert.equal(title.textContent, '');
+stopStandalone(); standaloneHUD.dispose();
+console.log('PASS Standalone maze guidance respects HUD gates without changing checkpoint objectives');

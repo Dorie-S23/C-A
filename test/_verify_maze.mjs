@@ -5,6 +5,102 @@ import { test } from 'node:test';
 import { generateMaze } from '../src/maze/generateMaze.js';
 import { createSeededRandom as makeRng } from '../src/maze/seededRandom.js';
 import { getReachableCells, selectMazeCell } from '../src/maze/mazePlacements.js';
+import { createMazeItems, createMazeSearch, MAZE_FINDABLES, MAZE_SEARCH_SECONDS } from '../src/state/mazeItems.js';
+
+test('maze item counts and pickup callbacks advance once per unique keepsake', () => {
+  const pickups = [];
+  const items = createMazeItems({ onCollect: (...args) => pickups.push(args) });
+  assert.equal(items.totalFound(), 0);
+  for (const [index, { id }] of MAZE_FINDABLES.entries()) {
+    items.collect(id);
+    items.collect(id);
+    assert.equal(items.totalFound(), index + 1);
+    assert.equal(items.hasCollected(id), true);
+  }
+  assert.deepEqual(pickups, MAZE_FINDABLES.map(({ id }, index) => [id, index + 1, 2]));
+});
+
+test('maze item reset starts a fresh attempt without changing another run', () => {
+  const items = createMazeItems(), otherRun = createMazeItems();
+  for (const { id } of MAZE_FINDABLES) items.collect(id);
+  otherRun.collect(MAZE_FINDABLES[0].id);
+  items.reset();
+  assert.equal(items.totalFound(), 0);
+  assert.equal(otherRun.totalFound(), 1);
+  for (const { id } of MAZE_FINDABLES) assert.equal(items.hasCollected(id), false);
+  items.collect(MAZE_FINDABLES[0].id);
+  assert.equal(items.totalFound(), 1);
+});
+
+test('a maze search starts with 180 seconds and an idle clock never advances', () => {
+  const search = createMazeSearch();
+  assert.equal(search.status, 'idle');
+  assert.equal(search.timeLeft, null);
+  assert.equal(search.tick(999, { playable: true }), null);
+  search.start();
+  assert.equal(MAZE_SEARCH_SECONDS, 180);
+  assert.equal(search.timeLeft, 180);
+  assert.equal(search.status, 'searching');
+});
+
+test('the maze clock freezes when gameplay is blocked, including at Jax', () => {
+  const search = createMazeSearch(); search.start();
+  search.tick(10, { playable: true });
+  for (let i = 0; i < 5; i++) {
+    assert.equal(search.tick(999, { playable: false, allItems: true, atJax: true }), null);
+    assert.equal(search.timeLeft, 170);
+    assert.equal(search.status, 'searching');
+  }
+});
+
+test('maze expiry is clamped to zero and emitted only once', () => {
+  const search = createMazeSearch(); search.start();
+  assert.equal(search.tick(179, { playable: true }), null);
+  assert.equal(search.timeLeft, 1);
+  assert.equal(search.tick(1, { playable: true }), 'expired');
+  assert.equal(search.timeLeft, 0);
+  assert.equal(search.status, 'expired');
+  assert.equal(search.tick(999, { playable: true }), null);
+  assert.equal(search.tick(0, { playable: true, allItems: true, atJax: true }), null);
+  assert.equal(search.status, 'expired');
+});
+
+test('maze search needs both all items and a current Jax arrival', () => {
+  const search = createMazeSearch(); search.start();
+  assert.equal(search.tick(1, { playable: true, atJax: true }), null);
+  assert.equal(search.tick(1, { playable: true, allItems: true }), null);
+  assert.equal(search.timeLeft, 178);
+  assert.equal(search.status, 'searching');
+  assert.equal(search.tick(0, { playable: true, allItems: true, atJax: true }), 'reached');
+  assert.equal(search.status, 'reached');
+  assert.equal(search.tick(999, { playable: true }), null);
+  assert.equal(search.timeLeft, 178);
+});
+
+test('reaching Jax with all items at the deadline wins before expiry', () => {
+  const search = createMazeSearch(); search.start(); search.tick(179, { playable: true });
+  assert.equal(search.tick(1, { playable: true, allItems: true, atJax: true }), 'reached');
+  assert.equal(search.timeLeft, 1);
+});
+
+test('clearing and restarting a maze attempt removes expired or reached state', () => {
+  const search = createMazeSearch();
+  for (const result of ['expired', 'reached']) {
+    search.start();
+    search.tick(180, { playable: true, allItems: result === 'reached', atJax: result === 'reached' });
+    assert.equal(search.status, result);
+    search.clear();
+    assert.equal(search.timeLeft, null); assert.equal(search.status, 'idle');
+    search.start();
+    assert.equal(search.timeLeft, 180); assert.equal(search.status, 'searching');
+  }
+});
+
+test('invalid elapsed values cannot corrupt a running maze clock', () => {
+  const search = createMazeSearch(); search.start();
+  for (const delta of [-1, NaN, Infinity]) assert.throws(() => search.tick(delta, { playable: true }), /finite and nonnegative/);
+  assert.equal(search.timeLeft, 180);
+});
 
 test('maze random streams are repeatable, independent and stay in [0, 1)', () => {
   for (const seed of [0, 1, 12345, 0xffffffff]) {
@@ -228,4 +324,55 @@ test('100 seeded final mazes retain reachability, honour placement limits and us
     }));
   }
   assert.ok(shortcutsSeen > 0, 'loop shortcuts must actually be reflected in measured distances');
+});
+
+
+// Exercise the actual room's layout pass, independently of the legacy generator.
+test('funhouse layouts preserve circulation, pockets, hazard path and a remote Jax chamber across 100 seeds', async () => {
+  const { shapeMazeEnvironment } = await import('../src/maze/mazeEnvironmentLayout.js');
+  for (const seed of [123, 0xffffffff, ...Array.from({ length: 100 }, (_, i) => i)]) {
+    const maze = generateMaze(13, 13, makeRng(seed), 0);
+    const path = maze.path.map(cell => [cell.r, cell.c]);
+    const exit = maze.exit;
+    const layout = shapeMazeEnvironment(maze);
+    const replay = generateMaze(13, 13, makeRng(seed), 0);
+    assert.deepEqual(shapeMazeEnvironment(replay), layout, `seed ${seed}: layout metadata`);
+    assert.deepEqual(replay, maze, `seed ${seed}: walls and anchors`);
+    assert.equal(maze.start, maze.cells[0][0]);
+    assert.equal(maze.exit, exit);
+    assert.deepEqual(maze.path.map(cell => [cell.r, cell.c]), path);
+    const reached = getReachableCells(maze, maze.start);
+    assert.equal(reached.length, 169);
+    assert.ok(reached.find(entry => entry.cell === maze.jax).distance >= layout.minimumJaxDistance);
+    assert.equal(layout.entrance.length, 4);
+    assert.equal(layout.chamber.length, 4);
+    assert.ok(layout.chamber.includes(maze.jax) && layout.chamber.includes(maze.jaxNeighbor));
+    assert.equal(Math.abs(maze.jax.r - maze.jaxNeighbor.r) + Math.abs(maze.jax.c - maze.jaxNeighbor.c), 1);
+    assert.ok(layout.loops.length >= 2, `seed ${seed}: at least two intentional circuits`);
+    assert.ok(layout.alcoves.length >= 2);
+    const openBetween = (a, b) => {
+      const wall = a.r < b.r ? 'bottom' : a.r > b.r ? 'top' : a.c < b.c ? 'right' : 'left';
+      assert.equal(a.walls[wall], false);
+    };
+    for (const loop of layout.loops) {
+      assert.equal(new Set(loop).size, 8);
+      loop.forEach((cell, i) => openBetween(cell, loop[(i + 1) % loop.length]));
+    }
+    maze.path.slice(1).forEach((cell, i) => openBetween(maze.path[i], cell));
+    for (const cell of layout.alcoves) {
+      assert.equal(Object.values(cell.walls).filter(wall => !wall).length, 1);
+      assert.ok(!layout.patrolCells.includes(cell) && !layout.chamber.includes(cell) && !layout.entrance.includes(cell));
+    }
+    for (const row of maze.cells) for (const cell of row) {
+      if (cell.r === 0) assert.equal(cell.walls.top, true);
+      if (cell.c === 0) assert.equal(cell.walls.left, true);
+      if (cell.r === 12) assert.equal(cell.walls.bottom, true);
+      if (cell.c === 12) assert.equal(cell.walls.right, true);
+      if (cell.c < 12) assert.equal(cell.walls.right, maze.cells[cell.r][cell.c + 1].walls.left);
+      if (cell.r < 12) assert.equal(cell.walls.bottom, maze.cells[cell.r + 1][cell.c].walls.top);
+    }
+    for (const region of [layout.entrance, layout.chamber]) for (const cell of region) for (const other of region) {
+      if (Math.abs(cell.r - other.r) + Math.abs(cell.c - other.c) === 1) openBetween(cell, other);
+    }
+  }
 });

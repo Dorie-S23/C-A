@@ -20,9 +20,9 @@ export function createObjectiveHUD({ objectives, root }) {
     // A presentation override changes instructions without reactivating the
     // objective (which would reset subscribers such as the search timer).
     update(context, minimapVisible = false, presentation = objectives.active) {
-      render(objectives.active && presentation);
+      render(presentation);
       gameplayVisible = shouldShowObjective(context);
-      root.hidden = !gameplayVisible || !objectives.active;
+      root.hidden = !gameplayVisible || !presentation;
       root.classList.toggle('objective-hud--with-minimap', minimapVisible);
     },
     hide() { gameplayVisible = false; root.hidden = true; },

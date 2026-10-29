@@ -46,6 +46,12 @@ export function createJaxBedroomPass({ room, cast, audio, onComplete }) {
       if (name.startsWith('hand' + side)) hand = bone;
     });
     if (upper && lower) {
+      // Measured from, and posed on top of, the rig's own T-pose: loadJax now
+      // lowers his arms for every scene, and from there these offsets lowered
+      // them a second time (and the elbow, hanging under the shoulder, no
+      // longer told which side the arm is on).
+      const bind = cast.bindPose?.get(upper);
+      if (bind) upper.quaternion.copy(bind);
       const a = actor.worldToLocal(upper.getWorldPosition(new THREE.Vector3()));
       const b = actor.worldToLocal(lower.getWorldPosition(new THREE.Vector3()));
       arms.push({ upper, lower, hand, upperRest: upper.quaternion.clone(), lowerRest: lower.quaternion.clone(),

@@ -18,6 +18,7 @@ import { bendBone, SIDEWAYS, UP } from './characters/bendBone.js';
 import { preloadJaxHallwayCutscene, playJaxHallwayCutscene } from './cutscenes/jaxHallwayCutscene.js';
 import { createCaineApproachCutscene } from './cutscenes/caineApproachCutscene.js';
 import { createDialogueUI } from './ui/DialogueUI.js';
+import { ICONS } from './ui/portraitIcons.js';
 import { createVoicePlayer } from './audio/voicePlayer.js';
 import { createAmbience } from './audio/ambience.js';
 import { createTitleScreen } from './ui/titleScreen.js';
@@ -28,7 +29,9 @@ import { createLoadingBackgrounds } from './ui/loadingBackgrounds.js';
 import { createLoadingSprites } from './ui/loadingSprites.js';
 import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.js';
 import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT, PHOTO_THRESHOLD } from './state/level2Items.js';
-import { createMazeItems, MAZE_FINDABLES } from './state/mazeItems.js';
+import {createMazeEncounter} from './levels/mazeEncounter.js';
+import {createMazeObjectiveHUD} from './ui/mazeObjectiveHUD.js';
+import { createMazeItems, createMazeSearch, MAZE_FINDABLES } from './state/mazeItems.js';
 import { runLevel1 } from './levels/level1.js';
 import { kaufmoHallwayPlan, preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
 import { preloadJaxFleeCutscene, playJaxFleeCutscene } from './cutscenes/jaxFleeCutscene.js';
@@ -41,10 +44,11 @@ import { createControlsTutorial } from './game/controlsTutorial.js';
 import { createTutorialHUD } from './ui/tutorialHUD.js';
 import { createActionCaptions } from './ui/actionCaptions.js';
 import { createCaineConversation } from './game/caineConversation.js';
+import { createCaineMemory } from './state/caineMemory.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
   level2IdleDialogue, level2CompleteDialogue, level2ReturnAndSendoffDialogue, level2AbstractionDialogue,
-  level3JaxDialogue,
+  level3JaxDialogue, level3JaxFinalDialogue,
   level2HallwayDialogue, level2RoomOpeningDialogue, ribbitFollowupDialogue,
 } from './data/dialogues.js';
 
@@ -71,6 +75,7 @@ const DIALOGUE_SCRIPTS = {
   level2Return: { script: level2ReturnAndSendoffDialogue, room: 'kaufmo' },
   level2Abstraction: { script: level2AbstractionDialogue, room: 'kaufmo' },
   level3Jax: { script: level3JaxDialogue, room: 'tadc' },
+  level3JaxFinal: {script:level3JaxFinalDialogue,room:'maze'},
 };
 
 const ROOM_LOADERS = {
@@ -207,6 +212,10 @@ const dialoguePicker = document.getElementById('dialogue-picker');
 const pauseMenu = document.getElementById('pause-menu');
 const btnResume = document.getElementById('btn-resume');
 const btnHome = document.getElementById('btn-home');
+const caineMemory = createCaineMemory();
+const pauseMemoryJoke = document.getElementById('caine-pause-joke');
+const memoryCaption = document.getElementById('caine-memory-caption');
+const retryMemoryCaption = document.getElementById('caine-retry-caption');
 const btnTitle = document.getElementById('btn-title');
 const crosshair = document.getElementById('crosshair');
 const hint = document.getElementById('hint');
@@ -218,6 +227,8 @@ const levelCompleteSubtitle = document.getElementById('level-complete-subtitle')
 const btnLevelCompleteContinue = document.getElementById('btn-level-complete-continue');
 
 const pictureCounter = document.getElementById('picture-counter');
+const mazeItemsCounter = document.getElementById('maze-items-counter');
+const mazeSearchTimer = document.getElementById('maze-search-timer');
 const searchTimer = document.getElementById('search-timer');
 const hintKey = document.getElementById('hint-key');
 const dialogueVoice = createVoicePlayer();
@@ -326,7 +337,7 @@ document.getElementById('btn-level2').addEventListener('click', (event) => {
   openingCompleted = false;
   resetObjectiveSession(true);
   itemState.reset();
-  mazeItems.reset();
+  resetMazeAttempt();
   objectives.activate('find-ribbit');
   storyProgress.finishRibbit(4);
   titleScreen.hide();
@@ -346,7 +357,7 @@ document.getElementById('btn-level3').addEventListener('click', (event) => {
   openingCompleted = false;
   resetObjectiveSession(true);
   itemState.reset();
-  mazeItems.reset();
+  resetMazeAttempt();
   objectives.activate('find-ribbit');
   storyProgress.finishRibbit(4);
   storyProgress.finishKaufmoIntro();
@@ -372,6 +383,43 @@ btnTitle.addEventListener('click', (event) => {
   event.stopPropagation();
   returnToHome();
 });
+
+// Flavor controls never change pause, dialogue, audio, timers, or saves.
+function hideMemoryText() {
+  pauseMemoryJoke.hidden = memoryCaption.hidden = retryMemoryCaption.hidden = true;
+  pauseMemoryJoke.textContent = memoryCaption.textContent = retryMemoryCaption.textContent = '';
+}
+function showPauseMemory() {
+  const text = caineMemory.takePauseJoke();
+  pauseMemoryJoke.textContent = text ?? '';
+  pauseMemoryJoke.hidden = !text;
+}
+const memorySettings = document.querySelectorAll('[data-caine-enabled]');
+for (const input of memorySettings) {
+  input.checked = caineMemory.enabled;
+  input.addEventListener('change', event => {
+    event.stopPropagation();
+    caineMemory.setEnabled(input.checked);
+    for (const setting of memorySettings) setting.checked = caineMemory.enabled;
+    if (!caineMemory.enabled) hideMemoryText();
+  });
+}
+for (const button of document.querySelectorAll('[data-caine-clear]')) {
+  button.addEventListener('click', event => {
+    event.stopPropagation();
+    caineMemory.clear();
+    hideMemoryText();
+    document.getElementById('caine-memory-note').textContent = 'Caine’s local retry/run history was cleared. Campaign saves are unchanged.';
+  });
+}
+function updateMemoryCaption(delta, context) {
+  const playable = Boolean(context.room && context.ready && context.locked
+    && !context.paused && !context.cinematic && !context.dialogue && !context.menu
+    && savePanel.hidden && levelCompletePanel.hidden && !document.hidden);
+  const text = caineMemory.updateCaption(delta, { playable });
+  if (memoryCaption.textContent !== (text ?? '')) memoryCaption.textContent = text ?? '';
+  memoryCaption.hidden = !text;
+}
 
 // --- Title screen ---
 const titleOptions = document.getElementById('title-options');
@@ -549,9 +597,7 @@ cinematicSkip.addEventListener('click', () => {
   cinematicSkip.hidden = true;
   fastForwardCutscenes();
 });
-document.getElementById('btn-options-credits').addEventListener('click', () => {
-  creditsPanel.classList.remove('hidden');
-});
+document.getElementById('btn-options-credits').addEventListener('click', openCredits);
 document.getElementById('btn-options-back').addEventListener('click', () => {
   titleOptions.hidden = true;
 });
@@ -603,6 +649,9 @@ function showRoomPicker() {
  * hatch below, which can fire before any room's ever been picked).
  */
 function returnToHome({ toRoomPicker = false } = {}) {
+  mazeItemsCounter.hidden = true;
+  mazeSearchTimer.hidden = true;
+  resetMazeAttempt();
   skipIntroRequested = false;
   dropRoomPreload();
   resetObjectiveSession();
@@ -646,6 +695,7 @@ function returnToHome({ toRoomPicker = false } = {}) {
   portals = [];
   focusedInteractable = null;
   interactPrompt.hidden = true;
+  mazeEncounter?.dispose();mazeEncounter=null;
   foundJax = false;
   reachedExit = false;
   caught = false;
@@ -672,16 +722,19 @@ function startNewGame() {
   // Hidden score and Level 2's photos start over too.
   resetEscapeThreshold();
   itemState.reset();
-  mazeItems.reset();
+  resetMazeAttempt();
   resetObjectiveSession(true);
   openingAudio.unlock();
   if (isLocked) document.exitPointerLock();
   titleScreen.hide();
   openingCompleted = false;
   selectRoom('pomni', { openingMode: 'play' });
+  caineMemory.beginRun();
 }
 
 function resetObjectiveSession(active = false) {
+  caineMemory.cancelCaption();
+  hideMemoryText();
   storySessionId++;
   storyProgress.reset();
   cancelLevelComplete();
@@ -755,6 +808,8 @@ function pauseOpening(value) {
   overlayTitle.textContent = 'Paused';
   overlaySubtitle.textContent = 'Resume the opening or return to the title screen';
   pauseMenu.hidden = !value;
+  if (value) showPauseMemory();
+  else pauseMemoryJoke.hidden = true;
 }
 
 function handoffOpening() {
@@ -1126,6 +1181,8 @@ const MISSIONS = {
 };
 
 const missionApi = {
+  get memoryTicket() { return caineMemory.revision; },
+  rememberRetry: (level, ticket) => caineMemory.recordRetry(level, ticket),
   /** Loads a room from the menus (Click to Play); resolves with the loaded room. */
   enterRoom(roomKey, { from = currentRoomKey } = {}) {
     return selectRoom(roomKey, {
@@ -1169,6 +1226,8 @@ function startMission(key) {
 }
 
 function attachStoryInteractions(room, roomKey, token) {
+  // The final maze conversation is now automatic; keep its anchor for
+  // the upstream countdown, without adding the superseded E-only placeholder.
   if (!preLevel1Session || roomKey !== 'dorm') return;
   const control = room.hallDoors?.ribbit?.control;
   if (!control) return;
@@ -1448,13 +1507,14 @@ async function finishKaufmoLevel(token) {
 
 /** Too few photos: Kaufmo abstracts. Game Over, then the search starts over. */
 async function kaufmoAbstracted(token) {
+  const memoryTicket = caineMemory.revision;
   const retry = await showLevelComplete(
     'Kaufmo has abstracted.',
     `He needed at least ${PHOTO_THRESHOLD} of the ${PHOTO_COUNT} photos. Try the search again.`,
-    { resume: false, chime: 'fail', buttonLabel: 'Retry Level 2' },
+    { resume: false, chime: 'fail', buttonLabel: 'Retry Level 2', memoryRetry: 'level2' }
   );
   if (!retry || token !== loadToken) return;
-  await resetPhotoSearch();
+  await resetPhotoSearch(memoryTicket);
 }
 
 /**
@@ -1485,12 +1545,20 @@ const storyProgress = createStoryProgress({ objectives, isStorySession: () => pr
 // --- Level 3 maze keepsakes ---------------------------------------------
 // Not scored, just a hint on pickup — same shared-instance-survives-room-
 // changes lifecycle as itemState above.
+let mazeEncounter=null,lastMazeExitHint=0;
 const mazeItems = createMazeItems({
+  onChange(){currentRoomInfo?.jaxBoundary?.sync();takeCheckpoint();},
   onCollect: (id, count, total) => {
     const label = MAZE_FINDABLES.find((findable) => findable.id === id)?.label ?? 'something';
     showHint(`Found the ${label}. (${count}/${total})`);
   },
 });
+const mazeSearch = createMazeSearch();
+let mazeAttemptSeed = null;
+let mazeClockWasPlayable = false;
+document.addEventListener('visibilitychange', () => { mazeClockWasPlayable = false; });
+
+const mazeHUD=createMazeObjectiveHUD({root:document.getElementById('maze-objective-hud'),items:mazeItems});
 
 // --- Saving and loading -------------------------------------------------
 // Checkpoints only: the game keeps a snapshot of the story so far, taken
@@ -1509,14 +1577,17 @@ const ROOM_NAMES = {
 };
 
 function takeCheckpoint() {
-  // Story runs only (not previews), once the opening's over, in a real room.
-  if (!preLevel1Session || restoringSave || !openingCompleted || !ROOM_NAMES[currentRoomKey]) return;
+  // Preserve story checkpoint rules; the raw maze review can also save its
+  // own Level 3 progression without replaying the preceding story.
+  const mazeCheckpoint=currentRoomKey==='maze';
+  if ((!preLevel1Session&&!mazeCheckpoint) || restoringSave || (!openingCompleted&&!mazeCheckpoint) || !ROOM_NAMES[currentRoomKey]) return;
   checkpoint = {
     room: currentRoomKey,
     from: currentRoomFrom,
     objectives: objectives.snapshot(),
     story: storyProgress.snapshot(),
     items: itemState.snapshot(),
+    maze: mazeItems.snapshot(),
     escape: snapshotEscapeThreshold(),
     morningDialoguePending,
     // Shown on the slot, so a save says what it was.
@@ -1534,10 +1605,12 @@ function loadGame(data) {
     skipIntroRequested = false;
     resetEscapeThreshold();
     itemState.reset();
+    resetMazeAttempt();
     resetObjectiveSession(true);
     objectives.restore(data.objectives);
     storyProgress.restore(data.story);
     itemState.restore(data.items);
+    mazeItems.restore(data.maze);
     restoreEscapeThreshold(data.escape);
     morningDialoguePending = Boolean(data.morningDialoguePending);
     openingCompleted = true;
@@ -1654,6 +1727,64 @@ objectives.subscribe((active) => {
   hintsLeft = HINT_LIMIT;
 });
 
+function resetMazeAttempt(seed = null) {
+  mazeItems.reset();
+  mazeSearch.clear();
+  mazeAttemptSeed = seed;
+  mazeClockWasPlayable = false;
+}
+
+function canReachMazeJax() {
+  const encounter = currentRoomInfo?.jaxEncounter;
+  if (currentRoomKey !== 'maze' || !encounter || !isInteractionAvailable(encounter)) return false;
+  return hasLineOfSight(encounter);
+}
+
+function mazeSearchInstructions() {
+  return {title:mazeItems.jaxComplete?'Reach the exit':mazeItems.hasAllRequired()?'Find Jax':"Find Jax's missing objects",
+    detail:mazeItems.jaxComplete?'The conversation is complete. Leave the maze.':mazeItems.hasAllRequired()?'Approach Jax with a clear view to begin the conversation.':'Find the bowling ball and hot chocolate mug, then approach Jax before time runs out.'};
+}
+
+function updateMazeSearch(deltaSeconds) {
+  const playable = mazeGameplayAvailable(gameplayHUDContext());
+  // A first/resumed frame must not charge time spent loading or suspended.
+  const elapsed = mazeClockWasPlayable ? deltaSeconds : 0;
+  mazeClockWasPlayable = playable;
+  if (!playable) return;
+  const result = mazeSearch.tick(elapsed, {
+    playable,
+    allItems: MAZE_FINDABLES.every(({ id }) => mazeItems.hasCollected(id)),
+    atJax: canReachMazeJax(),
+  });
+  if (result === 'reached') {
+    foundJax = true;
+    // His own reaction (the real payoff scene/dialogue) is still pending
+    // the team's review — see dialogues.js's level2PayoffDialogue beat
+    // that sent her in here. This is just a placeholder hint in the
+    // meantime, not a stand-in for that scene.
+    showHint('Jax reached with both keepsakes. Approach his stage to begin the conversation.', 5000);
+  } else if (result === 'expired') {
+    restartMazeSearch();
+  }
+}
+
+async function restartMazeSearch() {
+  const token = loadToken, session = storySessionId, memoryTicket = caineMemory.revision;
+  const failedSeed = mazeAttemptSeed;
+  const continued = await showLevelComplete(
+    'LEVEL 3 FAILED',
+    'Time’s up — find both keepsakes and reach Jax before the countdown ends.',
+    { resume: false, chime: 'fail', buttonLabel: 'Retry', memoryRetry: 'maze' }
+  );
+  if (!continued || token !== loadToken || currentRoomKey !== 'maze' || mazeSearch.status !== 'expired') return;
+  const seed = Math.floor(Math.random() * 0x100000000);
+  resetMazeAttempt(seed === failedSeed ? (seed + 1) >>> 0 : seed);
+  const room = await missionApi.travel('maze', { from: null });
+  if (room && session === storySessionId && currentRoomInfo === room && currentRoomKey === 'maze') {
+    caineMemory.recordRetry('maze', memoryTicket);
+  }
+}
+
 function updateSearchTimer(deltaSeconds) {
   if (searchTimeLeft === null) return;
   if (!isLocked || !readyToPlay || paused || dialogueUI.isActive || activeCutscene || activeCinematic()?.active || stageBusy()) return;
@@ -1666,25 +1797,29 @@ function updateSearchTimer(deltaSeconds) {
 }
 
 async function restartPhotoSearch() {
-  const token = loadToken;
+  const token = loadToken, memoryTicket = caineMemory.revision;
   const continued = await showLevelComplete(
     'LEVEL 2 FAILED',
     `Time's up — you didn't get the photos back to Kaufmo in time (he needs at least ${PHOTO_THRESHOLD}). Try again from the Lobby.`,
-    { resume: false, chime: 'fail' },
+    { resume: false, chime: 'fail', memoryRetry: 'level2' },
   );
   if (!continued || token !== loadToken) return; // the player had already moved on by the time this landed
-  await resetPhotoSearch();
+  await resetPhotoSearch(memoryTicket);
 }
 
 /** A fresh photo search: new spots, a full clock and hints, back in the Lobby. */
-async function resetPhotoSearch() {
+async function resetPhotoSearch(memoryTicket) {
+  const session = storySessionId;
   itemState.reset();
   searchTimeLeft = SEARCH_TIMER_SECONDS;
   hintCooldown = 0;
   hintsLeft = HINT_LIMIT;
   // Use the same default Lobby spawn as the introduction, even when the
   // failed attempt ended in Dorm Hall (whose normal arrival uses the arch).
-  await missionApi.travel('tadc', { from: null });
+  const room = await missionApi.travel('tadc', { from: null });
+  if (room && session === storySessionId && currentRoomInfo === room && currentRoomKey === 'tadc') {
+    caineMemory.recordRetry('level2', memoryTicket);
+  }
 }
 
 // --- Photo hints (H) -----------------------------------------------------
@@ -1738,6 +1873,27 @@ function directionTo(dx, dz) {
   return right > 0 ? 'to your right' : 'to your left';
 }
 
+function mazeGameplayAvailable(context) {
+  return Boolean(currentRoomKey === 'maze' && context.room && context.ready && context.locked
+    && !context.paused && !context.dialogue && !context.cinematic && !context.menu
+    && savePanel.hidden && !document.hidden);
+}
+
+function updateMazeItemsCounter(context) {
+  const visible = mazeGameplayAvailable(context);
+  if (mazeItemsCounter.hidden === visible) mazeItemsCounter.hidden = !visible;
+
+  const text = `Objects found: ${mazeItems.totalFound()}/${MAZE_FINDABLES.length}`;
+  if (mazeItemsCounter.textContent !== text) mazeItemsCounter.textContent = text;
+  const timerVisible = visible && mazeSearch.status === 'searching';
+  if (mazeSearchTimer.hidden === timerVisible) mazeSearchTimer.hidden = !timerVisible;
+  if (timerVisible) {
+    const seconds = Math.ceil(mazeSearch.timeLeft);
+    const timerText = `Time left: ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    if (mazeSearchTimer.textContent !== timerText) mazeSearchTimer.textContent = timerText;
+  }
+}
+
 function updatePictureCounter() {
   // Keep the countdown visible wherever the player can spend search time,
   // including the Dorm Hall and any detours. Hide the Level 2 HUD afterward.
@@ -1775,6 +1931,10 @@ function updatePictureCounter() {
 }
 
 function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
+  mazeItemsCounter.hidden = true;
+  mazeSearchTimer.hidden = true;
+  mazeClockWasPlayable = false;
+  if (mazeSearch.status === 'expired') resetMazeAttempt();
   objectiveHUD.hide();
   caineConversation.cancelPending();
   dropRoomPreload();
@@ -1813,6 +1973,7 @@ function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
   portals = [];
   focusedInteractable = null;
   interactPrompt.hidden = true;
+  mazeEncounter?.dispose();mazeEncounter=null;
   foundJax = false;
   reachedExit = false;
   caught = false;
@@ -1824,7 +1985,7 @@ function roomLoadOptions(roomKey, { from, preview, openingMode }) {
   return {
     from, playDialogue: playRoomDialogue, preview, endLevel, stage, items: itemState, travel: travelTo,
     objectives, showLevelComplete, playChime: openingAudio.playChime, mazeItems,
-    seed: roomKey === 'maze' ? devMazeSeed : undefined,
+    seed: roomKey === 'maze' ? mazeItems.ensureSeed(mazeAttemptSeed ?? devMazeSeed) : undefined,
     ribbitStory: {
       complete: () => storyProgress.ribbitComplete,
       points: () => storyProgress.ribbitPoints,
@@ -1923,6 +2084,14 @@ function applyLoadedRoom({
   roomInteractables = currentRoomInfo.interactables;
   currentRoom = group;
   currentRoomKey = roomKey;
+  if(roomKey==='maze'){
+    mazeEncounter=createMazeEncounter({items:mazeItems,
+      playDialogue:handlers=>playRoomDialogue('level3JaxFinal',handlers),
+      onEngage:()=>currentRoomInfo?.jaxApi.engageDistressed(player.position),
+      onRelease:()=>currentRoomInfo?.jaxApi.engageDistressed(null),
+    });
+    foundJax=mazeItems.jaxComplete;
+  }
   ambience.setRoom(roomKey);
   controlsTutorial.enterRoom(roomKey);
   player.visible = true;
@@ -1997,6 +2166,14 @@ function applyLoadedRoom({
   warmUp?.(renderer, scene, camera);
 
   readyToPlay = true;
+  if (roomKey === 'maze') {
+    if (mazeSearch.status === 'idle') {
+      mazeAttemptSeed = currentRoomInfo.mazeSeed;
+      mazeSearch.start();
+    }
+    if(mazeItems.jaxComplete)mazeSearch.tick(0,{playable:true,allItems:true,atJax:true});
+    foundJax = mazeSearch.status === 'reached';
+  }
   overlay.classList.remove('loading');
   if (activeOpening?.active) {
     openingFrameProfile = { frames: 0, seconds: 0, maxSeconds: 0 };
@@ -2050,11 +2227,30 @@ function disposeObject3D(root) {
 
 // --- Credits panel ---
 const creditsPanel = document.getElementById('credits');
-document.getElementById('credits-btn').addEventListener('click', () => {
-  creditsPanel.classList.remove('hidden');
-});
+// Cast credits show the characters' dialogue icons. Set from here rather
+// than in index.html so the packager sees the paths (it follows the URLs in
+// the bundle). Each card also gets its turn in the staggered entrance.
+for (const item of creditsPanel.querySelectorAll('[data-icon]')) {
+  const src = ICONS[item.dataset.icon];
+  if (!src) continue;
+  const icon = document.createElement('img');
+  icon.className = 'credit-icon';
+  icon.src = src;
+  icon.alt = ''; // the character's name is right beside it
+  item.prepend(icon);
+}
+creditsPanel.querySelectorAll('.credits-rise').forEach((el, i) => el.style.setProperty('--i', i));
+function openCredits() {
+  creditsPanel.scrollTop = 0;
+  creditsPanel.classList.remove('hidden'); // display:none -> shown replays the entrance
+  document.getElementById('credits-close').focus({ preventScroll: true });
+}
+document.getElementById('credits-btn').addEventListener('click', openCredits);
 document.getElementById('credits-close').addEventListener('click', () => {
   creditsPanel.classList.add('hidden');
+});
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape') creditsPanel.classList.add('hidden');
 });
 
 // --- Controls panel ---
@@ -2265,6 +2461,7 @@ renderer.domElement.addEventListener('click', () => {
   }
 });
 document.addEventListener('pointerlockchange', () => {
+  mazeClockWasPlayable = false;
   isLocked = document.pointerLockElement === renderer.domElement;
   crosshair.hidden = !isLocked;
   if (isLocked) {
@@ -2299,6 +2496,7 @@ document.addEventListener('pointerlockchange', () => {
   dialoguePicker.hidden = true;
   btnTitle.hidden = true;
   pauseMenu.hidden = false;
+  showPauseMemory();
 });
 document.addEventListener('mousemove', (e) => {
   // Frozen during an in-room conversation (e.g. talking to Kaufmo), same as
@@ -2680,7 +2878,7 @@ function endLevel(title, subtitle) {
  * @returns {Promise<void>} resolves once Continue is clicked
  */
 let cancelLevelComplete = () => {};
-function showLevelComplete(title, subtitle, { resume = true, chime = 'complete', buttonLabel = 'Continue →' } = {}) {
+function showLevelComplete(title, subtitle, { resume = true, chime = 'complete', buttonLabel = 'Continue →', memoryRetry = null } = {}) {
   cancelLevelComplete();
   const token = loadToken;
   resetMoveState();
@@ -2688,6 +2886,9 @@ function showLevelComplete(title, subtitle, { resume = true, chime = 'complete',
   // The pointer-lock event must see the card, so it never opens Pause over it.
   levelCompleteTitle.textContent = title;
   levelCompleteSubtitle.textContent = subtitle;
+  const memoryText = caineMemory.retryCaption(memoryRetry);
+  retryMemoryCaption.textContent = memoryText ?? '';
+  retryMemoryCaption.hidden = !memoryText;
   btnLevelCompleteContinue.textContent = buttonLabel;
   levelCompletePanel.hidden = false;
   paused = false;
@@ -2701,6 +2902,8 @@ function showLevelComplete(title, subtitle, { resume = true, chime = 'complete',
     function finish(continued) {
       btnLevelCompleteContinue.removeEventListener('click', onContinue);
       levelCompletePanel.hidden = true;
+      retryMemoryCaption.hidden = true;
+      retryMemoryCaption.textContent = '';
       cancelLevelComplete = () => {};
       stage.hold(false);
       resolve(continued && token === loadToken);
@@ -3126,7 +3329,7 @@ function travelTo(roomKey) {
 }
 
 function checkTriggers(player) {
-  if (reachedExit || caught) return;
+  if (currentRoomKey !== 'maze' || caught || reachedExit) return;
 
   for (const hazard of hazards) {
     const dx = player.position.x - hazard.mesh.position.x;
@@ -3145,22 +3348,37 @@ function checkTriggers(player) {
   if (!triggers) return;
   triggerProbe.set(player.position.x, floorY + 0.5, player.position.z);
 
-  if (!foundJax && triggers.jax.containsPoint(triggerProbe)) {
-    foundJax = true;
-    // His own reaction (the real payoff scene/dialogue) is still pending
-    // the team's review — see dialogues.js's level2PayoffDialogue beat
-    // that sent her in here. This is just a placeholder hint in the
-    // meantime, not a stand-in for that scene.
-    showHint("You found Jax — he's shaking, pressed up against the wall.");
-  }
 
+  updateMazeSearch(0);
   if (triggers.exit.containsPoint(triggerProbe)) {
+    if(!mazeItems.hasAllRequired()||!mazeItems.jaxComplete){
+      const now=performance.now();
+      if(!lastMazeExitHint||now-lastMazeExitHint>3000){showHint(mazeItems.hasAllRequired()?"Find Jax and finish your conversation before leaving.":"Find Jax's missing bowling ball and hot chocolate mug first.");lastMazeExitHint=now;}
+      return;
+    }
+    foundJax=true;
     reachedExit = true;
     endLevel(
       'Maze Complete!',
       foundJax ? 'You found Jax and the exit.' : 'You reached the exit — but never found Jax.',
     );
   }
+}
+
+/** Automatic Last Act approach; no E press or broad found-Jax trigger. */
+function updateMazeFinalEncounter(){
+  if(currentRoomKey!=='maze'||!mazeEncounter||!currentRoomInfo?.jaxAnchor)return;
+  const anchor=currentRoomInfo.jaxAnchor;
+  const inRange=Math.hypot(player.position.x-anchor.x,player.position.z-anchor.z)<=2.35
+    &&Math.abs(player.position.y-PLAYER_HEIGHT-anchor.y)<0.65;
+  const eligible=mazeSearch.status!=='expired'&&isLocked&&readyToPlay&&!paused&&!dialogueUI.isActive&&!stageBusy()&&!activeCutscene&&!activeCinematic()?.active&&!activeJaxPass?.active&&!activeOpening?.active;
+  let visible=false;
+  if(inRange&&eligible&&mazeItems.hasAllRequired()){
+    const origin=player.position.clone().add(new THREE.Vector3(0,-0.1,0)),target=anchor.clone().setY(anchor.y+1.6),direction=target.sub(origin),distance=direction.length();
+    const ray=new THREE.Ray(origin,direction.normalize()),hit=new THREE.Vector3();
+    visible=!colliders.some(box=>ray.intersectBox(box,hit)&&origin.distanceTo(hit)<distance-0.03);
+  }
+  mazeEncounter.update({inRange,visible,eligible});
 }
 
 function updateMovement(deltaSeconds) {
@@ -3239,6 +3457,8 @@ function updateMovement(deltaSeconds) {
       }
     }
   }
+
+  currentRoomInfo?.jaxBoundary?.constrainMotion({x:frameStartX,z:frameStartZ},player.position,PLAYER_RADIUS);
 
   // Animate from how far she actually got, so walking into a wall doesn't bob.
   const moved = Math.hypot(player.position.x - frameStartX, player.position.z - frameStartZ);
@@ -3713,6 +3933,7 @@ function animate() {
   // on a player who is sitting in the pause menu.
   updateCaineArrival(delta);
   updateSearchTimer(delta);
+  updateMazeSearch(rawDelta);
   fastForwardCutscenes();
   if (!paused) {
     updateMovers(delta);
@@ -3764,15 +3985,19 @@ function animate() {
   // crossing from completing between two renders on slower machines.
   if (!paused) activeJaxPass?.update(Math.min(rawDelta, .1));
   minimap.update(player.position.x, player.position.z, cameraYaw);
+  updateMazeFinalEncounter();
   updateInteractionFocus();
   const hudContext = gameplayHUDContext();
+  updateMemoryCaption(delta, hudContext);
   actionCaptions.update({ opening: activeOpening, jaxPass: activeJaxPass,
     hidden: hudContext.paused || hudContext.menu || dialogueUI.isActive });
   const photoReturn = objectives.active?.id === 'collect-photos' && itemState.totalFound() >= PHOTO_COUNT
     ? { title: 'Return to Kaufmo', detail: 'Go through the Dorm Hall to his room. Press E on Kaufmo to deliver the photos before time runs out.' }
     : objectives.active;
-  objectiveHUD.update(hudContext, roomShowsMinimap(currentRoomKey), photoReturn);
+  objectiveHUD.update({...hudContext,room:currentRoomKey==='maze'?null:hudContext.room}, roomShowsMinimap(currentRoomKey), photoReturn);
+  mazeHUD.update(hudContext,currentRoomKey);
   tutorialHUD.update(hudContext, focusedBedroomDoor());
+  updateMazeItemsCounter(hudContext);
   updatePictureCounter();
   if (activeCutscene) {
     const finished = activeCutscene.update(paused ? 0 : delta);

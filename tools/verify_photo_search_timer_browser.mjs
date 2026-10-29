@@ -135,29 +135,52 @@ try {
   check('Pause freezes the countdown', () => assert.equal(stillPaused.timeLeft, paused.timeLeft));
   await lock();
 
+  // Photos are handed in all at once: fewer than PHOTO_THRESHOLD (4) and
+  // Kaufmo abstracts, which ends the attempt on a Retry Level 2 card.
   await page.evaluate(() => window.__photoReview.pickup(2));
   await travel('kaufmo');
   const beforeDelivery = await state();
-  const partial = await page.evaluate(() => window.__photoReview.handIn());
+  const short = await page.evaluate(() => window.__photoReview.handIn());
   await tick(999);
   const duringDialogue = await state();
-  check('Partial delivery preserves the clock and dialogue spends no time', () => {
-    assert.equal(partial.presented, 2);
-    assert.equal(partial.dialogue, true);
-    assert.equal(partial.objective, 'collect-photos');
-    assert.ok(partial.timeLeft <= beforeDelivery.timeLeft && partial.timeLeft > beforeDelivery.timeLeft - 1);
-    assert.equal(duringDialogue.timeLeft, partial.timeLeft);
+  check('Too few photos plays Kaufmo abstracting, and the dialogue spends no time', () => {
+    assert.equal(short.presented, 2);
+    assert.equal(short.dialogue, true);
+    assert.ok(short.timeLeft <= beforeDelivery.timeLeft && short.timeLeft > beforeDelivery.timeLeft - 1);
+    assert.equal(duringDialogue.timeLeft, short.timeLeft);
   });
   await finishDialogue();
-  await lock();
-  await tick(5);
-  assert.ok((await state()).timeLeft <= partial.timeLeft - 5);
+  await tick(999);
+  const abstracted = await state();
+  check('Kaufmo abstracting ends the attempt on a Retry Level 2 card with the clock stopped', () => {
+    assert.equal(abstracted.failureVisible, true);
+    assert.equal(abstracted.failureTitle, 'Kaufmo has abstracted.');
+    assert.match(abstracted.failureSubtitle, /at least 4 of the 5 photos/);
+    assert.equal(abstracted.timeLeft, short.timeLeft);
+  });
+  assert.equal(await page.locator('#btn-level-complete-continue').textContent(), 'Retry Level 2');
   assert.equal(await points(), 2);
+  await continueSearch();
+  const afterAbstraction = await state();
+  check('Retrying after Kaufmo abstracts restarts the search with a new layout and four minutes', () => {
+    assert.equal(afterAbstraction.room, 'tadc');
+    assert.deepEqual(afterAbstraction.position, initial.position);
+    assert.equal(afterAbstraction.found, 0);
+    assert.equal(afterAbstraction.presented, 0);
+    assert.equal(afterAbstraction.photos.length, 5);
+    assert.notDeepEqual(afterAbstraction.photos, initial.photos);
+    assert.ok(afterAbstraction.timeLeft > 235 && afterAbstraction.timeLeft <= 240);
+  });
+  assert.equal(await points(), 0);
+
+  await page.evaluate(() => window.__photoReview.pickup(2));
+  await tick(5);
+  await travel('dorm');
   await travel('tadc');
   const revisited = await state();
-  check('Returning after a partial delivery preserves the remaining photo positions and rotations', () => {
-    assert.deepEqual(revisited.photos, initial.photos.slice(2));
-    assert.match(revisited.counterText, /found: 2\/5.*Delivered: 2\/5/);
+  check('Returning to the Lobby mid-search keeps the remaining photo positions and rotations', () => {
+    assert.deepEqual(revisited.photos, afterAbstraction.photos.slice(2));
+    assert.match(revisited.counterText, /found: 2\/5.*Delivered: 0\/5/);
   });
 
   await page.evaluate(() => window.__photoReview.pickup());
@@ -165,10 +188,10 @@ try {
   const allFound = await state();
   check('The fifth pickup keeps the timer running and directs the player to Kaufmo', () => {
     assert.equal(allFound.found, 5);
-    assert.equal(allFound.presented, 2);
+    assert.equal(allFound.presented, 0);
     assert.equal(allFound.timerVisible, true);
-    assert.ok(allFound.timeLeft > 0 && allFound.timeLeft < initial.timeLeft - 5);
-    assert.match(allFound.counterText, /found: 5\/5.*Delivered: 2\/5/);
+    assert.ok(allFound.timeLeft > 0 && allFound.timeLeft < afterAbstraction.timeLeft - 5);
+    assert.match(allFound.counterText, /found: 5\/5.*Delivered: 0\/5/);
   });
   await travel('dorm');
   const hallway = await state();
@@ -184,10 +207,10 @@ try {
   await page.setViewportSize({ width: 800, height: 600 });
   await tick(999);
   const failed = await state();
-  check('Time can expire with all photos found but only some delivered', () => {
+  check('Time can expire with all photos found but none delivered', () => {
     assert.equal(failed.failureVisible, true);
     assert.equal(failed.failureTitle, 'LEVEL 2 FAILED');
-    assert.match(failed.failureSubtitle, /get all five photos back to Kaufmo/);
+    assert.match(failed.failureSubtitle, /get the photos back to Kaufmo in time/);
     assert.equal(failed.timeLeft, null);
   });
 
@@ -225,10 +248,10 @@ try {
     assert.equal(delivered.failureVisible, false);
   });
   await finishDialogue();
-  await lock();
   await tick(999);
   const afterDelivery = await state();
-  assert.equal(afterDelivery.failureVisible, false);
+  assert.equal(afterDelivery.failureVisible, true);
+  assert.equal(afterDelivery.failureTitle, 'Level 2 Complete');
   assert.equal(afterDelivery.timerVisible, false);
   assert.equal(await points(), 5);
   check('Final dialogue and free play cannot restart the completed countdown', () => assert.equal(afterDelivery.timeLeft, null));
