@@ -53,13 +53,15 @@ const EYE_HEIGHT = 1.5;
 const PHOTO_OPEN_RADIUS = 12;
 const PHOTO_OPEN_STEP = 2;
 const PHOTO_OPEN_MIN = 28;
-// One photo always lands by the small steps at the foot of the stage
-// (playtest request) — the stage's own floor isn't in lobbyReach at all
-// (it's set dressing, not meant to be walked onto), so this is the
-// nearest confirmed-walkable point right at its front edge, centred on
-// its width. Best effort pending an in-game look: nudge x (toward/away
-// from the stage) or z (left/right along it) if it's not quite on them.
-const STAGE_STEPS_SPOT = { x: -28, z: 24.6 };
+// One photo always lands on top of the small red/orange stair landing
+// near the stage (playtest request, confirmed by screenshot) — an
+// unnamed six-step staircase, not in lobbyReach (it's not flat ground,
+// so the walkable-floor map skips it). y is explicit rather than found
+// by the usual downward raycast: real floor is visible underneath the
+// landing through the open stair structure, and "lowest hit" (the right
+// call almost everywhere else, to skip a shelf/ceiling above the real
+// floor) finds that lower floor instead of the landing itself here.
+const STAGE_STEPS_SPOT = { x: 2, y: 2.24, z: 8.6 };
 
 export function loadTadcRoom(onProgress, { from, items } = {}) {
   return Promise.all([

@@ -303,7 +303,13 @@ function choosePictureSpots(room, pictures, spawn, keepClear, {
 
   let pinnedSpot = null;
   if (pinned) {
-    const spot = findFloorSpot(room.group, pinned.x, pinned.z, { aboveY, far: FLOOR_SEARCH_FAR });
+    // An explicit y skips the raycast: some surfaces (a stair landing with
+    // open space underneath it, say) have real floor visible below them
+    // too, and "lowest hit" (the right call for skipping a shelf/ceiling
+    // above the floor almost everywhere else) finds the wrong one there.
+    const spot = Number.isFinite(pinned.y)
+      ? { position: new THREE.Vector3(pinned.x, pinned.y + FRAME_DEPTH / 2 + 0.01, pinned.z), object: null }
+      : findFloorSpot(room.group, pinned.x, pinned.z, { aboveY, far: FLOOR_SEARCH_FAR });
     if (spot) {
       spot.rotationY = rng() * Math.PI * 2;
       spot.tilt = (rng() * 2 - 1) * TILT_RANGE;
