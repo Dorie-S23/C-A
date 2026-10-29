@@ -1687,6 +1687,7 @@ const mazeItems = createMazeItems({
   },
 });
 const mazeSearch = createMazeSearch();
+let mazeGloinkWarningPending = false;
 let mazeAttemptSeed = null;
 let mazeClockWasPlayable = false;
 document.addEventListener('visibilitychange', () => { mazeClockWasPlayable = false; });
@@ -1921,6 +1922,10 @@ function updateMazeSearch(deltaSeconds) {
   const elapsed = mazeClockWasPlayable ? deltaSeconds : 0;
   mazeClockWasPlayable = playable;
   if (!playable) return;
+  if (mazeGloinkWarningPending) {
+    mazeGloinkWarningPending = false;
+    showHint('Be careful of the Gloinks!', 6000);
+  }
   const result = mazeSearch.tick(elapsed, {
     playable,
     allItems: MAZE_FINDABLES.every(({ id }) => mazeItems.hasCollected(id)),
@@ -2184,6 +2189,11 @@ function updatePictureCounter() {
 }
 
 function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
+  mazeGloinkWarningPending = false;
+  if (hint.textContent === 'Be careful of the Gloinks!') {
+    clearTimeout(hintTimeout);
+    hint.classList.remove('visible');
+  }
   mazeHints.hide();
   mazeItemsCounter.hidden = true;
   mazeSearchTimer.hidden = true;
@@ -2435,6 +2445,7 @@ function applyLoadedRoom({
 
   readyToPlay = true;
   if (roomKey === 'maze') {
+    mazeGloinkWarningPending = true;
     if (mazeSearch.status === 'idle') {
       mazeAttemptSeed = currentRoomInfo.mazeSeed;
       mazeSearch.start();
@@ -4822,3 +4833,6 @@ export function getOpeningDiagnostics() {
       center: new THREE.Box3().setFromObject(i.objects[0]).getCenter(new THREE.Vector3()).toArray() })),
   };
 }
+
+
+
