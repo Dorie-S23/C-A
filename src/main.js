@@ -2900,12 +2900,41 @@ function firstColliderHit(position, direction, distance) {
       if (far < exit) exit = far;
     }
     if (outsideSlab || !axis || enter > exit) continue;
-    const hitDistance = Math.max(enter, 0);
+
+    let hitDistance, nx, nz;
+    if (enter >= 0) {
+      // A genuine future crossing: block there.
+      hitDistance = enter;
+      nx = axis === 'x' ? sign : 0;
+      nz = axis === 'z' ? sign : 0;
+    } else {
+      // enter < 0 means the slab already contained the start point on every
+      // bounded axis — already resting against/touching this box, not
+      // approaching it. The axis-aligned slab normal above isn't
+      // trustworthy here (it's an artefact of which axis happened to bound
+      // last, not the real nearest face), so use the same closest-point
+      // normal resolveWallCollisions uses, and only treat it as a block if
+      // the step actually heads further in — exactly what firstWallHit's
+      // raycast would do, since it simply can't hit a surface behind its
+      // own origin. Skipping that check (and just clamping to 0 always)
+      // would make moving *away* from any wall you're resting against read
+      // as blocked too, freezing all movement next to a wall.
+      const closestX = THREE.MathUtils.clamp(position.x, box.min.x, box.max.x);
+      const closestZ = THREE.MathUtils.clamp(position.z, box.min.z, box.max.z);
+      const dx = position.x - closestX, dz = position.z - closestZ;
+      const distSq = dx * dx + dz * dz;
+      if (distSq >= PLAYER_RADIUS * PLAYER_RADIUS || distSq < 1e-9) continue;
+      const dist = Math.sqrt(distSq);
+      nx = dx / dist; nz = dz / dist;
+      const approach = -(direction.x * nx + direction.z * nz);
+      if (approach <= 1e-4) continue; // moving away from or along the face
+      hitDistance = 0;
+    }
     if (nearest && hitDistance >= nearest.distance) continue;
-    nearest = { distance: hitDistance, axis, sign };
+    nearest = { distance: hitDistance, nx, nz };
   }
   if (!nearest) return null;
-  hitNormal.set(nearest.axis === 'x' ? nearest.sign : 0, 0, nearest.axis === 'z' ? nearest.sign : 0);
+  hitNormal.set(nearest.nx, 0, nearest.nz);
   return { distance: nearest.distance, normal: hitNormal };
 }
 
