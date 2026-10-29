@@ -1,0 +1,139 @@
+<!doctype html>
+<!--
+  A bench for Kaufmo's and Pomni's hand-posed animations, outside the game:
+  pick what Kaufmo is doing (one of his activities, or talking in a mood)
+  and how Pomni talks, then drag to turn round. The two stand side by
+  side, a step apart. window.bench is there to try poses out from the
+  console.
+
+  Run Vite (npm run dev), then open
+  http://localhost:5173/tools/kaufmo-animation-preview.html
+  Dev only: the build and the deploy zip never include it.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base href="/">
+  <link rel="icon" href="data:,">
+  <title>Kaufmo animation preview</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1a22; color: #eee; font: 14px system-ui, sans-serif; }
+    canvas { display: block; touch-action: none; cursor: grab; }
+    #panel { position: fixed; top: 12px; left: 12px; display: grid; gap: 8px; padding: 12px 14px; border-radius: 8px; background: rgba(0, 0, 0, 0.7); }
+    #panel label { display: grid; grid-template-columns: 64px 180px; align-items: center; gap: 8px; }
+  </style>
+</head>
+<body>
+  <div id="panel">
+    <label>Kaufmo
+      <select id="kaufmo">
+        <optgroup label="Activity">
+          <option value="write">write</option><option value="theorize">theorize</option><option value="walk">walk</option>
+          <option value="receive">receive</option><option value="study">study</option><option value="spread">spread</option>
+          <option value="kneel">kneel</option><option value="tap">tap</option><option value="clutch">clutch</option>
+        </optgroup>
+        <optgroup label="Talking">
+          <option value="talk:neutral" selected>neutral</option><option value="talk:happy">happy</option><option value="talk:worried">worried</option>
+          <option value="talk:shocked">shocked</option><option value="talk:sad">sad</option><option value="talk:annoyed">annoyed</option>
+        </optgroup>
+      </select>
+    </label>
+    <label>Pomni
+      <select id="pomni">
+        <option value="">listening</option><option value="neutral">neutral</option><option value="happy">happy</option>
+        <option value="worried">worried</option><option value="shocked">shocked</option><option value="sad">sad</option><option value="annoyed">annoyed</option>
+      </select>
+    </label>
+  </div>
+  <script type="module">
+    import * as THREE from 'three';
+    import { loadKaufmoTalk } from '/src/characters/kaufmoTalk.js';
+    import { loadPomni } from '/src/characters/pomni.js';
+    import { createPomniSpeaking } from '/src/characters/pomniSpeaking.js';
+    import { bendBone, SIDEWAYS, UP, FORWARD } from '/src/characters/bendBone.js';
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1b1a22);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x444455, 1.2));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+    sun.position.set(2, 4, 3);
+    scene.add(sun);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(8, 8), new THREE.MeshStandardMaterial({ color: 0x3a2a20 }));
+    floor.rotation.x = -Math.PI / 2;
+    scene.add(floor);
+    const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.05, 50);
+    camera.position.set(0, 1.4, 5.5);
+    camera.lookAt(0, 1, 0);
+
+    const [kaufmoApi, { pomni, animations }] = await Promise.all([loadKaufmoTalk(), loadPomni()]);
+    scene.add(kaufmoApi.kaufmo, pomni);
+    kaufmoApi.kaufmo.position.x = 0.7;
+    pomni.position.x = -0.7;
+    pomni.rotation.y = 0.5;
+    const pomniMixer = new THREE.AnimationMixer(pomni);
+    const idle = animations.find((clip) => clip.name.toLowerCase() === 'idle');
+    if (idle) pomniMixer.clipAction(idle).play();
+    const pomniSpeaking = createPomniSpeaking(pomni);
+
+    const kaufmoChoice = document.getElementById('kaufmo');
+    const pomniChoice = document.getElementById('pomni');
+    function applyKaufmo() {
+      const [kind, mood] = kaufmoChoice.value.split(':');
+      kaufmoApi.setActivity(mood ? null : kind);
+      kaufmoApi.setPose(mood ?? 'neutral');
+      kaufmoApi.setSpeaking(Boolean(mood));
+      kaufmoApi.setListening(Boolean(pomniChoice.value));
+    }
+    kaufmoChoice.addEventListener('change', applyKaufmo);
+    pomniChoice.addEventListener('change', applyKaufmo);
+    applyKaufmo();
+
+    let extra = null; // a function run after each update, to try bends out
+    function step(dt = 1 / 60, frames = 1) {
+      for (let i = 0; i < frames; i++) {
+        kaufmoApi.update(dt);
+        pomniSpeaking.remove();
+        pomniMixer.update(dt);
+        pomniSpeaking.update(dt, Boolean(pomniChoice.value), pomniChoice.value);
+        extra?.(dt);
+      }
+      renderer.render(scene, camera);
+    }
+
+    // Drag to turn the camera round the middle.
+    let yaw = 0, dragging = null;
+    renderer.domElement.addEventListener('pointerdown', (e) => { dragging = e.clientX; });
+    window.addEventListener('pointerup', () => { dragging = null; });
+    window.addEventListener('pointermove', (e) => {
+      if (dragging === null) return;
+      yaw += (e.clientX - dragging) * 0.01;
+      dragging = e.clientX;
+      const r = camera.position.clone().setY(0).length();
+      camera.position.set(Math.sin(yaw) * r, camera.position.y, Math.cos(yaw) * r);
+      camera.lookAt(0, 1, 0);
+    });
+
+    let last = performance.now();
+    let running = true;
+    renderer.setAnimationLoop(() => {
+      const now = performance.now();
+      if (running) step(Math.min(0.05, (now - last) / 1000));
+      last = now;
+    });
+
+    window.bench = {
+      THREE, scene, camera, renderer, kaufmoApi, pomni, bendBone, SIDEWAYS, UP, FORWARD, step,
+      set extra(fn) { extra = fn; },
+      set running(value) { running = value; },
+      view(position, target) { camera.position.set(...position); camera.lookAt(...target); renderer.render(scene, camera); },
+      ready: true,
+    };
+  </script>
+</body>
+</html>

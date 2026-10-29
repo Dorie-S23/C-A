@@ -29,6 +29,7 @@ Exact versions come from `package-lock.json`:
 | Run the dialogue, collision, and Level 2 picture collection/scoring checks | `npm test` |
 | Run only the Level 2 regression checks (no browser or model assets needed) | `node --test _verify_level2.mjs` |
 | Preview the abstraction shader on Kaufmo or Jax (distress/progress sliders, frame cost) | `npm run dev`, then open http://localhost:5173/tools/abstraction-preview.html |
+| Preview Kaufmo's and Pomni's hand-posed animations (activities, talking moods) | `npm run dev`, then open http://localhost:5173/tools/kaufmo-animation-preview.html |
 | Build and package for the LAMP server                       | `npm run package` |
 
 > **Windows PowerShell:** if npm reports that `npm.ps1` cannot run because scripts are disabled, use `npm.cmd` instead of `npm` (for example, `npm.cmd ci` and `npm.cmd run dev`).

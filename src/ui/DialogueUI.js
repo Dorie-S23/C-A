@@ -547,6 +547,11 @@ export function createDialogueUI({ speakers, voice = null, escapeCancels = () =>
       if (echo) return echo.speaker;
       return engine?.current?.type === 'line' ? engine.current.speaker ?? null : null;
     },
+    /** The mood of the line on screen (what a speaker acts out), or null. */
+    get currentMood() {
+      if (echo) return null;
+      return engine?.current?.type === 'line' ? engine.current.mood ?? null : null;
+    },
     get isWaiting() { return awaitingNode; },
   };
 }
