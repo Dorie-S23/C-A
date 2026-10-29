@@ -34,6 +34,8 @@ import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.
 import { createLevel2Items, pickKaufmoScript, photoUrls, PHOTO_COUNT, PHOTO_THRESHOLD } from './state/level2Items.js';
 import {createMazeEncounter} from './levels/mazeEncounter.js';
 import {createMazeObjectiveHUD} from './ui/mazeObjectiveHUD.js';
+import { createMazeHints } from './ui/mazeHints.js';
+import './ui/mazeHints.css';
 import { createMazeItems, createMazeSearch, MAZE_FINDABLES } from './state/mazeItems.js';
 import { runLevel1 } from './levels/level1.js';
 import { runHallwayScene } from './levels/level3Hallway.js';
@@ -668,6 +670,7 @@ function showRoomPicker() {
  * hatch below, which can fire before any room's ever been picked).
  */
 function returnToHome({ toRoomPicker = false } = {}) {
+  mazeHints.hide();
   mazeItemsCounter.hidden = true;
   mazeSearchTimer.hidden = true;
   resetMazeAttempt();
@@ -1684,11 +1687,45 @@ const mazeItems = createMazeItems({
   },
 });
 const mazeSearch = createMazeSearch();
+let mazeGloinkWarningPending = false;
 let mazeAttemptSeed = null;
 let mazeClockWasPlayable = false;
 document.addEventListener('visibilitychange', () => { mazeClockWasPlayable = false; });
 
 const mazeHUD=createMazeObjectiveHUD({root:document.getElementById('maze-objective-hud'),items:mazeItems});
+
+const mazeHints = createMazeHints({
+  button: document.getElementById('maze-hints-button'), reminder: document.getElementById('maze-hints-reminder'), panel: document.getElementById('maze-hints-panel'),
+  onOpen: openMazeHints, onClose: finishMazeHints, onChange: () => takeCheckpoint(),
+  hasCollected: id => mazeItems.hasCollected(id),
+  getPlayerPosition: () => player.position,
+  getPlayerFacing: () => pomni?.rotation.y ?? 0,
+});
+
+function canOpenMazeHints() {
+  return currentRoomKey === 'maze' && Boolean(currentRoom) && readyToPlay
+    && levelCompletePanel.hidden && savePanel.hidden && !dialogueUI.isActive
+    && !activeCinematic()?.active && !activeCutscene && !activeJaxPass?.active && !stageBusy()
+    && controlsPanel.hidden && creditsPanel.classList.contains('hidden')
+    && titleOptions.hidden && titleQuit.hidden && !titleScreen.active
+    && (isLocked && !paused || paused && !pauseMenu.hidden);
+}
+
+function openMazeHints() {
+  if (mazeHints.isOpen || !canOpenMazeHints()) return false;
+  resetMoveState(); mazeClockWasPlayable = false;
+  pauseRoomForMenu();
+  mazeHints.open(currentRoomInfo);
+  if (isLocked) document.exitPointerLock();
+  return true;
+}
+
+function finishMazeHints() {
+  // Back and Escape always return to the existing paused menu. Only its
+  // Resume button may reacquire the pointer and restart gameplay.
+  resetMoveState();
+  if (currentRoomKey === 'maze' && paused && !pauseMenu.hidden) btnResume.focus({ preventScroll: true });
+}
 
 // --- Saving and loading -------------------------------------------------
 // Checkpoints only: the game keeps a snapshot of the story so far, taken
@@ -1718,6 +1755,7 @@ function takeCheckpoint() {
     story: storyProgress.snapshot(),
     items: itemState.snapshot(),
     maze: mazeItems.snapshot(),
+    mazeHints: mazeHints.snapshot(),
     escape: snapshotEscapeThreshold(),
     morningDialoguePending,
     // Shown on the slot, so a save says what it was.
@@ -1741,6 +1779,7 @@ function loadGame(data) {
     storyProgress.restore(data.story);
     itemState.restore(data.items);
     mazeItems.restore(data.maze);
+    mazeHints.restore(data.mazeHints);
     restoreEscapeThreshold(data.escape);
     morningDialoguePending = Boolean(data.morningDialoguePending);
     openingCompleted = true;
@@ -1823,6 +1862,7 @@ function openSavePanel(mode, { fromTitle = false } = {}) {
 
 document.getElementById('btn-save').addEventListener('click', (event) => {
   event.stopPropagation();
+  if (currentRoomKey === 'maze' && checkpoint?.room === 'maze') checkpoint.mazeHints = mazeHints.snapshot();
   openSavePanel('save');
 });
 document.getElementById('btn-pause-load').addEventListener('click', (event) => {
@@ -1858,6 +1898,7 @@ objectives.subscribe((active) => {
 });
 
 function resetMazeAttempt(seed = null) {
+  mazeHints.reset();
   mazeItems.reset();
   mazeSearch.clear();
   mazeAttemptSeed = seed;
@@ -1881,6 +1922,10 @@ function updateMazeSearch(deltaSeconds) {
   const elapsed = mazeClockWasPlayable ? deltaSeconds : 0;
   mazeClockWasPlayable = playable;
   if (!playable) return;
+  if (mazeGloinkWarningPending) {
+    mazeGloinkWarningPending = false;
+    showHint('Be careful of the Gloinks!', 6000);
+  }
   const result = mazeSearch.tick(elapsed, {
     playable,
     allItems: MAZE_FINDABLES.every(({ id }) => mazeItems.hasCollected(id)),
@@ -2144,6 +2189,12 @@ function updatePictureCounter() {
 }
 
 function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
+  mazeGloinkWarningPending = false;
+  if (hint.textContent === 'Be careful of the Gloinks!') {
+    clearTimeout(hintTimeout);
+    hint.classList.remove('visible');
+  }
+  mazeHints.hide();
   mazeItemsCounter.hidden = true;
   mazeSearchTimer.hidden = true;
   mazeClockWasPlayable = false;
@@ -2394,6 +2445,7 @@ function applyLoadedRoom({
 
   readyToPlay = true;
   if (roomKey === 'maze') {
+    mazeGloinkWarningPending = true;
     if (mazeSearch.status === 'idle') {
       mazeAttemptSeed = currentRoomInfo.mazeSeed;
       mazeSearch.start();
@@ -2505,6 +2557,8 @@ let verticalVelocity = 0;
 let jumpsUsed = 0;
 
 window.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyH' && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey
+    && currentRoomKey === 'maze' && openMazeHints()) { e.preventDefault(); return; }
   if (activeCinematic()?.active) {
     if (e.code === 'KeyP' && !e.repeat) { e.preventDefault(); pauseOpening(!paused); }
     if (e.code === 'Escape' && !e.repeat && !e.defaultPrevented) { e.preventDefault(); pauseOpening(!paused); }
@@ -2677,6 +2731,7 @@ let walkPhase = 0;
 let walkAmount = 0;
 
 overlay.addEventListener('click', (e) => {
+  if (currentRoomKey === 'maze' && paused) return;
   // Only resume when clicking the overlay background itself (not a button inside it)
   if (e.target !== overlay && e.target !== overlayTitle && e.target !== overlaySubtitle) return;
   if (!readyToPlay) return;
@@ -2684,14 +2739,36 @@ overlay.addEventListener('click', (e) => {
   renderer.domElement.requestPointerLock();
 });
 renderer.domElement.addEventListener('click', () => {
+  if (currentRoomKey === 'maze' && paused) return;
   if (readyToPlay && !isLocked && !dialogueUI.isActive && !stageBusy() && currentRoom) {
     renderer.domElement.requestPointerLock();
   }
 });
+function pauseRoomForMenu() {
+  // Esc mid-game: show the pause menu (over any conversation, which waits)
+  paused = true;
+  // Freeze an in-room conversation behind the menu, as pauseOpening does.
+  // Left running, its voice clip played out unheard and the player came back
+  // to silent text.
+  dialogueUI.setPaused(true);
+  ambience.setPaused(true);
+  overlay.classList.remove('hidden');
+  overlayTitle.textContent = 'Paused';
+  overlaySubtitle.textContent = 'Press Esc or click Resume to continue';
+  roomPicker.hidden = true;
+  dialoguePicker.hidden = true;
+  btnTitle.hidden = true;
+  pauseMenu.hidden = false;
+  showPauseMemory();
+}
+
 document.addEventListener('pointerlockchange', () => {
   mazeClockWasPlayable = false;
   isLocked = document.pointerLockElement === renderer.domElement;
   crosshair.hidden = !isLocked;
+  if (mazeHints.isOpen && isLocked) {
+    crosshair.hidden = true; document.exitPointerLock(); return;
+  }
   if (isLocked) {
     overlay.classList.add('hidden');
     pauseMenu.hidden = true;
@@ -2710,21 +2787,7 @@ document.addEventListener('pointerlockchange', () => {
   resetMoveState();
   if (!levelCompletePanel.hidden) return;
   if (!currentRoom || !readyToPlay) return; // home screen, loading or endLevel — handled elsewhere
-  // Esc mid-game: show the pause menu (over any conversation, which waits)
-  paused = true;
-  // Freeze an in-room conversation behind the menu, as pauseOpening does.
-  // Left running, its voice clip played out unheard and the player came back
-  // to silent text.
-  dialogueUI.setPaused(true);
-  ambience.setPaused(true);
-  overlay.classList.remove('hidden');
-  overlayTitle.textContent = 'Paused';
-  overlaySubtitle.textContent = 'Press Esc or click Resume to continue';
-  roomPicker.hidden = true;
-  dialoguePicker.hidden = true;
-  btnTitle.hidden = true;
-  pauseMenu.hidden = false;
-  showPauseMemory();
+  pauseRoomForMenu();
 });
 document.addEventListener('mousemove', (e) => {
   // Frozen during an in-room conversation (e.g. talking to Kaufmo), same as
@@ -4640,6 +4703,7 @@ function animate() {
   objectiveHUD.update({...hudContext,room:currentRoomKey==='maze'?null:hudContext.room}, roomShowsMinimap(currentRoomKey), photoReturn);
   mazeHUD.update(hudContext,currentRoomKey);
   tutorialHUD.update(hudContext, focusedBedroomDoor());
+  mazeHints.update(canOpenMazeHints(), mazeGameplayAvailable(hudContext));
   updateMazeItemsCounter(hudContext);
   updatePictureCounter();
   if (activeCutscene) {
@@ -4659,6 +4723,15 @@ function animate() {
 }
 
 animate();
+
+if (import.meta.env.DEV && new URLSearchParams(location.search).get('hintPreview') === '3') {
+  titleScreen.hide();
+  selectRoom('maze', { onReady: room => {
+    resetMoveState(); mazeClockWasPlayable = false;
+    pauseRoomForMenu();
+    mazeHints.open(room, { previewMap: true });
+  } });
+}
 
 // Share the existing HUD policy so tips never learn from suspended controls.
 function gameplayHUDContext() {
