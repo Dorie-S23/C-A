@@ -1706,6 +1706,103 @@
             #maze-objective-hud li.collected{color:#d2b3e8}
             @media(max-width:600px){#maze-objective-hud{padding:10px 12px;width:min(250px,calc(100vw - 2rem))}}
 
+            /* The intro story (src/ui/introStory.js): one drifting panel at a
+               time with a comic-style caption, glitch cuts between panels. */
+            #intro-story {
+                position: fixed;
+                inset: 0;
+                z-index: 40;
+                background: #000;
+                overflow: hidden;
+                cursor: pointer;
+                font-family: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+            }
+            #intro-story[hidden] { display: none; }
+            #intro-story .intro-frame {
+                position: absolute;
+                inset: 0;
+                transition: opacity 1s ease;
+            }
+            #intro-story.intro-dark .intro-frame { opacity: 0; }
+            #intro-story .intro-image {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                display: block;
+            }
+            #intro-story .intro-drift { animation: intro-drift 16s linear forwards; }
+            @keyframes intro-drift {
+                from { transform: scale(1.12) translate(var(--dx, 0), var(--dy, 0)); }
+                to { transform: scale(1.02) translate(0, 0); }
+            }
+            /* Scanlines and a vignette over every panel: the world is a screen. */
+            #intro-story .intro-frame::after {
+                content: '';
+                position: absolute;
+                inset: 0;
+                pointer-events: none;
+                background:
+                    repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.12) 0 1px, transparent 1px 3px),
+                    radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.6));
+            }
+            #intro-story .intro-glitch { animation: intro-glitch 0.45s steps(1, end); }
+            @keyframes intro-glitch {
+                0% { filter: brightness(2.5) saturate(0); clip-path: inset(0); transform: none; }
+                12% { filter: hue-rotate(90deg) saturate(3); clip-path: inset(18% 0 52% 0); transform: translate(-14px, 4px); }
+                26% { filter: invert(1); clip-path: inset(62% 0 8% 0); transform: translate(12px, -6px); }
+                40% { filter: hue-rotate(-70deg) contrast(2); clip-path: inset(0 0 68% 0); transform: translate(-6px, 0); }
+                55% { filter: brightness(1.8); clip-path: inset(38% 0 28% 0); transform: translate(5px, 2px); }
+                70% { filter: saturate(2.5); clip-path: inset(0); transform: translate(-3px, 0); }
+                85% { filter: none; clip-path: inset(0); transform: translate(1px, 0); }
+                100% { filter: none; clip-path: inset(0); transform: none; }
+            }
+            #intro-story .intro-caption {
+                position: absolute;
+                left: 50%;
+                bottom: 2.2em;
+                transform: translateX(-50%);
+                width: min(820px, 86vw);
+                box-sizing: border-box;
+                padding: 0.9em 1.3em;
+                background: #fff4d6;
+                color: #1b1424;
+                border: 3px solid #1b1424;
+                box-shadow: 6px 6px 0 #1b1424;
+                font-size: 1.15em;
+                line-height: 1.5;
+                min-height: 4.8em;
+            }
+            #intro-story .intro-caption[hidden] { display: none; }
+            #intro-story .intro-caption-text { margin: 0; }
+            #intro-story .intro-hint {
+                position: absolute;
+                right: 0.8em;
+                bottom: -1.9em;
+                font-size: 0.7em;
+                color: #e8e2d4;
+                opacity: 0.75;
+            }
+            #intro-story .intro-skip {
+                position: absolute;
+                right: 24px;
+                top: 24px;
+                padding: 12px 20px;
+                color: white;
+                background: #242036dd;
+                border: 1px solid #c6bfda;
+                border-radius: 6px;
+                cursor: pointer;
+                font: inherit;
+            }
+            #intro-story .intro-skip[hidden] { display: none; }
+            @media (prefers-reduced-motion: reduce) {
+                #intro-story .intro-drift,
+                #intro-story .intro-glitch { animation: none; }
+            }
+            @media (max-width: 600px) {
+                #intro-story .intro-caption { font-size: 1em; bottom: 2.6em; }
+            }
+
         </style>
     </head>
     <body>
@@ -1890,6 +1987,14 @@
         </aside>
         <button id="cinematic-skip" hidden>Skip intro</button>
         <div id="skip-curtain" aria-hidden="true"></div>
+        <div id="intro-story" class="intro-dark" hidden>
+            <div class="intro-frame"><img class="intro-image" alt="" /></div>
+            <div class="intro-caption" role="status" aria-live="polite" hidden>
+                <p class="intro-caption-text"></p>
+                <span class="intro-hint">Space / click to continue · Esc to skip</span>
+            </div>
+            <button class="intro-skip" hidden>Skip story &rarr;</button>
+        </div>
         <aside id="tutorial-hud" role="status" aria-live="polite" aria-atomic="true" hidden>
             <img data-tutorial-portrait alt="Caine" />
             <div class="tutorial-copy">

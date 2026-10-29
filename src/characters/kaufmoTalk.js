@@ -197,7 +197,7 @@ const ACTIVITIES = {
     hold: {
       head: deg(10),
       handR: [-0.17, 1.06, 0.21], elbowR: [-1, -0.9, 0], pointR: [1, 0.3, 0.15], thumbR: [0, 1, 0],
-      handL: [0.17, 0.8, 0.22], elbowL: [1, -0.9, 0], pointL: [-1, 0.1, 0.15], thumbL: [0, -1, 0],
+      handL: [0.17, 0.74, 0.22], elbowL: [1, -0.9, 0], pointL: [-1, 0, 0.15], thumbL: [0, 1, 0],
     },
     move: (t) => ({ spine: deg(2) * Math.sin(t * 1.2) }),
   },
