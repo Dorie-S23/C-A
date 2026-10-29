@@ -18,7 +18,7 @@ const GLOW_EMISSIVE_SWING = 0.5;
 // the whole pocket from the corridor outside it (cells are 4.5 m, so the
 // pocket's mouth is 2.25 m away), and main.js's line-of-sight check keeps
 // it from reaching through a wall.
-const PICKUP_RADIUS = 4;
+const PICKUP_RADIUS = 3;
 
 function glowMaterial(color, { roughness = 0.5, metalness = 0.1 } = {}) {
   return new THREE.MeshStandardMaterial({
