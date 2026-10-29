@@ -1,3 +1,4 @@
+import {createJaxStageBoundary} from './jaxStageBoundary.js';
 import * as THREE from 'three';
 import { createMazeOverhead } from './mazeOverhead.js';
 import { createMazeLoopMarkings } from './mazeLoopMarkings.js';
@@ -186,6 +187,9 @@ function buildMaze(jaxApi, mazeItems, seed, rng) {
   jax.visible = true;
   group.add(jax);
   ownMazeShadowPass(jax);
+  jaxApi.setDistressed(true);
+  const jaxBoundary=createJaxStageBoundary({position:jaxCenter,colliders,isUnlocked:()=>['bowling-ball','hot-chocolate-mug'].every(id=>mazeItems?.hasCollected(id))});
+  group.add(jaxBoundary.group);
 
   const exitCenter = cellCenter(maze.exit.r, maze.exit.c);
   const exitMarker = new THREE.Mesh(
@@ -297,21 +301,17 @@ function buildMaze(jaxApi, mazeItems, seed, rng) {
     });
   }
 
-  // Jax breathes/trembles in place all the time (see jax.js's idle
-  // branch) and turns to actually look at Pomni once she's close — a
-  // little earlier than his found-trigger itself fires, so he's already
-  // turning by the time the hint shows rather than snapping to face her.
-  const FACE_RADIUS = cellSize * 1.4;
+  // Maze-only distress keeps a lowered head and fixed waiting orientation.
+  // The encounter controller may request a slow turn without clearing it.
   let findableElapsed = 0;
   function update(deltaSeconds, playerPosition) {
+    jaxBoundary.sync();
     shaderEffects.update(deltaSeconds, playerPosition);
     jaxApi.update(deltaSeconds);
     findableElapsed += deltaSeconds;
     pulseGlow(placedFindables, findableElapsed);
     if (!playerPosition) return;
-    const dx = playerPosition.x - jaxCenter.x;
-    const dz = playerPosition.z - jaxCenter.z;
-    jaxApi.faceTowards(Math.hypot(dx, dz) < FACE_RADIUS ? playerPosition : null);
+    // Distressed waiting pose deliberately does not track the player.
   }
 
   const triggerRadius = cellSize * 0.4;
@@ -319,8 +319,8 @@ function buildMaze(jaxApi, mazeItems, seed, rng) {
     new THREE.Vector3(center.x - triggerRadius, -1, center.z - triggerRadius),
     new THREE.Vector3(center.x + triggerRadius, wallHeight, center.z + triggerRadius),
   );
-  // The Jax trigger covers his whole patrol segment (both waypoints) since
-  // he can be anywhere along it; the exit stays a fixed spot.
+  // Retain this broad legacy box for layout diagnostics, not encounter
+  // completion. Final dialogue uses short-range line-of-sight checks.
   const jaxTrigger = new THREE.Box3().setFromPoints(jaxWaypoints).expandByScalar(triggerRadius);
   const triggers = {
     jax: jaxTrigger,
@@ -345,6 +345,7 @@ function buildMaze(jaxApi, mazeItems, seed, rng) {
 
   return {
     mazeSeed: seed, maze, mazePlacement, jaxEncounter, environmentLayout, shaderEffects,
+    jaxBoundary, jaxAnchor:jaxCenter, jaxApi,
     group, bounds, spawn, spawnFacing, colliders, triggers, movers, hazards, update,
     interactables: findableRoom.interactables,
   };

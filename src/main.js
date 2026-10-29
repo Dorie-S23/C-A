@@ -3435,6 +3435,8 @@ function updateMovement(deltaSeconds) {
     }
   }
 
+  currentRoomInfo?.jaxBoundary?.constrainMotion({x:frameStartX,z:frameStartZ},player.position,PLAYER_RADIUS);
+
   // Animate from how far she actually got, so walking into a wall doesn't bob.
   const moved = Math.hypot(player.position.x - frameStartX, player.position.z - frameStartZ);
   if (shouldShowObjective(gameplayHUDContext()) && (move.forward || move.back || move.left || move.right)) {
