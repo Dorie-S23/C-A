@@ -24,7 +24,7 @@ import { createVoicePlayer } from './audio/voicePlayer.js';
 import { createAmbience } from './audio/ambience.js';
 import { createTitleScreen } from './ui/titleScreen.js';
 import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold } from './state/escapeThreshold.js';
-import { createStoryProgress } from './game/storyProgress.js';
+import { createStoryProgress, ENDING_VARIANTS } from './game/storyProgress.js';
 import { createSaveSlots } from './game/saveGame.js';
 import { createLoadingBackgrounds } from './ui/loadingBackgrounds.js';
 import { createLoadingSprites } from './ui/loadingSprites.js';
@@ -326,7 +326,7 @@ roomPicker.querySelectorAll('button[data-room]').forEach((button) => {
   });
 });
 
-dialoguePicker.querySelectorAll('button:not(#btn-level2):not(#btn-level3)').forEach((button) => {
+dialoguePicker.querySelectorAll('button:not(#btn-level2):not(#btn-level3):not([id^="btn-ending-"])').forEach((button) => {
   button.addEventListener('click', (event) => {
     event.stopPropagation();
     // The story runs for real from the start; levels are played for real
@@ -376,6 +376,18 @@ document.getElementById('btn-level3').addEventListener('click', (event) => {
   titleScreen.hide();
   selectRoom('kaufmo', { onReady: (room) => talkToKaufmo(room.kaufmoApi, loadToken) });
 });
+
+// Jumps to the ending for playtesting, skipping the maze: the same fade,
+// recorded outcome and ending as walking out of it (see leaveMaze).
+for (const variant of ENDING_VARIANTS) {
+  document.getElementById(`btn-ending-${variant}`).addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (currentRoom) returnToHome();
+    resetObjectiveSession(true);
+    titleScreen.hide();
+    void leaveMaze(variant);
+  });
+}
 
 btnResume.addEventListener('click', (event) => {
   event.stopPropagation();
