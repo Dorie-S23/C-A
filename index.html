@@ -1133,13 +1133,10 @@
         </style>
     </head>
     <body>
-        <div id="overlay">
-            <h1 id="overlay-title">Choose a room</h1>
-            <p id="overlay-subtitle">
-                WASD / Arrow keys to move, mouse to look, Shift to sprint, Space to jump, E to
-                interact &mdash; Esc to release the mouse
-            </p>
-            <div id="room-picker">
+        <div id="overlay" class="loading">
+            <h1 id="overlay-title">Loading&hellip;</h1>
+            <p id="overlay-subtitle"></p>
+            <div id="room-picker" hidden>
                 <button data-room="pomni">Pomni's Room</button>
                 <button data-room="tadc">Circus Lobby</button>
                 <button data-room="dorm">Dorm Hall</button>
@@ -1147,7 +1144,7 @@
                 <button data-room="maze">Maze (raw, no intro)</button>
                 <button data-room="kaufmo">Kaufmo's Room</button>
             </div>
-            <div id="dialogue-picker">
+            <div id="dialogue-picker" hidden>
                 <button data-story>
                     &#9654; Story: Pre-Level 1 &rarr; Level 1
                 </button>
@@ -1158,7 +1155,7 @@
                     &#9654; Level 3
                 </button>
             </div>
-            <button id="btn-title">&larr; Title screen</button>
+            <button id="btn-title" hidden>&larr; Title screen</button>
             <div id="pause-menu" hidden>
                 <p id="caine-pause-joke" class="caine-memory-text" role="status" aria-live="polite" hidden></p>
                 <button id="btn-resume">&#9654; Resume</button>

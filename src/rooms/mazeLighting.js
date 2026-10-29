@@ -13,10 +13,6 @@ export function createMazeLighting({ maze, layout, cellCenter }) {
   key.name='MazeTheatreKey';key.position.set(-18,18,-14);key.target.position.set(4,0,7);root.add(key,key.target);
   const distance = new Map(getReachableCells(maze, maze.start).map(entry => [entry.cell, entry.distance]));
   const far = Math.max(1, distance.get(maze.jax));
-  function point(name, color, intensity, position, range) {
-    const light = new THREE.PointLight(color, intensity, range, 2);
-    light.name = name; light.position.copy(position); root.add(light); return light;
-  }
   function spot(name, color, intensity, position, target, range, angle) {
     const light = new THREE.SpotLight(color, intensity, range, angle, 0.65, 2);
     light.name = name; light.position.copy(position);
@@ -57,17 +53,18 @@ export function createMazeLighting({ maze, layout, cellCenter }) {
   const jax = cellCenter(maze.jax.r, maze.jax.c);
   const approach = cellCenter(maze.jaxNeighbor.r, maze.jaxNeighbor.c).sub(jax).normalize();
   const right = new THREE.Vector3(-approach.z, 0, approach.x);
-  point('JaxVioletRim', 0x9654e4, 7,
-    jax.clone().addScaledVector(right, 1.3).addScaledVector(approach, -0.65).setY(2.55), 10);
-  const focus = spot('JaxRoseSpotlight', 0xd4a2ff, 24,
+  // A dim, murky light just bright enough to find him by — not the rose
+  // rim-plus-spotlight reveal this used to be. Name/target/shadow size stay
+  // put (see verify_maze_findables.mjs's shadow-light assertions).
+  const focus = spot('JaxRoseSpotlight', 0x8f86a8, 7,
     jax.clone().addScaledVector(approach, 2.3).addScaledVector(right, -0.5).setY(4.6),
-    jax.clone().setY(1.2), 12, 0.69);
+    jax.clone().setY(1.2), 9, 0.55);
   focus.castShadow = true;
   focus.shadow.mapSize.set(512, 512);
   focus.shadow.camera.near = 0.3; focus.shadow.camera.far = 12;
   focus.shadow.bias = -0.0002; focus.shadow.normalBias = 0.035;
   focus.shadow.radius = 2;
-  root.userData.lightingBudget = { directLights: layout.loops.slice(0, 3).length + 7, shadowMaps: 2, shadowSize: 512 };
+  root.userData.lightingBudget = { directLights: layout.loops.slice(0, 3).length + 6, shadowMaps: 2, shadowSize: 512 };
   let disposed = false;
   root.dispose = () => {
     if (disposed) return; disposed = true;
