@@ -7,6 +7,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { loadGloinks, GLOINK_CONFIGS } from '../src/characters/gloink.js';
 import { loadMazeRoom, MAZE } from '../src/rooms/mazeRoom.js';
 import { createMazeItems } from '../src/state/mazeItems.js';
+import { findMazePath } from '../src/maze/mazePlacements.js';
 
 // Setup node GLTF loader hook for headless testing
 globalThis.ProgressEvent ??= class {};
@@ -174,17 +175,68 @@ test('a gloink ignores her while she is not in play (menus, dialogue)', async ()
   assert.equal(room.gloinkChases[0].state, 'patrol');
 });
 
-test('the two roaming gloinks guard side branches, clear of the start, keepsakes and each other', async () => {
-  for (let seed = 1; seed <= 60; seed++) {
+test('gloinks guard the common areas and the final stretch into Jax’s chamber, never the start', async () => {
+  for (let seed = 1; seed <= 40; seed++) {
     const room = await loadMazeRoom(null, { seed, mazeItems: createMazeItems() });
-    assert.equal(room.hazards.length, 4, `seed ${seed}: all four gloinks placed`);
-    const onRoute = new Set(room.maze.path.map(({ r, c }) => room.maze.cells[r][c]));
-    const fromStart = new Map(room.mazePlacement.reachableFrom(room.maze.start).map(({ cell, distance }) => [cell, distance]));
-    const [cube, circle] = room.hazards.slice(2).map(({ mesh }) => room.mazePlacement.cellAt(mesh.position));
-    for (const cell of [cube, circle]) {
-      assert.ok(!onRoute.has(cell), `seed ${seed}: roamer starts off the start->exit route`);
-      assert.ok(fromStart.get(cell) >= 5, `seed ${seed}: roamer starts at least 5 steps from the start`);
+    const { maze, gloinkPatrols } = room;
+    assert.equal(gloinkPatrols.length, 4, `seed ${seed}: all four gloinks placed`);
+    const fromStart = new Map(room.mazePlacement.reachableFrom(maze.start).map(({ cell, distance }) => [cell, distance]));
+
+    // The pin paces the last three cells of the way to Jax, right up to his chamber.
+    const [finalStretch, ...common] = gloinkPatrols;
+    assert.equal(finalStretch.type, 'pin');
+    const toJax = findMazePath(maze, maze.start, maze.jax);
+    const at = toJax.indexOf(finalStretch.cells[0]);
+    assert.deepEqual(finalStretch.cells, toJax.slice(at, at + 3), `seed ${seed}: pin paces a stretch of the route to Jax`);
+    // The 2x2 chamber starts right after; Jax stands up to two cells into it.
+    assert.ok(toJax.length - (at + 3) <= 3, `seed ${seed}: pin’s stretch ends at Jax’s chamber`);
+
+    for (const { type, cells, circuit } of common) {
+      assert.ok(cells.every((cell) => fromStart.get(cell) >= 5), `seed ${seed}: ${type} keeps away from the start`);
+      if (circuit) {
+        // A loop: a closed ring of eight cells, each open to the next.
+        assert.equal(cells.length, 8, `seed ${seed}: ${type} circles a full loop`);
+        cells.forEach((cell, i) => assert.ok(openBetween(cell, cells[(i + 1) % 8]) && cell !== cells[(i + 1) % 8],
+          `seed ${seed}: ${type}’s loop is connected all the way round`));
+      } else {
+        // A junction: in one side, through a cell with three or four ways out, out another.
+        const ways = Object.values(cells[1].walls).filter((wall) => !wall).length;
+        assert.ok(ways >= 3, `seed ${seed}: ${type} crosses a busy junction`);
+        assert.ok(openBetween(cells[0], cells[1]) && openBetween(cells[1], cells[2]));
+      }
     }
-    assert.notEqual(cube, circle, `seed ${seed}: roamers start in different cells`);
   }
+});
+
+test('a loop gloink goes round and round its loop, never doubling back', async () => {
+  const room = await loadMazeRoom(null, { seed: 42, mazeItems: createMazeItems() });
+  const i = room.gloinkPatrols.findIndex(({ circuit }) => circuit);
+  const { cells } = room.gloinkPatrols[i];
+  const gloink = room.hazards[i].mesh;
+  const visits = [room.mazePlacement.cellAt(gloink.position)];
+  // A lap is eight cells, about 36 m: a little over 20 s at patrol speed.
+  for (let frame = 0; frame < 30 * 90 && visits.length < 18; frame++) {
+    room.update(1 / 30, null);
+    const cell = room.mazePlacement.cellAt(gloink.position);
+    if (cell !== visits.at(-1)) visits.push(cell);
+  }
+  assert.ok(visits.length >= 17, 'it went round at least twice');
+  visits.forEach((cell, n) => {
+    if (n) assert.equal(cells.indexOf(cell), (cells.indexOf(visits[n - 1]) + 1) % cells.length, 'each step is to the next cell round the loop');
+  });
+});
+
+test('each maze load gets its own gloink materials, so one maze’s cleanup can’t blacken the next', async () => {
+  // Leaving a room disposes its materials and closes their decoded images
+  // (assetLifecycle.js). A gloink copy shared between mazes came back from
+  // a retry with closed images and rendered pitch black.
+  const materialsOf = (gloink) => {
+    const found = new Set();
+    gloink.group.traverse((object) => { if (object.isMesh) found.add(object.material); });
+    return found;
+  };
+  const first = materialsOf((await loadGloinks()).createInstance('star'));
+  const second = materialsOf((await loadGloinks()).createInstance('star'));
+  assert.ok(first.size > 0);
+  for (const material of second) assert.ok(!first.has(material), 'a later maze must not reuse an earlier maze’s gloink materials');
 });

@@ -13,7 +13,8 @@ const ARRIVE_DISTANCE = 0.15;
 
 /**
  * Patrol-and-chase for one maze Gloink. It walks its patrol stretch back
- * and forth until it spots her: close enough, roughly ahead of it, and no
+ * and forth (or, with `circuit`, round and round a closed ring of cells
+ * whose last cell neighbours its first) until it spots her: close enough, roughly ahead of it, and no
  * wall between them. Then it follows her through the corridors (the maze's
  * own cell graph, so it never cuts through a wall) for as long as it can
  * still see her. When it loses sight it goes to where she was last seen,
@@ -23,12 +24,12 @@ const ARRIVE_DISTANCE = 0.15;
  * from that movement.
  *
  * @param {{
- *   mesh: THREE.Object3D, patrol: THREE.Vector3[], speed: number, chaseSpeed: number,
+ *   mesh: THREE.Object3D, patrol: THREE.Vector3[], circuit?: boolean, speed: number, chaseSpeed: number,
  *   maze: object, cellCenter: (r: number, c: number) => THREE.Vector3,
  *   cellOf: (position: {x: number, z: number}) => object | null, walls: THREE.Box3[],
  * }} options
  */
-export function createGloinkChase({ mesh, patrol, speed, chaseSpeed, maze, cellCenter, cellOf, walls }) {
+export function createGloinkChase({ mesh, patrol, circuit = false, speed, chaseSpeed, maze, cellCenter, cellOf, walls }) {
   let state = 'patrol'; // 'patrol' | 'chase' | 'search' | 'return'
   let patrolIndex = 1;
   let patrolDirection = 1;
@@ -102,6 +103,7 @@ export function createGloinkChase({ mesh, patrol, speed, chaseSpeed, maze, cellC
 
   function stepPatrol(dt) {
     if (!stepTo(patrol[patrolIndex], speed, dt)) return;
+    if (circuit) { patrolIndex = (patrolIndex + 1) % patrol.length; return; }
     patrolIndex += patrolDirection;
     if (patrolIndex >= patrol.length) { patrolIndex = patrol.length - 2; patrolDirection = -1; }
     else if (patrolIndex < 0) { patrolIndex = 1; patrolDirection = 1; }
