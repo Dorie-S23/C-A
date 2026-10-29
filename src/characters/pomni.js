@@ -70,7 +70,9 @@ const BLUSH = { color: '#f26878', opacity: 0.85, width: 0.6, height: 0.32, below
 // `lag` is a fraction of a cycle.
 const ARM_SWING = {
   walk: { forward: 15, back: 13, elbow: 10, elbowSwing: 10, spread: 2, wrist: 6, lag: 0.06 },
-  run: { forward: 28, back: 30, elbow: 60, elbowSwing: 10, spread: 6, wrist: 8, lag: 0.04 },
+  // Keep the elbows bent enough to read as a run, but open the hands away
+  // from her torso so the compact arm cycle doesn't fold across her chest.
+  run: { forward: 28, back: 30, elbow: 40, elbowSwing: 8, spread: 14, wrist: 5, lag: 0.05 },
 };
 const ARM_SIDES = ['Left', 'Right'];
 const ARM_CHAIN = ['Shoulder', 'Arm', 'ForeArm', 'Hand'];
