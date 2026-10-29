@@ -116,18 +116,36 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
   // the player against each frame, so geometry and collision can never
   // drift out of sync the way a hand-modeled mesh + separate collider would.
   const colliders = [];
-  const horizontalWallGeo = new THREE.BoxGeometry(cellSize + wallThickness, wallHeight, wallThickness);
-  const verticalWallGeo = new THREE.BoxGeometry(wallThickness, wallHeight, cellSize + wallThickness);
+  // Each wall runs between two grid corners, stopping short of them, and a
+  // post fills every corner a wall meets. Walls used to run a thickness
+  // past each corner instead, so neighbours overlapped: collinear walls'
+  // faces shared a strip, and a wall's end sat flush on the side of the one
+  // it met. Coplanar faces of different colours flicker (z-fight) as the
+  // camera moves; this way no two surfaces ever share a plane.
+  const horizontalWallGeo = new THREE.BoxGeometry(cellSize - wallThickness, wallHeight, wallThickness);
+  const verticalWallGeo = new THREE.BoxGeometry(wallThickness, wallHeight, cellSize - wallThickness);
+  const postGeo = new THREE.BoxGeometry(wallThickness, wallHeight, wallThickness);
+  const posts = new Map(); // "x,z" -> corner position
   let wallCount = 0;
 
+  function addBox(geometry, material, position) {
+    const box = new THREE.Mesh(geometry, material);
+    box.position.set(position.x, wallHeight / 2, position.z);
+    box.castShadow = true;
+    box.receiveShadow = true;
+    group.add(box);
+    colliders.push(new THREE.Box3().setFromObject(box));
+  }
+
   function addWall(geometry, position) {
-    const wall = new THREE.Mesh(geometry, wallCount % 2 === 0 ? wallMaterialA : wallMaterialB);
+    addBox(geometry, wallCount % 2 === 0 ? wallMaterialA : wallMaterialB, position);
     wallCount++;
-    wall.position.set(position.x, wallHeight / 2, position.z);
-    wall.castShadow = true;
-    wall.receiveShadow = true;
-    group.add(wall);
-    colliders.push(new THREE.Box3().setFromObject(wall));
+    // Its two ends' corners.
+    const along = geometry === horizontalWallGeo ? { x: cellSize / 2, z: 0 } : { x: 0, z: cellSize / 2 };
+    for (const sign of [-1, 1]) {
+      const corner = { x: position.x + sign * along.x, z: position.z + sign * along.z };
+      posts.set(`${corner.x.toFixed(3)},${corner.z.toFixed(3)}`, corner);
+    }
   }
 
   for (let r = 0; r < rows; r++) {
@@ -152,6 +170,8 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
       }
     }
   }
+
+  for (const corner of posts.values()) addBox(postGeo, wallMaterialB, corner);
 
   group.add(createMazeEnvironment({ maze, layout: environmentLayout, cellCenter, cellSize }));
   group.add(createMazeOverhead({ maze, layout: environmentLayout, cellCenter }));

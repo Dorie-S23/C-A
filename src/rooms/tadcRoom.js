@@ -68,6 +68,7 @@ export function loadTadcRoom(onProgress, { from, items } = {}) {
     useRealVertexColours(room.group);
     tidyStageEdge(room.group);
     singleSided(room.group, SINGLE_SIDED);
+    separateFlushBlocks(room);
     const doors = setupLobbyDoors(room.group, room.spawn, room.collisionMeshes);
     room.interactables = doors.interactables;
     room.update = doors.update;
@@ -201,6 +202,40 @@ function replaceCastleWalls(room, walls) {
 // their back faces fighting their front ones (see replaceCastleWalls).
 // They share materials with the rest of the lobby, so each gets its own.
 const SINGLE_SIDED = ['Castle_Stairs'];
+
+// The lobby's toy-block walls ("Rubber" and "Plastic" pieces, many of
+// them whole stacks of blocks merged into one mesh) were modelled with
+// neighbours overlapping a few millimetres, their faces flush. Where two
+// overlap, each one's face is in the very same place as the other's, and as
+// they're different colours the overlap flickers (z-fights) as the camera
+// moves. Moving geometry would shift whole walls, so each piece gets its own
+// small depth bias instead (polygon offset, one of FLUSH_LAYERS steps):
+// where two faces coincide, the one with the stronger bias always wins.
+// The steps are fractions of the depth buffer's resolution, far too small to
+// push anything visibly through anything else.
+const FLUSH_MATERIALS = new Set(['Rubber', 'Plastic']);
+const FLUSH_LAYERS = 16;
+
+function separateFlushBlocks(room) {
+  let index = 0;
+  room.group.traverse((mesh) => {
+    if (!mesh.isMesh || mesh.isSkinnedMesh) return;
+    const materials = [mesh.material].flat();
+    if (!materials.some((material) => FLUSH_MATERIALS.has(material.name))) return;
+    // Neighbours are usually consecutive in the export, so stepping by a
+    // number coprime to FLUSH_LAYERS keeps neighbours on different layers.
+    const layer = (index++ * 5) % FLUSH_LAYERS;
+    const own = materials.map((material) => {
+      if (!FLUSH_MATERIALS.has(material.name)) return material;
+      const copy = material.clone();
+      copy.polygonOffset = true;
+      copy.polygonOffsetFactor = 0;
+      copy.polygonOffsetUnits = -layer;
+      return copy;
+    });
+    mesh.material = Array.isArray(mesh.material) ? own : own[0];
+  });
+}
 
 function singleSided(group, names) {
   for (const name of names) {
