@@ -24,6 +24,7 @@ import { createDialogueUI } from './ui/DialogueUI.js';
 import { ICONS } from './ui/portraitIcons.js';
 import { createVoicePlayer } from './audio/voicePlayer.js';
 import { createAmbience } from './audio/ambience.js';
+import { createMusic, DEFAULT_MUSIC_VOLUME } from './audio/music.js';
 import { createTitleScreen } from './ui/titleScreen.js';
 import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold } from './state/escapeThreshold.js';
 import { createStoryProgress } from './game/storyProgress.js';
@@ -154,6 +155,8 @@ const camera = new THREE.PerspectiveCamera(
 const openingAudio = createOpeningAudio(camera);
 // Each room's looping background bed; shares the opening audio's context.
 const ambience = createAmbience(() => openingAudio.context);
+// Each room's background music, layered over the ambience on the same context.
+const music = createMusic(() => openingAudio.context);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -453,6 +456,9 @@ const ambienceVolumeInput = document.getElementById('ambience-volume');
 const ambienceVolumeValue = document.getElementById('ambience-volume-value');
 const AMBIENCE_VOLUME_KEY = 'tadc.ambienceVolume';
 const DEFAULT_AMBIENCE_VOLUME = 0.45;
+const musicVolumeInput = document.getElementById('music-volume');
+const musicVolumeValue = document.getElementById('music-volume-value');
+const MUSIC_VOLUME_KEY = 'tadc.musicVolume';
 
 const titleScreen = createTitleScreen({
   renderer,
@@ -532,6 +538,27 @@ ambienceVolumeInput.addEventListener('input', () => {
   setAmbienceVolume(Number(ambienceVolumeInput.value));
   try {
     localStorage.setItem(AMBIENCE_VOLUME_KEY, ambienceVolumeInput.value);
+  } catch {
+    // Storage blocked — the setting just won't persist.
+  }
+});
+
+// Background music volume, 0 (off) to 1, persisted the same way.
+function setMusicVolume(value) {
+  music.setVolume(value);
+  musicVolumeInput.value = value;
+  musicVolumeValue.textContent = value === 0 ? 'off' : `${Math.round(value * 100)}%`;
+}
+try {
+  const stored = Number(localStorage.getItem(MUSIC_VOLUME_KEY) ?? DEFAULT_MUSIC_VOLUME);
+  setMusicVolume(Number.isFinite(stored) ? Math.max(0, Math.min(1, stored)) : DEFAULT_MUSIC_VOLUME);
+} catch {
+  setMusicVolume(DEFAULT_MUSIC_VOLUME);
+}
+musicVolumeInput.addEventListener('input', () => {
+  setMusicVolume(Number(musicVolumeInput.value));
+  try {
+    localStorage.setItem(MUSIC_VOLUME_KEY, musicVolumeInput.value);
   } catch {
     // Storage blocked — the setting just won't persist.
   }
@@ -687,6 +714,8 @@ function returnToHome({ toRoomPicker = false } = {}) {
   paused = false;
   ambience.setRoom(null);
   ambience.setPaused(false);
+  music.setRoom(null);
+  music.setPaused(false);
   caineArrivalIn = null;
   resetMoveState();
   resetStage();
@@ -819,6 +848,7 @@ function pauseOpening(value) {
   activeEntrance?.setPaused(value);
   activeJaxPass?.setPaused(value);
   ambience.setPaused(value);
+  music.setPaused(value);
   dialogueUI.setPaused(value);
   if (!value) clock.getDelta(); // a background-tab pause must not fast-forward on resume
   resetMoveState();
@@ -2218,6 +2248,7 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
   const loadRoom = ROOM_LOADERS[roomKey];
   if (!loadRoom) return;
   const myToken = leaveCurrentRoom();
+  music.prepare(roomKey); // synthesized under the loading screen
   roomPicker.hidden = true;
   dialoguePicker.hidden = true;
   btnTitle.hidden = false; // allow cancellation even while the GLBs are loading
@@ -2323,6 +2354,7 @@ function applyLoadedRoom({
     foundJax=mazeItems.jaxComplete;
   }
   ambience.setRoom(roomKey);
+  music.setRoom(roomKey);
   controlsTutorial.enterRoom(roomKey);
   player.visible = true;
   scene.add(group);
@@ -2700,6 +2732,7 @@ document.addEventListener('pointerlockchange', () => {
     // picks up where it stopped.
     if (paused) dialogueUI.setPaused(false);
     ambience.setPaused(false);
+    music.setPaused(false);
     paused = false;
     return;
   }
@@ -2717,6 +2750,7 @@ document.addEventListener('pointerlockchange', () => {
   // to silent text.
   dialogueUI.setPaused(true);
   ambience.setPaused(true);
+  music.setPaused(true);
   overlay.classList.remove('hidden');
   overlayTitle.textContent = 'Paused';
   overlaySubtitle.textContent = 'Press Esc or click Resume to continue';
@@ -3396,6 +3430,7 @@ function preloadRoom(key, from) {
     key, result: null, failed: false, compiled: false, trees: [], textures: [], peeking: false, hidden: [],
   };
   roomPreload = entry;
+  music.prepare(key);
   entry.settled = ROOM_LOADERS[key](null, roomLoadOptions(key, { from }))
     .then((result) => {
       if (roomPreload !== entry) {
@@ -4570,6 +4605,9 @@ function animate() {
   // (the pointer is unlocked there too, but it's not a pause) — only the
   // actual pause menu freezes them, so a patrolling hazard can't close in
   // on a player who is sitting in the pause menu.
+  // The music steps back under voices, and under the cinematics' own
+  // snores, knocks and footsteps.
+  music.setDucked(dialogueUI.isActive || Boolean(activeCinematic()?.active));
   updateCaineArrival(delta);
   updateSearchTimer(delta);
   updateMazeSearch(rawDelta);
