@@ -317,6 +317,7 @@ roomPicker.querySelectorAll('button[data-room]').forEach((button) => {
     event.stopPropagation(); // don't also trigger the overlay's lock-on-click
     openingCompleted = false;
     resetObjectiveSession();
+    resetMazeAttempt(); // a fresh maze: new layout, both keepsakes back, full clock
     selectRoom(button.dataset.room);
   });
 });
@@ -1929,15 +1930,22 @@ function updateMazeSearch(deltaSeconds) {
   }
 }
 
-async function restartMazeSearch() {
+function restartMazeSearch() {
+  return retryMaze('LEVEL 3 FAILED', 'Time’s up — find both keepsakes and reach Jax before the countdown ends.');
+}
+
+/**
+ * Level 3 failed (out of time, or caught by a gloink): the fail card, then
+ * a fresh attempt — a new maze, both keepsakes back in it, a full clock.
+ */
+async function retryMaze(title, subtitle) {
   const token = loadToken, session = storySessionId, memoryTicket = caineMemory.revision;
   const failedSeed = mazeAttemptSeed;
   const continued = await showLevelComplete(
-    'LEVEL 3 FAILED',
-    'Time’s up — find both keepsakes and reach Jax before the countdown ends.',
+    title, subtitle,
     { resume: false, chime: 'fail', buttonLabel: 'Retry', memoryRetry: 'maze' }
   );
-  if (!continued || token !== loadToken || currentRoomKey !== 'maze' || mazeSearch.status !== 'expired') return;
+  if (!continued || token !== loadToken || currentRoomKey !== 'maze') return;
   const seed = Math.floor(Math.random() * 0x100000000);
   resetMazeAttempt(seed === failedSeed ? (seed + 1) >>> 0 : seed);
   const room = await missionApi.travel('maze', { from: null });
@@ -3640,17 +3648,13 @@ function checkTriggers(player) {
     if (Math.hypot(dx, dz) < hazard.radius + PLAYER_RADIUS) {
       caught = true;
       // A hazard catch fails the attempt outright, same as the countdown
-      // expiring: reseed so the next try gets a fresh layout and keepsake
-      // placement, and clear the clock so it starts the full countdown
-      // again instead of resuming already-expired.
-      const failedSeed = mazeAttemptSeed;
-      const seed = Math.floor(Math.random() * 0x100000000);
-      resetMazeAttempt(seed === failedSeed ? (seed + 1) >>> 0 : seed);
+      // expiring: retryMaze shows the fail card, then reseeds (a fresh
+      // layout, both keepsakes back) and restarts the full countdown.
       const title = hazard.mesh.userData?.isGloink ? 'Gloinked!' : 'Abstracted!';
       const subtitle = hazard.mesh.userData?.isGloink
         ? 'A patrolling gloink caught you — try again.'
         : 'A patrolling hazard caught you — try again.';
-      endLevel(title, subtitle);
+      void retryMaze(title, subtitle);
       return;
     }
   }
