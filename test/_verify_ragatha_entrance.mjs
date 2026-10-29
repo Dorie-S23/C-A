@@ -40,15 +40,16 @@ console.log('PASS Real door swings with all children attached, stationary frame 
 entrance.setPaused(true); const time = entrance.elapsed, angle = slab.parent.rotation.y;
 entrance.update(12); entrance.skip(); assert.equal(entrance.elapsed, time); assert.equal(slab.parent.rotation.y, angle); assert.equal(dialogueCount, 0);
 entrance.setPaused(false); entrance.update(2.8); assert.equal(dialogueCount, 1); assert.equal(entrance.phase, 'dialogue');
-entrance.skip(); entrance.update(20); assert.equal(dialogueCount, 1);const openMatrix=slab.matrixWorld.clone();
+entrance.skip(); entrance.update(20); assert.equal(dialogueCount, 1);
 finish(); finish(); const follow = { position: new THREE.Vector3(0, 1.8, 0), target: new THREE.Vector3(-1, 1, 0) };
 entrance.update(1.25, follow); entrance.update(100, follow);
 assert.equal(completionCount, 1); assert.equal(entrance.phase, 'done');
-assert.ok(Math.abs(slab.parent.rotation.y+Math.PI/2)<1e-8);
-slab.matrixWorld.elements.forEach((v, i) => assert.ok(Math.abs(v - openMatrix.elements[i]) < 1e-8));
+// Shut again behind her once she has gone.
+assert.ok(Math.abs(slab.parent.rotation.y)<1e-8);
+slab.matrixWorld.elements.forEach((v, i) => assert.ok(Math.abs(v - closedMatrix.elements[i]) < 1e-8));
 assert.deepEqual(room.interactables[0].objects, travelObjects); room.interactables[0].interact(); assert.deepEqual(travels, ['dorm']);
 assert.deepEqual(cues, ['start', 'pause', 'resume', 'dispose']);
-console.log('PASS Pause/resume, one dialogue, repeated finish, smooth return and original E travel');
+console.log('PASS Pause/resume, one dialogue, repeated finish, smooth return, door shut behind her and original E travel');
 entrance.dispose(); entrance.dispose(); assert.equal(entrance.phase, 'disposed');
 // Separate real room sessions exercise cancellation and frame-rate independence.
 const make = async step => {

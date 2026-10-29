@@ -73,3 +73,23 @@ test('Kaufmo pass-by is unavailable before a win and can be claimed only once', 
   assert.equal(objectives.active.id, 'find-kaufmo');
   assert.equal(progress.ribbitPoints, 2);
 });
+
+test('Level 2 restarts from Kaufmo hurrying past, keeping Ribbit and her points', () => {
+  const { objectives, progress } = fixture();
+  assert.equal(progress.restartLevel2(), false, 'nothing to restart before Ribbit is done');
+  objectives.activate('find-ribbit');
+  progress.finishRibbit(3);
+  progress.finishHallway();
+  progress.finishKaufmoIntro();
+  assert.equal(objectives.active.id, 'collect-photos');
+  assert.equal(progress.restartLevel2(), true);
+  assert.equal(objectives.active.id, 'find-kaufmo');
+  assert.equal(objectives.isComplete('find-ribbit'), true);
+  assert.equal(objectives.isComplete('find-kaufmo'), false);
+  assert.equal(progress.ribbitPoints, 3);
+  assert.equal(progress.kaufmoIntroduced, false);
+  assert.equal(progress.hallwayPending, true, 'the hallway pass-by plays again');
+  assert.equal(progress.finishHallway(), true);
+  assert.equal(progress.finishKaufmoIntro(), true);
+  assert.equal(objectives.active.id, 'collect-photos');
+});

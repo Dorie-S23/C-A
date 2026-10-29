@@ -46,12 +46,38 @@ The playable sequence is:
    the remaining time continues without resetting. E hands Kaufmo every held
    photo at once, which stops the clock, even with one second left. With at
    least 4 (`PHOTO_THRESHOLD`) he plays his success scene and send-off, then
-   **Level 2 Complete**. With fewer he abstracts and the attempt ends on a
+   **Level 2 Complete**, then the Dorm Hall gathering: Pomni, Ribbit and Kaufmo
+   between their doors find Jax down the hall (`level3JaxDialogue`, staged by
+   `src/cutscenes/hallwayGatheringCutscene.js`); he bolts past them toward the
+   Lobby, and the scene ends in the maze. With fewer he abstracts and the attempt ends on a
    **Retry Level 2** card. Early pickups are retained but do not bypass his
    introduction. Expiring before the hand-in fails even if all photos have been
-   found. Either retry clears held/delivered photos and Level 2 points, chooses
-   new spots, and restarts at the same default Lobby spawn with 4 minutes.
-   Level 1 points are preserved.
+   found: the game cuts to Kaufmo alone in his room (`level2TimeUpDialogue`),
+   the shared abstraction effect (`src/effects/abstraction.js`) following each
+   line's distress until he abstracts on the last beat, then a **Kaufmo has
+   abstracted.** card. Its **Retry Level 2** restarts the level from the
+   beginning: Find Kaufmo again, his Dorm Hall pass-by outside Ribbit's door
+   (`storyProgress.restartLevel2()`), his introduction, then a new search.
+   The too-few retry goes straight back to the Lobby search. Both clear
+   held/delivered photos and Level 2 points and choose new spots, and the
+   search restarts at the same default Lobby spawn with 4 minutes. Level 1
+   points are preserved.
+
+   Between conversations Kaufmo works at his theory wall, the clear wall
+   across from his door (`createWallRoutine` in `kaufmoRoom.js`, the wall
+   itself `src/props/theoryWall.js`): he writes a block of notes, steps back
+   to think it over, then moves along to the next spot. His marker inks the
+   wall wherever his hand goes. Talking to him puts both of them on their
+   marks, and he goes back to the wall when the conversation ends. Once the
+   success scene has played, the photos are pinned up among his notes. The
+   hand-in scenes act the photos out on their beats (`handInActor` in
+   `main.js`, the node ids in `dialogues.js`): Pomni holds them out, and he
+   takes them, kneels and spreads them on the floor, taps one, gathers them
+   and clutches them to his chest. With too few, he looks them over and lets
+   them fall. Both characters gesture by the mood of their lines
+   (`kaufmoTalk.js`, `pomniSpeaking.js`). Kaufmo also nods along while Pomni
+   talks. `tools/kaufmo-animation-preview.html` shows his poses outside the
+   game.
 
 `src/game/storyProgress.js` owns the post-Caine milestones. Objectives and
 milestones survive room changes. Ribbit's completed pose and an unscored
@@ -92,7 +118,8 @@ Screenshots and the report are written to ignored `artifacts/story-flow/`.
 
 `node tools/verify_photo_search_timer_browser.mjs` checks the initial countdown,
 a too-small hand-in (Kaufmo abstracts, Retry Level 2), two consecutive
-timeout/retry cycles and equal start positions, pause/loading/dialogue
+timeouts (Kaufmo's cutaway and abstraction, then a restart at his Dorm Hall
+pass-by and introduction) and equal start positions, pause/loading/dialogue
 exclusion, actual photo pickup and Kaufmo interaction callbacks, stable
 positions on a Lobby revisit, visible timing in Dorm Hall, failure with all
 photos held, immediate last-second final delivery, and cancellation of a

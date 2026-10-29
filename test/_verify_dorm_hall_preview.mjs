@@ -60,8 +60,8 @@ for(let i=0;i<300&&c.phase==='entering';i++){c.update(1/30);validate()}
 assert.equal(greeted,1);assert.equal(preview.group.visible,true);
 room.group.getObjectByName('RagathaDoorVestibule').traverse(o=>{if(o.isMesh)assert.equal(o.material.visible,false);assert.notEqual(o.isLight,true)});
 c.finishDialogue();for(let i=0;i<300&&c.phase!=='done';i++){c.update(1/30,{position:camera.position.clone(),target:new THREE.Vector3(-1,1,0)});validate()}
-assert.equal(contacts.length,0,JSON.stringify(contacts.slice(0,3)));assert.equal(c.phase,'done');assert.equal(preview.group.visible,true);c.dispose();assert.equal(preview.group.visible,false);
-console.log('PASS Ragatha complete entrance/departure vs real hallway triangles; no added lights; aperture/preview lifecycle', {samples,contacts:contacts.length});
+assert.equal(contacts.length,0,JSON.stringify(contacts.slice(0,3)));assert.equal(c.phase,'done');assert.equal(preview.group.visible,false);c.dispose();assert.equal(preview.group.visible,false);
+console.log('PASS Ragatha complete entrance/departure vs real hallway triangles; no added lights; aperture/preview lifecycle (hall hidden once the door is shut)', {samples,contacts:contacts.length});
 
 const savedFetch=globalThis.fetch,savedWarn=console.warn;globalThis.fetch=async(input,...args)=>{
  const url=typeof input==='string'?input:input.url??input.href;

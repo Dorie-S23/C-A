@@ -151,13 +151,7 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
       async onComplete() {
         if (!live() || tally.failed) return;
         onComplete?.(tally.points);
-        stage.hold(true);
-        stage.stand();
-        if (!await stage.walkTo([points.BEDSIDE]) || !live()) return;
-        stage.releaseCamera();
-        stage.lookAt(points.DOORWAY);
-        stage.hold(false);
-        door.open();
+        if (!await standAndTurnToGo()) return;
         if (game.showLevelComplete) {
           if (!await game.showLevelComplete('Level 1 Complete', LEVEL1_OUTCOME[tally.correct]) || !live()) return;
         }
@@ -166,6 +160,17 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
           : 'Ribbit is steadier. You can leave through the door.', 6500);
       },
     });
+
+    async function standAndTurnToGo() {
+      stage.hold(true);
+      stage.stand();
+      if (!await stage.walkTo([points.BEDSIDE]) || !live()) return false;
+      stage.releaseCamera();
+      stage.lookAt(points.DOORWAY);
+      stage.hold(false);
+      door.open();
+      return true;
+    }
   }
 
   if (hall) {

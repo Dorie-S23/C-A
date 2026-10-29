@@ -25,6 +25,10 @@
  * `stopAt` node id ends this part (without showing it) as if the script
  * had finished there.
  *
+ * jump(id) moves straight to a node the script doesn't route to itself —
+ * for branches decided outside it, e.g. Level 1's 'l1_shut_out' ending
+ * once Ribbit's distress hits its limit (see src/levels/level1.js).
+ *
  * @param {Array} script
  * @param {{ startAt?: string, stopAt?: string }} [options]
  */
@@ -71,6 +75,11 @@ export function createDialogueEngine(script, { startAt, stopAt } = {}) {
       if (!option) return null;
       index = resolve(option.next, index);
       return option;
+    },
+    jump(id) {
+      if (index === null) return;
+      const target = lookup(id);
+      index = target === stopIndex ? null : target;
     },
   };
 }

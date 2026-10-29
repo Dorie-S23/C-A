@@ -86,7 +86,12 @@ export function loadDormHallRoom(onProgress, { from, items, travel } = {}) {
       if (!frameObject) continue;
       const centre = new THREE.Box3().setFromObject(frameObject).getCenter(new THREE.Vector3());
       const inFront = new THREE.Vector3(HALL_CENTRE_X, centre.y, centre.z);
-      const door = openHingedDoor(room.group, frame, slab, inFront, room.collisionMeshes);
+      // Pomni's swings into her room instead, on the same jamb her room's
+      // own door hangs from (its knob's at the other edge), so it's the
+      // same door from either side.
+      if (to === 'pomni') mirrorLeaf(room.group.getObjectByName(slab));
+      const swingToward = to === 'pomni' ? new THREE.Vector3(2 * centre.x - HALL_CENTRE_X, centre.y, centre.z) : inFront;
+      const door = openHingedDoor(room.group, frame, slab, swingToward, room.collisionMeshes);
       if (!door) continue;
       const guest = guestRooms[to];
       const doorway = guest?.doorway;
@@ -241,6 +246,22 @@ function onlyRenderWhenSeen(room, guest, control, roomBounds, doorway) {
  * her through into her room: whether it's open, and when she's stepped
  * past it. `hallSide` is any point out in the hall.
  */
+/** Flips a door leaf end for end across its own width, knob and all. */
+function mirrorLeaf(slab) {
+  if (!slab) return;
+  slab.updateWorldMatrix(true, true);
+  const box = new THREE.Box3().setFromObject(slab);
+  const size = box.getSize(new THREE.Vector3());
+  const centre = box.getCenter(new THREE.Vector3());
+  const flip = size.x >= size.z ? [-1, 1, 1] : [1, 1, -1];
+  const world = new THREE.Matrix4().makeTranslation(centre.x, centre.y, centre.z)
+    .multiply(new THREE.Matrix4().makeScale(...flip))
+    .multiply(new THREE.Matrix4().makeTranslation(-centre.x, -centre.y, -centre.z))
+    .multiply(slab.matrixWorld);
+  world.premultiply(slab.parent.matrixWorld.clone().invert()).decompose(slab.position, slab.quaternion, slab.scale);
+  slab.updateMatrixWorld(true);
+}
+
 function walkInDoorway(frameBox, hallSide, control) {
   const size = frameBox.getSize(new THREE.Vector3());
   const centre = frameBox.getCenter(new THREE.Vector3());

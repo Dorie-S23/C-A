@@ -11,7 +11,7 @@ import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
   level2HallwayDialogue, ribbitFollowupDialogue,
   level2IdleDialogue, level2CompleteDialogue, level2ReturnDialogue, level2SendoffDialogue,
-  level2ReturnAndSendoffDialogue, level2AbstractionDialogue, level3JaxDialogue,
+  level2ReturnAndSendoffDialogue, level2AbstractionDialogue, level2TimeUpDialogue, level3JaxDialogue,
 } from '../src/data/dialogues.js';
 import { SPRITES, MOODS } from '../src/ui/portraitSprites.js';
 
@@ -40,7 +40,7 @@ for (const [name, script] of [
   ['level2Idle', level2IdleDialogue], ['level2Complete', level2CompleteDialogue],
   ['level2Return', level2ReturnDialogue], ['level2Sendoff', level2SendoffDialogue],
   ['level2ReturnAndSendoff', level2ReturnAndSendoffDialogue], ['level2Abstraction', level2AbstractionDialogue],
-  ['level3Jax', level3JaxDialogue],
+  ['level2TimeUp', level2TimeUpDialogue], ['level3Jax', level3JaxDialogue],
 ]) {
   const seen = runLinear(script);
   check(`${name}: visits every node once, in order`, seen.length === script.length
@@ -192,10 +192,11 @@ function collectAllReachableNodes(script, maxPaths = 64) {
 }
 
 // Level 1 (Ribbit): walk every combination of answers through the engine
-// with a live tally, the way ribbitRoom.js drives it. A path that picks a
+// with a live attempt, the way level1.js drives it. A path that picks a
 // choice's game-over option (D, -1) must play its lines and stop on a
-// `gameOver` beat; every other path must reach the end and score exactly
-// the points of the options it picked.
+// `gameOver` beat; every other path must pass all four choices, end on the
+// win line (not the unused shut-out scene), use only known speakers and
+// moods, and score exactly the points of the options it picked.
 {
   const script = level1RibbitDialogue;
   const choices = script.filter((n) => n.type === 'choice');
@@ -208,6 +209,12 @@ function collectAllReachableNodes(script, maxPaths = 64) {
   check('level1Ribbit: per choice one +1 answer, two 0s, and a -1 game-over option last', choices.every(
     (c) => c.options.map((o) => o.points).sort().join() === '-1,0,0,1' && c.options[3].points === -1));
 
+  const shutOutAt = script.findIndex((n) => n.id === 'l1_shut_out');
+  const winEnd = script[shutOutAt - 1];
+  const loseEnd = script[script.length - 1];
+  check('level1Ribbit: win and shut-out endings are separate and both close the script',
+    shutOutAt > 0 && winEnd.next === null && loseEnd.next === null && script[shutOutAt].speaker === 'ribbit');
+
   const paths = [];
   const walk = (picks) => {
     if (picks.length === choices.length) { paths.push(picks); return; }
@@ -216,6 +223,7 @@ function collectAllReachableNodes(script, maxPaths = 64) {
   walk([]);
 
   let failed = null;
+  let losses = 0;
   for (const picks of paths) {
     const engine = createDialogueEngine(script);
     const tally = createLevel1Attempt();
@@ -241,6 +249,7 @@ function collectAllReachableNodes(script, maxPaths = 64) {
       break;
     }
     const quit = picks.slice(0, verdicts.length).indexOf(3);
+    if (quit >= 0) losses++;
     const last = seen[seen.length - 1];
     const problem = quit >= 0
       ? (!engine.done ? 'game-over path never ended'
@@ -257,11 +266,13 @@ function collectAllReachableNodes(script, maxPaths = 64) {
       : seen.find((n) => n.type === 'line' && !SPEAKERS[n.speaker]) ? 'unknown speaker'
       : seen.find((n) => n.type === 'line' && SPRITES[n.speaker] && !MOODS.includes(n.mood)) ? 'missing/unknown mood'
       : seen.find((n) => (n.type === 'line' || n.type === 'beat') && !n.text?.trim()) ? 'empty text'
-      : seen[seen.length - 1].text !== script[script.length - 1].text ? 'ends somewhere else'
+      : seen[seen.length - 1] !== winEnd ? 'ends somewhere else'
       : null;
     if (problem) { failed = `${picks.map((p) => 'ABCD'[p]).join('')}: ${problem}`; break; }
   }
   check(`level1Ribbit: all ${paths.length} answer paths either end on their game over or finish and score correctly`, !failed, failed ?? '');
+  // Any D pick loses; the 3^4 paths that never pick D all win.
+  check('level1Ribbit: 175 of 256 paths lose, 81 win', losses === 175, `losses=${losses}`);
 
   const best = createChoiceTally(script);
   choices.forEach((c, i) => best.record(c.options[key[i]]));

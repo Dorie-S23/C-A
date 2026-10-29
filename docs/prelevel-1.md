@@ -10,9 +10,9 @@ animation. She holds the seated pose for her self-directed remark and "Come in."
 Acknowledge both with Space or a click. As Ragatha opens the door and enters,
 Pomni resumes the same animation and stands. Ragatha waves and starts the
 remaining morning dialogue. The camera frames both characters
-and the open doorway. After the conversation, Ragatha leaves; the door stays open.
+and the open doorway. After the conversation, Ragatha leaves and the door swings shut behind her.
 Click the game to capture the mouse when needed. WASD moves, the mouse looks,
-Shift runs, and E opens closed doors. Walk through the open bedroom doorway into
+Shift runs, and E opens closed doors. Open the bedroom door with E and walk through into
 Dorm Hall. Find Caine activates only after successful morning dialogue. Caine
 arrives after ten seconds of active hallway gameplay; completing his warning
 advances the objective to Find Ribbit. Cancellation retains Find Caine and allows
@@ -124,7 +124,7 @@ triangles in 323 sampled poses. No hallway lights or gameplay actors are added.
 
 The preview replaces only the visible vestibule surfaces; their collision
 remains. Preview visibility follows the entrance backdrop. The player still
-uses E to load the playable Dorm Hall. The door stays open after Ragatha leaves;
+opens the door with E and walks out into the Dorm Hall. The door shuts after Ragatha leaves;
 the isolated door review also checks closed, half-open and reclosed transforms.
 
 Each bedroom session owns its preview geometry, materials and textures. Pruned

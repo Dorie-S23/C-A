@@ -54,6 +54,7 @@ await page.route('**/src/main.js', async route => {
         return { before, after, loading };
       },
       tick: updateSearchTimer,
+      cancelDialogue: () => dialogueUI.cancel(),
       returnToHome,
       pickup(count = PHOTO_COUNT) {
         interactables.filter(i => i.prompt() === 'Pick up photo').slice(0, count)
@@ -76,6 +77,10 @@ await page.route('**/src/main.js', async route => {
           position: [player.position.x, player.position.z],
           photos: (currentRoom?.children ?? []).filter(c => c.name === 'OfficePicture')
             .map(c => ({ position: c.position.toArray(), rotation: c.rotation.toArray() })),
+          pomniVisible: player.visible,
+          abstraction: currentRoomInfo?.kaufmoApi?.abstraction
+            ? { distress: currentRoomInfo.kaufmoApi.abstraction.distress, progress: currentRoomInfo.kaufmoApi.abstraction.progress }
+            : null,
           failureVisible: !levelCompletePanel.hidden,
           failureTitle: levelCompleteTitle.textContent,
           failureSubtitle: levelCompleteSubtitle.textContent,
@@ -103,14 +108,15 @@ const continueSearch = async () => {
   await ready('tadc');
   await lock();
 };
+// Long enough for Kaufmo's hallway run and his abstraction, which hold their beats in real time.
 const finishDialogue = async () => {
-  for (let i = 0; i < 120 && (await state()).dialogue; i++) {
+  for (let i = 0; i < 600 && (await state()).dialogue; i++) {
     await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', {
       code: 'Space', key: ' ', bubbles: true, cancelable: true,
     })));
     await page.waitForTimeout(30);
   }
-  assert.equal((await state()).dialogue, false, 'Hand-in dialogue should finish');
+  assert.equal((await state()).dialogue, false, 'The dialogue should finish');
 };
 const points = () => page.evaluate(async () => (await import('/src/state/escapeThreshold.js')).getLevelPoints('level2'));
 
@@ -205,35 +211,66 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: path.join(output, 'return-mobile.png') });
   await page.setViewportSize({ width: 800, height: 600 });
-  await tick(999);
-  const failed = await state();
-  check('Time can expire with all photos found but none delivered', () => {
-    assert.equal(failed.failureVisible, true);
-    assert.equal(failed.failureTitle, 'LEVEL 2 FAILED');
-    assert.match(failed.failureSubtitle, /get the photos back to Kaufmo in time/);
-    assert.equal(failed.timeLeft, null);
-  });
+  // Time runs out: Kaufmo abstracts, Game Over, and Level 2 starts again from the beginning.
+  const timeUp = async () => {
+    await tick(999);
+    await ready('kaufmo');
+    const outOfTime = await state();
+    check('Time running out cuts to Kaufmo alone in his room, losing his patience', () => {
+      assert.equal(outOfTime.dialogue, true);
+      assert.equal(outOfTime.pomniVisible, false);
+      assert.equal(outOfTime.timeLeft, null);
+      assert.equal(outOfTime.failureVisible, false);
+    });
+    await finishDialogue();
+    const failed = await state();
+    check('He abstracts, then Game Over offers Retry Level 2', () => {
+      assert.equal(failed.abstraction.progress, 1);
+      assert.equal(failed.failureVisible, true);
+      assert.equal(failed.failureTitle, 'Kaufmo has abstracted.');
+      assert.match(failed.failureSubtitle, /Level 2 starts again from the beginning/);
+    });
+    assert.equal(await page.locator('#btn-level-complete-continue').textContent(), 'Retry Level 2');
+  };
+  await timeUp();
+  await page.screenshot({ path: path.join(output, 'kaufmo-abstracted.png') });
 
   for (let attempt = 1; attempt <= 2; attempt++) {
-    await continueSearch();
+    await page.locator('#btn-level-complete-continue').click();
+    await ready('dorm');
+    await lock();
+    // The pass-by loads Kaufmo's run before its dialogue starts.
+    await page.waitForFunction(() => window.__photoReview.state().dialogue, null, { timeout: 60000 });
+    const restarted = await state();
+    check('Retry ' + attempt + ' restarts Level 2 at Kaufmo hurrying past in the Dorm Hall', () => {
+      assert.equal(restarted.objective, 'find-kaufmo');
+      assert.equal(restarted.dialogue, true);
+      assert.equal(restarted.found, 0);
+      assert.equal(restarted.presented, 0);
+      assert.equal(restarted.timeLeft, null);
+      assert.equal(restarted.timerVisible, false);
+    });
+    assert.equal(await points(), 0);
+    // Dismissed, as Escape does mid-run: the run is long under software rendering.
+    await page.evaluate(() => window.__photoReview.cancelDialogue());
+    assert.equal((await state()).dialogue, false);
+    await travel('kaufmo');
+    await page.evaluate(() => window.__photoReview.handIn()); // E on Kaufmo: his introduction again
+    await finishDialogue();
+    await ready('tadc');
+    await lock();
     const retried = await state();
-    check('Retry ' + attempt + ' restores the Lobby start, layout, inventory and countdown', () => {
-      assert.equal(retried.room, 'tadc');
+    check('Retry ' + attempt + ' then sends Pomni to a fresh search: Lobby start, new layout, four minutes', () => {
       assert.deepEqual(retried.position, initial.position);
       assert.equal(retried.objective, 'collect-photos');
       assert.equal(retried.found, 0);
-      assert.equal(retried.presented, 0);
       assert.equal(retried.photos.length, 5);
       assert.notDeepEqual(retried.photos, initial.photos);
       assert.equal(retried.timerVisible, true);
       assert.ok(retried.timeLeft > 235 && retried.timeLeft <= 240);
     });
-    assert.equal(await points(), 0);
     await page.evaluate(() => window.__photoReview.pickup());
-    if (attempt === 1) {
-      await tick(999);
-      assert.equal((await state()).failureVisible, true, 'All held, none delivered must still fail');
-    }
+    if (attempt === 1) await timeUp(); // all held, none delivered must still fail
   }
 
   await travel('dorm');

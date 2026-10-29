@@ -4,8 +4,13 @@ import { computeBoundsTree } from 'three-mesh-bvh';
 /** The exported bedroom has a solid wall behind its decorative door.
  * Cut only that rectangle in temporary runtime copies, retaining UVs/materials.
  * Originals are restored when the bedroom session is disposed.
+ * One per room, shared like the door's hinge.
  */
 export function createDoorwayAperture(room, panelBox) {
+  return room.group.userData.doorwayAperture ??= cutDoorwayAperture(room, panelBox);
+}
+
+function cutDoorwayAperture(room, panelBox) {
   const replacements = [];
   for (const name of ['Wall', 'Wall002']) {
     const original = room.group.getObjectByName(name);

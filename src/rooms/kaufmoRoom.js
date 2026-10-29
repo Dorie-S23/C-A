@@ -1,8 +1,11 @@
 import * as THREE from 'three';
 import { loadRoomModel } from './loadRoomModel.js';
-import { loadKaufmoTalk } from '../characters/kaufmoTalk.js';
+import { loadKaufmoTalk, WRITE_SECONDS } from '../characters/kaufmoTalk.js';
 import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { createDoorPortal } from './portals.js';
+import { createAbstractionEffect } from '../effects/abstraction.js';
+import { createTheoryWall } from '../props/theoryWall.js';
+import { findWallSpot } from '../props/officePicture.js';
 
 const DOOR_FRAME_NAME = 'Door_Frame';
 const DOOR_SLAB_NAME = 'Door_Slab';
@@ -37,6 +40,19 @@ const SKIRTING_HEIGHT = 0.48;
 // The yellow spiky crown on the bookshelf, exported sunk into its board.
 const SHELF_CROWN = 'TwistedTorus';
 const BOOKSHELF = 'Plane012';
+
+// Between conversations he's at the clear wall across from the door
+// (+X, between the armchair and the nightstand), working on his theory:
+// writing a block of it at one spot, stepping back to think it over,
+// then on to the next spot along the wall (see createWallRoutine). The
+// wall itself is props/theoryWall.js.
+const THEORY_WALL_DIRECTION = new THREE.Vector3(1, 0, 0);
+const THEORY_WALL_ORDER = 10; // after the graffiti panels (render orders 0-3)
+const WALL_SPOTS = [-0.6, 0.05, 0.65]; // metres along the wall from its middle, toward +Z
+const WALL_STAND = 0.42;               // how far from the wall he stands to write: his marker's reach
+const THEORIZE_STEP_BACK = 0.5;        // and how much further back he stands to think
+const THEORIZE_SECONDS = 9;
+const WALK_SPEED = 0.7;                // m/s, between spots
 
 /**
  * Loads Kaufmo's Room, exported from "Kaufmos Room V4.blend" via
@@ -75,13 +91,32 @@ export function loadKaufmoRoom(onProgress, {
       doorControl = makeDoorOpenable(room, door, { portal });
     }
 
-    room.group.add(kaufmo);
     placeInMiddleOfRoom(kaufmo, { group: room.group, spawn: defaultSpawn });
+    // Found before he's in the room, so the ray can't catch him instead.
+    const wallSpot = findWallSpot(room.group, kaufmo.position.clone().setY(kaufmo.position.y + 1.3), THEORY_WALL_DIRECTION);
+    room.group.add(kaufmo);
     kaufmo.updateMatrixWorld(true);
     // Dynamic: he's moved to his mark for a conversation (see talkShot), and
     // main.js keeps a dynamic entry's box wherever he is.
     room.collisionMeshes.push({ mesh: collider, box: new THREE.Box3().setFromObject(collider), dynamic: true });
     room.talkShot = talkShot(kaufmo.position);
+
+    if (wallSpot) {
+      wallSpot.position.y = kaufmo.position.y;
+      const theoryWall = createTheoryWall(wallSpot);
+      // His notes go over the graffiti (paintGraffiti): drawn after it.
+      theoryWall.group.traverse((object) => { if (object.isMesh) object.renderOrder = THEORY_WALL_ORDER; });
+      room.group.add(theoryWall.group);
+      // Once he has the photos, they're up on the wall with the rest.
+      const presented = items?.snapshot?.().presented ?? [];
+      if (items?.isDone?.() && presented.length) theoryWall.pin(presented.map((id) => `./models/objects/${id}.png`));
+      room.theoryWall = theoryWall;
+      room.kaufmoRoutine = createWallRoutine(kaufmoApi, wallSpot, theoryWall);
+      room.kaufmoRoutine.resume();
+    }
+    // For when the search clock runs out and he comes apart (main.js
+    // kaufmoOutOfTime). Hidden, and free, until that's driven.
+    kaufmoApi.abstraction = createAbstractionEffect(kaufmo);
 
     if (playDialogue) {
       // His collider counts as him too: main.js's line-of-sight check skips
@@ -104,7 +139,11 @@ export function loadKaufmoRoom(onProgress, {
       room.interactables = [...(room.interactables ?? []), doorControl.interactable];
     }
     room.update = (deltaSeconds, playerPosition) => {
+      room.kaufmoRoutine?.update(deltaSeconds);
       kaufmoApi.update(deltaSeconds);
+      room.kaufmoRoutine?.afterPose(deltaSeconds);
+      room.handInPhotos?.update(deltaSeconds);
+      kaufmoApi.abstraction.update(deltaSeconds);
       doorControl?.update?.(deltaSeconds, playerPosition);
     };
 
@@ -289,7 +328,9 @@ const SIDE_EXIT_NEAR = 0.95;
 const SIDE_EXIT_CURVE = 0.8;
 const SIDE_EXIT_FAR = 0.3;
 const FAR_WALL_EXIT = 0.25;
-const PANEL_GAP = 0.012; // metres off the wall, so a panel never flickers into it
+// Metres off the wall: enough that a panel never flickers into it, and less
+// than the theory wall's (props/theoryWall.js), which sits on top of all this.
+const PANEL_GAP = 0.006;
 // How much of each wall's height the panels cover, in metres from the floor.
 const PANEL_BOTTOM = 0.55;
 const PANEL_TOP = 6.9;
@@ -471,4 +512,92 @@ function decalPanel(frame, texture, at, order) {
   const mesh = panelMesh(frame, width, height, material, offset);
   mesh.renderOrder = order;
   return mesh;
+}
+
+/**
+ * Kaufmo at his theory wall while nobody's talking to him: a block of
+ * writing at one of WALL_SPOTS, a step back to look it over (theorize),
+ * then a walk to the next spot, round and round. The marker's tip inks
+ * the wall wherever his hand actually takes it. pause() hands him over to
+ * a conversation (main.js puts him on his mark); resume() puts him back
+ * at the wall, writing.
+ */
+function createWallRoutine(kaufmoApi, wallSpot, theoryWall) {
+  const { kaufmo } = kaufmoApi;
+  const normal = new THREE.Vector3(Math.sin(wallSpot.rotationY), 0, Math.cos(wallSpot.rotationY)); // out of the wall
+  const along = new THREE.Vector3(normal.z, 0, -normal.x);
+  const wallPoint = wallSpot.position;
+  const lookAt = new THREE.Vector3();
+  const tip = new THREE.Vector3();
+  const from = new THREE.Vector3();
+  const to = new THREE.Vector3();
+  let spot = 0;
+  let phase = 'write';
+  let phaseTime = 0;
+  let walkSeconds = 0;
+  let active = true;
+
+  const standAt = (index, back = 0, out = new THREE.Vector3()) => out.copy(wallPoint)
+    .addScaledVector(along, WALL_SPOTS[index])
+    .addScaledVector(normal, WALL_STAND + back)
+    .setY(kaufmo.position.y);
+
+  function faceWall() {
+    kaufmoApi.faceTowards(lookAt.copy(kaufmo.position).sub(normal));
+  }
+
+  function begin(next) {
+    phase = next;
+    phaseTime = 0;
+    if (next === 'write' || next === 'theorize') {
+      kaufmoApi.setActivity(next);
+      faceWall();
+      return;
+    }
+    // Walking: from where he is to the next place he'll stand.
+    from.copy(kaufmo.position);
+    if (next === 'stepBack') standAt(spot, THEORIZE_STEP_BACK, to);
+    else {
+      spot = (spot + 1) % WALL_SPOTS.length;
+      standAt(spot, 0, to);
+    }
+    walkSeconds = Math.max(0.6, from.distanceTo(to) / WALK_SPEED);
+    kaufmoApi.setActivity('walk');
+    // He walks backward stepping back from the wall, forward otherwise.
+    kaufmoApi.faceTowards(next === 'stepBack' ? lookAt.copy(kaufmo.position).sub(normal) : to);
+  }
+
+  function update(deltaSeconds) {
+    if (!active) return;
+    phaseTime += deltaSeconds;
+    if (phase === 'write' && phaseTime >= WRITE_SECONDS) begin('stepBack');
+    else if (phase === 'theorize' && phaseTime >= THEORIZE_SECONDS) begin('walk');
+    else if (phase === 'stepBack' || phase === 'walk') {
+      const t = THREE.MathUtils.smoothstep(phaseTime / walkSeconds, 0, 1);
+      kaufmo.position.lerpVectors(from, to, t);
+      if (phaseTime >= walkSeconds) begin(phase === 'stepBack' ? 'theorize' : 'write');
+    }
+  }
+
+  function afterPose(deltaSeconds) {
+    if (active && kaufmoApi.activity === 'write') theoryWall.draw(kaufmoApi.markerTip(tip), kaufmoApi.penDown);
+    theoryWall.update(deltaSeconds);
+  }
+
+  return {
+    update,
+    afterPose,
+    pause() {
+      active = false;
+      kaufmoApi.setActivity(null);
+    },
+    resume() {
+      active = true;
+      standAt(spot, 0, kaufmo.position);
+      faceWall();
+      kaufmo.rotation.y = Math.atan2(-normal.x, -normal.z);
+      begin('write');
+    },
+    get active() { return active; },
+  };
 }
