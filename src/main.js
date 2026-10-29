@@ -2864,6 +2864,69 @@ function resolveWallCollisions(position) {
 }
 
 /**
+ * Swept circle-vs-box hit test for the maze's walls — resolveWallCollisions'
+ * depenetrate-after-the-fact check only catches a step that *lands* within
+ * a radius of a box; a fast enough step (sprinting, a frame hitch) can clear
+ * a thin wall's whole footprint in one go and never land there at all. This
+ * sweeps the full step first, each box pre-expanded by PLAYER_RADIUS (the
+ * player is a point moving through Minkowski-expanded boxes), so it catches
+ * that case the way firstWallHit's raycast already does for mesh rooms.
+ */
+function firstColliderHit(position, direction, distance) {
+  const feetY = position.y - PLAYER_HEIGHT;
+  let nearest = null;
+  for (const box of colliders) {
+    if (box.max.y <= feetY + STEP_HEIGHT || box.min.y >= position.y) continue;
+    let enter = -Infinity, exit = distance, axis = null, sign = 0, outsideSlab = false;
+    for (const [o, d, lo, hi, name] of [
+      [position.x, direction.x, box.min.x - PLAYER_RADIUS, box.max.x + PLAYER_RADIUS, 'x'],
+      [position.z, direction.z, box.min.z - PLAYER_RADIUS, box.max.z + PLAYER_RADIUS, 'z'],
+    ]) {
+      if (Math.abs(d) < 1e-9) {
+        if (o < lo || o > hi) outsideSlab = true;
+        continue;
+      }
+      const near = d > 0 ? (lo - o) / d : (hi - o) / d;
+      const far = d > 0 ? (hi - o) / d : (lo - o) / d;
+      if (near > enter) { enter = near; axis = name; sign = d > 0 ? -1 : 1; }
+      if (far < exit) exit = far;
+    }
+    if (outsideSlab || !axis || enter > exit) continue;
+    const hitDistance = Math.max(enter, 0);
+    if (nearest && hitDistance >= nearest.distance) continue;
+    nearest = { distance: hitDistance, axis, sign };
+  }
+  if (!nearest) return null;
+  hitNormal.set(nearest.axis === 'x' ? nearest.sign : 0, 0, nearest.axis === 'z' ? nearest.sign : 0);
+  return { distance: nearest.distance, normal: hitNormal };
+}
+
+/** The colliders-only rooms' (the maze) equivalent of moveWithCollisions:
+ * sweeps the frame's full step against the Box3 walls before applying it,
+ * instead of moving the whole step and depenetrating after the fact. */
+function moveWithBoxCollisions(player, direction, distance) {
+  const hit = firstColliderHit(player.position, direction, distance);
+  if (!hit) {
+    player.position.addScaledVector(direction, distance);
+    return;
+  }
+  player.position.addScaledVector(direction, hit.distance);
+
+  const leftover = distance - hit.distance;
+  if (leftover < 1e-4) return;
+
+  // Retry the leftover along the wall face, same as moveWithCollisions.
+  slideDelta.set(direction.x * leftover, 0, direction.z * leftover);
+  slideDelta.addScaledVector(hit.normal, -slideDelta.dot(hit.normal));
+  const slideLength = slideDelta.length();
+  if (slideLength < 1e-4) return;
+  slideDelta.divideScalar(slideLength);
+
+  const slideHit = firstColliderHit(player.position, slideDelta, slideLength);
+  player.position.addScaledVector(slideDelta, slideHit ? slideHit.distance : slideLength);
+}
+
+/**
  * Casts a short horizontal ray from the player and returns the first hit
  * that is genuinely wall-like, or null. Faces tilted mostly up/down are
  * ramps and ledges — the floor follow already handles those, so they must
@@ -3696,8 +3759,16 @@ function updateMovement(deltaSeconds) {
     // Jumping straight up never runs acceptMove, so land her here.
     if (airborne && !settleOnGround(player)) land();
   } else {
-    player.position.addScaledVector(moveRight, velocity.x).addScaledVector(moveForward, -velocity.z);
+    moveDelta.set(0, 0, 0).addScaledVector(moveRight, velocity.x).addScaledVector(moveForward, -velocity.z);
+    const boxDistance = moveDelta.length();
+    if (boxDistance > 1e-6) {
+      moveDelta.divideScalar(boxDistance);
+      moveWithBoxCollisions(player, moveDelta, boxDistance);
+    }
 
+    // Belt-and-braces depenetration for any residual overlap (e.g. a wall
+    // that moved into the player, or floating-point slack at a corner);
+    // the sweep above is what stops sprinting from clearing a wall outright.
     resolveWallCollisions(player.position);
 
     if (bounds) {
