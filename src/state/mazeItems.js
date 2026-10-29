@@ -1,31 +1,41 @@
-/**
- * The maze's two hidden keepsakes (the storyline outline's "bowling ball
- * and a hot chocolate mug") — small finds along the way, not scored
- * against the Escape Threshold like Level 2's photos. One of each, not a
- * counted collectible set.
- */
+/** Level 3 keepsakes and encounter checkpoint; independent of Escape Threshold. */
 export const MAZE_FINDABLES = [
   { id: 'bowling-ball', label: 'bowling ball' },
   { id: 'hot-chocolate-mug', label: 'mug of hot chocolate' },
 ];
-
-/** One run's maze finds, shared by the maze room the same way
- * createLevel2Items() shares Level 2's photos. */
-export function createMazeItems({ onCollect = () => {} } = {}) {
-  const collected = new Set();
+const validSeed=value=>Number.isInteger(value)&&value>=0&&value<=0xffffffff;
+export function createMazeItems({ onCollect=()=>{}, onChange=()=>{} }={}) {
+  const collected=new Set();let seed=null,jaxComplete=false;
+  const hasAllRequired=()=>MAZE_FINDABLES.every(item=>collected.has(item.id));
   return {
-    hasCollected: (id) => collected.has(id),
-    collect(id) {
-      if (collected.has(id)) return;
-      collected.add(id);
-      onCollect(id, collected.size, MAZE_FINDABLES.length);
+    hasCollected:id=>collected.has(id),
+    hasAllRequired,
+    totalFound:()=>collected.size,
+    get seed(){return seed;},
+    get jaxComplete(){return jaxComplete;},
+    ensureSeed(preferred){
+      if(seed===null){seed=validSeed(preferred)?preferred:Math.floor(Math.random()*0x100000000);onChange();}
+      return seed;
     },
-    totalFound: () => collected.size,
-    reset() { collected.clear(); },
+    collect(id){
+      if(!MAZE_FINDABLES.some(item=>item.id===id)||collected.has(id))return false;
+      collected.add(id);onCollect(id,collected.size,MAZE_FINDABLES.length);onChange();return true;
+    },
+    completeJax(){if(!hasAllRequired()||jaxComplete)return false;jaxComplete=true;onChange();return true;},
+    snapshot(){return {collected:MAZE_FINDABLES.filter(item=>collected.has(item.id)).map(item=>item.id),seed,jaxComplete};},
+    restore(saved={}){
+      collected.clear();
+      for(const id of Array.isArray(saved?.collected)?saved.collected:[])if(MAZE_FINDABLES.some(item=>item.id===id))collected.add(id);
+      seed=validSeed(saved?.seed)?saved.seed:null;jaxComplete=Boolean(saved?.jaxComplete)&&hasAllRequired();onChange();
+    },
+    reset(){collected.clear();seed=null;jaxComplete=false;onChange();},
   };
 }
+export function mazeObjective(items){
+  return {title:items.jaxComplete?'Reach the exit':items.hasAllRequired()?'Find Jax':"Find Jax's missing objects",count:MAZE_FINDABLES.filter(item=>items.hasCollected(item.id)).length,complete:items.jaxComplete};
+}
 
-export const MAZE_SEARCH_SECONDS = 180;
+export const MAZE_SEARCH_SECONDS = 300;
 
 /** Per-attempt gameplay clock; reaching Jax is not a Level 3 completion. */
 export function createMazeSearch() {

@@ -5,6 +5,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { MAZE_SEARCH_SECONDS } from '../src/state/mazeItems.js';
 
 const output = path.resolve('artifacts/caine-memory');
 await fs.mkdir(output, { recursive: true });
@@ -89,6 +90,15 @@ const retry = async room => {
   await call('lock');
 };
 
+// Caine's memory settings live only in the title screen's Options (not the
+// pause menu), so mid-game checks flip them there directly.
+const setMemoryEnabled = on => page.evaluate(on => {
+  const input = document.getElementById('caine-memory-enabled');
+  input.checked = on;
+  input.dispatchEvent(new Event('change'));
+}, on);
+const clearMemory = () => page.evaluate(() => document.querySelector('[data-caine-clear]').click());
+
 try {
   await page.goto(`${process.env.GAME_URL ?? 'http://127.0.0.1:5173'}/?dev=1&mazeSeed=12345`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => !!window.__caineReview);
@@ -100,7 +110,7 @@ try {
     assert.equal((await state()).captionHidden, true);
     await call('lock');
     await page.waitForFunction(() => !window.__caineReview.state().captionHidden);
-    assert.match((await state()).caption, /brand-new adventure/);
+    assert.match((await state()).caption, /behind the screen/);
     assert.equal(await page.locator('#caine-memory-caption').evaluate(el => getComputedStyle(el).pointerEvents), 'none');
   });
   await check('Pause retains buttons, freezes timer, and shows the Escape joke once', async () => {
@@ -108,7 +118,7 @@ try {
     await call('pause'); await page.keyboard.press('Escape'); await page.keyboard.up('KeyW');
     const before = await state();
     assert.equal(before.paused, true);
-    assert.match(before.joke, /Escape.*pause button/);
+    assert.match(before.joke, /a pause!/);
     assert.equal(await page.locator('#caine-pause-joke').isVisible(), true);
     assert.equal(before.ambiencePause, true);
     for (const id of ['btn-resume', 'btn-save', 'btn-pause-load', 'btn-home']) assert.ok(await page.locator('#' + id).isVisible());
@@ -157,17 +167,17 @@ try {
   await check('Maze retries show contextual card text and count only one successful reload', async () => {
     const before = await state(); await call('failMaze');
     assert.equal((await state()).cardTitle, 'LEVEL 3 FAILED');
-    assert.match((await state()).retryCaption, /maze.*rehearsal/);
+    assert.match((await state()).retryCaption, /Take two of the maze/);
     assert.equal((await state()).history.retries.maze, 0);
     assert.equal((await state()).jokeHidden, true);
     await page.evaluate(() => { const button = document.getElementById('btn-level-complete-continue'); button.click(); button.click(); });
     await ready('maze');
     await page.waitForFunction(() => window.__caineReview.state().history.retries.maze === 1);
     assert.notEqual((await state()).seed, before.seed);
-    assert.equal((await state()).mazeTime, 180);
+    assert.equal((await state()).mazeTime, MAZE_SEARCH_SECONDS);
     assert.deepEqual((await state()).escape, before.escape);
     await call('lock'); await call('failMaze');
-    assert.match((await state()).retryCaption, /remember this encore/);
+    assert.match((await state()).retryCaption, /know your moves by heart/);
     await retry('maze');
     await page.waitForFunction(() => window.__caineReview.state().history.retries.maze === 2);
   });
@@ -175,11 +185,11 @@ try {
     await call('photoSearch'); await ready('tadc'); await call('lock');
     await call('failPhoto');
     assert.equal((await state()).cardTitle, 'LEVEL 2 FAILED');
-    assert.match((await state()).retryCaption, /photo search.*rehearsal/);
+    assert.match((await state()).retryCaption, /Take two of the photo search/);
     await retry('tadc');
     await page.waitForFunction(() => window.__caineReview.state().history.retries.level2 === 1);
     await call('abstractPhoto');
-    assert.match((await state()).retryCaption, /photo search.*remember this encore/);
+    assert.match((await state()).retryCaption, /photo search.*know your moves by heart/);
     await retry('tadc');
     await page.waitForFunction(() => window.__caineReview.state().history.retries.level2 === 2);
     assert.ok((await state()).photoTime > 239);
@@ -191,7 +201,7 @@ try {
     const current = await state();
     assert.equal(current.history.runs, old.runs + 1);
     assert.deepEqual(current.history.retries, old.retries);
-    assert.match(current.caption, /rehearsals from last time/);
+    assert.match(current.caption, /won’t mention the retries/);
     await call('pause');
     assert.equal((await state()).jokeHidden, false);
   });
@@ -222,8 +232,8 @@ try {
     assert.equal((await state()).jokeHidden, true);
     assert.equal((await state()).captionHidden, true);
   });
-  await check('Off syncs both controls, suppresses all text, and stops run/retry recording', async () => {
-    await page.locator('#caine-memory-pause-enabled').uncheck();
+  await check('Off suppresses all text and stops run/retry recording', async () => {
+    await setMemoryEnabled(false);
     const before = (await state()).history;
     assert.equal(await page.locator('#caine-memory-enabled').isChecked(), false);
     await page.locator('#btn-resume').click(); await call('failMaze');
@@ -237,7 +247,7 @@ try {
   });
   await check('Clear removes history only; loading an old save does not bring memory back', async () => {
     const saved = (await state()).save;
-    await page.locator('#pause-menu [data-caine-clear]').click();
+    await clearMemory();
     assert.equal((await state()).stored, null);
     assert.equal((await state()).enabled, false);
     assert.equal((await state()).save, saved);
@@ -247,7 +257,7 @@ try {
     assert.equal((await state()).stored, null);
     assert.equal((await state()).enabled, false);
     await call('lock'); await call('pause');
-    await page.locator('#caine-memory-pause-enabled').check();
+    await setMemoryEnabled(true);
     await page.locator('#btn-resume').click();
   });
   await check('Clear during retry loading prevents a stale completion from recreating erased history', async () => {
@@ -270,7 +280,7 @@ try {
     assert.deepEqual((await state()).history, before);
     assert.equal((await state()).captionHidden, true);
   });
-  await check('Settings/history persist on reload and narrow pause controls remain reachable', async () => {
+  await check('Settings/history persist on reload; the pause menu has no memory controls', async () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.__caineReview);
     assert.equal((await state()).enabled, true);
@@ -279,11 +289,9 @@ try {
     await page.setViewportSize({ width: 390, height: 740 });
     const box = await page.locator('#pause-menu').boundingBox();
     assert.ok(box.x >= 0 && box.x + box.width <= 391);
-    const clear = page.locator('#pause-menu [data-caine-clear]');
-    await clear.scrollIntoViewIfNeeded();
-    const clearBox = await clear.boundingBox();
-    assert.ok(clearBox.y >= 0 && clearBox.y + clearBox.height <= 740);
-    await clear.click();
+    assert.equal(await page.locator('#pause-menu [data-caine-enabled], #pause-menu [data-caine-clear]').count(), 0,
+      'Caine memory settings are only in Options');
+    await clearMemory();
     assert.equal((await state()).stored, null);
     assert.equal((await state()).jokeHidden, true);
     await page.locator('#btn-resume').scrollIntoViewIfNeeded(); await page.locator('#btn-resume').click();
@@ -306,7 +314,6 @@ try {
     await page.waitForFunction(() => !!window.__caineReview);
     assert.equal((await state()).enabled, false);
     assert.equal(await page.locator('#caine-memory-enabled').isChecked(), false);
-    assert.equal(await page.locator('#caine-memory-pause-enabled').isChecked(), false);
     assert.equal((await state()).stored, null);
   });
   assert.deepEqual(report.errors, []);

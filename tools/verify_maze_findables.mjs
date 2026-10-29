@@ -1,3 +1,4 @@
+import {assertBoundaryNavigation} from './mazeBoundaryNavigation.mjs';
 // Confirms the maze's two hidden keepsakes (src/state/mazeItems.js,
 // src/props/mazeFindables.js) actually get placed, stay clear of Jax/the
 // exit/the hazard's patrol, and are pickupable â€” against the real Jax
@@ -182,13 +183,15 @@ GLTFLoader.prototype.load = function (url, onLoad, _progress, onError) {
 // Check physical clearances against the real rendered room, not only its graph.
 for (const seed of [0, 1, 2, 42, 123, 187, 12345, 0xffffffff]) {
   const room = await loadMazeRoom(null, { seed, mazeItems: createMazeItems() });
+  const wallColliders=room.colliders.filter(box=>!room.jaxBoundary.colliders.includes(box));
+  assertBoundaryNavigation(room.maze,room.colliders);
   const centre = cell => new THREE.Vector3(-27 + cell.c * 4.5, 0, -27 + cell.r * 4.5);
   const clear = (a, b = a) => {
     const box = new THREE.Box3().setFromPoints([a, b]);
     box.min.x -= 0.35; box.max.x += 0.35;
     box.min.z -= 0.35; box.max.z += 0.35;
     box.min.y = 0.4; box.max.y = 1.7;
-    assert.ok(room.colliders.every(wall => !wall.intersectsBox(box)), `seed ${seed}: blocked corridor`);
+    assert.ok(wallColliders.every(wall => !wall.intersectsBox(box)), `seed ${seed}: blocked corridor`);
   };
   assert.deepEqual(room.spawn.toArray(), [-27, 0, -27]);
   for (const row of room.maze.cells) for (const cell of row) {
@@ -197,8 +200,8 @@ for (const seed of [0, 1, 2, 42, 123, 187, 12345, 0xffffffff]) {
     if (!cell.walls.bottom) clear(centre(cell), centre(room.maze.cells[cell.r + 1][cell.c]));
   }
   const walls = room.group.children.filter(child => child.isMesh && child.geometry.type === 'BoxGeometry');
-  assert.equal(walls.length, room.colliders.length);
-  walls.forEach((mesh, i) => assert.ok(new THREE.Box3().setFromObject(mesh).equals(room.colliders[i])));
+  assert.equal(walls.length, wallColliders.length);
+  walls.forEach((mesh, i) => assert.ok(new THREE.Box3().setFromObject(mesh).equals(wallColliders[i])));
   assert.ok(room.triggers.jax.containsPoint(centre(room.maze.jax).setY(0.5)));
   assert.ok(room.triggers.exit.containsPoint(centre(room.maze.exit).setY(0.5)));
   const markings=room.group.getObjectByName('FutureLoopInlays');
@@ -212,6 +215,8 @@ for (const seed of [0, 1, 2, 42, 123, 187, 12345, 0xffffffff]) {
   }
   const scenery = room.group.getObjectByName('MazeScenery');
   assert.ok(scenery, 'room includes the funhouse scenery');
+  const stageCentre=new THREE.Vector3().fromArray(scenery.userData.jaxStageCentre).setY(0);
+  assert.ok(stageCentre.distanceTo(centre(room.maze.jax))<0.02,'stage stays under Jax, including four-way cells');
   assert.ok(scenery.userData.sceneryStats.maxChunkBatches < 60, 'each spatial chunk stays batched');
   assert.ok(scenery.userData.sceneryStats.batches < 400, 'spatial batching stays within object budget');
   assert.equal(scenery.userData.sceneryStats.newLights, 0);
@@ -273,6 +278,8 @@ for (const seed of [0, 1, 2, 42, 123, 187, 12345, 0xffffffff]) {
   props.forEach((prop, i) => assert.deepEqual(prop.position.toArray(), centre(room.environmentLayout.alcoves[i]).toArray()));
   for (const pickup of [...room.interactables]) pickup.interact();
   assert.equal(room.interactables.length, 0);
+  room.jaxBoundary.sync();assert.equal(room.jaxBoundary.locked,false);
+  assert.equal(room.colliders.length,wallColliders.length);assertBoundaryNavigation(room.maze,room.colliders,false);
 }
 console.log('PASS eight fixed seeds including 123 and four-way-Jax seed 187: unchanged physical corridors, matching colliders, scenery clearance, pickup sightlines and destination triggers');
 

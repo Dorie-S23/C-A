@@ -1,0 +1,277 @@
+<!doctype html>
+<!--
+  A bench for the shared abstraction effect (src/effects/abstraction.js),
+  outside the game: pick a character, set distress the way a dialogue line
+  does (0-3), scrub or play the abstraction, drag to turn them round, and
+  measure what the effect costs a frame on this machine.
+
+  Run Vite (npm run dev), then open
+  http://localhost:5173/tools/abstraction-preview.html  (?character=jax for Jax)
+  Dev only: the build and the deploy zip never include it.
+  tools/verify_abstraction_browser.mjs drives it through window.__abstractionPreview.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- The character loaders ask for './models/...', which Vite serves from public/ at the root. -->
+  <base href="/">
+  <link rel="icon" href="data:,"> <!-- none, without the browser asking for a missing favicon.ico -->
+  <title>Abstraction preview</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1a22; color: #eee; font: 14px system-ui, sans-serif; }
+    canvas { display: block; touch-action: none; cursor: grab; }
+    #panel { position: fixed; top: 12px; left: 12px; display: grid; gap: 8px; padding: 12px 14px; border-radius: 8px; background: rgba(0, 0, 0, 0.7); }
+    #panel label { display: grid; grid-template-columns: 72px 160px 44px; align-items: center; gap: 8px; }
+    #cost { font: 12px ui-monospace, monospace; white-space: pre; }
+  </style>
+</head>
+<body>
+  <div id="panel">
+    <label>Character
+      <select id="character"><option value="kaufmo">Kaufmo</option><option value="jax">Jax</option></select>
+    </label>
+    <label>Distress <input id="distress" type="range" min="0" max="3" step="1" value="0"><output id="distress-value">0</output></label>
+    <label>Progress <input id="progress" type="range" min="0" max="1" step="0.01" value="0"><output id="progress-value">0.00</output></label>
+    <div><button id="abstract">Abstract</button> <button id="reset">Reset</button> <button id="measure">Measure cost</button></div>
+    <div id="cost">Loading…</div>
+  </div>
+  <script type="module">
+    import * as THREE from 'three';
+    import { loadKaufmoTalk } from '/src/characters/kaufmoTalk.js';
+    import { loadJax } from '/src/characters/jax.js';
+    import { createAbstractionEffect, distressFromDialogue } from '/src/effects/abstraction.js';
+
+    // Each gives back the root group and the character's own idle update,
+    // so the shell is seen following a moving skeleton, not a still pose.
+    const CHARACTERS = {
+      kaufmo: () => loadKaufmoTalk().then((api) => ({ root: api.kaufmo, update: api.update })),
+      jax: () => loadJax().then((api) => {
+        api.jax.visible = true;
+        return { root: api.jax, update: api.update };
+      }),
+    };
+
+    const ui = Object.fromEntries(['character', 'distress', 'distress-value', 'progress', 'progress-value', 'abstract', 'reset', 'measure', 'cost']
+      .map((id) => [id, document.getElementById(id)]));
+
+    const shaderErrors = [];
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.debug.onShaderError = (gl, program, vertexShader, fragmentShader) => {
+      const log = [gl.getProgramInfoLog(program), gl.getShaderInfoLog(vertexShader), gl.getShaderInfoLog(fragmentShader)]
+        .filter(Boolean).join('\n');
+      shaderErrors.push(log);
+      console.error('Abstraction shader failed:\n' + log);
+    };
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1b1a22);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x444455, 1.2));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+    sun.position.set(2, 4, 3);
+    scene.add(sun);
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(1.6, 48), new THREE.MeshStandardMaterial({ color: 0x2a2833 }));
+    floor.rotation.x = -Math.PI / 2;
+    scene.add(floor);
+    const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.05, 50);
+
+    let current = null; // { key, root, update, effect }
+    let loading = 0;
+
+    async function show(key) {
+      const attempt = ++loading;
+      ui.cost.textContent = 'Loading…';
+      preview.ready = false;
+      const loaded = await CHARACTERS[key]();
+      if (attempt !== loading) return;
+      if (current) {
+        current.effect.dispose();
+        scene.remove(current.root);
+      }
+      scene.add(loaded.root);
+      // Framed from the character's own meshes, whatever their size.
+      const bounds = new THREE.Box3();
+      loaded.root.updateMatrixWorld(true);
+      loaded.root.traverse((child) => { if (child.isMesh && child.visible) bounds.expandByObject(child); });
+      const centre = bounds.getCenter(new THREE.Vector3());
+      const height = bounds.max.y - bounds.min.y;
+      const distance = height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) * 1.35;
+      camera.position.set(centre.x, centre.y + height * 0.08, centre.z + distance);
+      camera.lookAt(centre);
+
+      current = { key, ...loaded, effect: createAbstractionEffect(loaded.root) };
+      applySliders();
+      ui.cost.textContent = '';
+      preview.character = key;
+      preview.ready = true;
+    }
+
+    function applySliders() {
+      current.effect.setDistress(distressFromDialogue(Number(ui.distress.value)));
+      current.effect.setProgress(Number(ui.progress.value));
+    }
+
+    ui.character.addEventListener('change', () => show(ui.character.value));
+    ui.distress.addEventListener('input', () => {
+      ui['distress-value'].value = ui.distress.value;
+      current?.effect.setDistress(distressFromDialogue(Number(ui.distress.value)));
+    });
+    ui.progress.addEventListener('input', () => {
+      ui['progress-value'].value = Number(ui.progress.value).toFixed(2);
+      current?.effect.setProgress(Number(ui.progress.value));
+    });
+    ui.abstract.addEventListener('click', () => {
+      if (!current) return;
+      ui.distress.value = ui['distress-value'].value = 3;
+      current.effect.abstract();
+    });
+    ui.reset.addEventListener('click', () => {
+      if (!current) return;
+      current.effect.reset();
+      ui.distress.value = ui['distress-value'].value = 0;
+      ui.progress.value = 0;
+      ui['progress-value'].value = '0.00';
+    });
+    ui.measure.addEventListener('click', () => {
+      if (!current) return;
+      const cost = measureCost();
+      ui.cost.textContent = `${cost.width}×${cost.height}, ${cost.frames} frames each\n`
+        + `without: ${cost.without.toFixed(2)} ms/frame\n`
+        + `with:    ${cost.with.toFixed(2)} ms/frame (distress 1, progress 0.6)\n`
+        + `effect:  +${(cost.with - cost.without).toFixed(2)} ms`;
+    });
+
+    // Drag to turn the character round.
+    let dragX = null;
+    renderer.domElement.addEventListener('pointerdown', (event) => { dragX = event.clientX; renderer.domElement.setPointerCapture(event.pointerId); });
+    renderer.domElement.addEventListener('pointermove', (event) => {
+      if (dragX === null || !current) return;
+      current.root.rotation.y += (event.clientX - dragX) * 0.01;
+      dragX = event.clientX;
+    });
+    renderer.domElement.addEventListener('pointerup', () => { dragX = null; });
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    /**
+     * Times whole frames with the effect off, then at a heavy setting
+     * (distress 1, progress 0.6: rim, tears, edge and void all on screen).
+     * Reading a pixel back makes the browser wait until the GPU has
+     * finished, so each figure is the time to draw a frame, not just to
+     * queue it. It's the whole frame at this window size, so compare the
+     * two figures rather than reading either on its own.
+     */
+    function measureCost(frames = 60) {
+      const gl = renderer.getContext();
+      const pixel = new Uint8Array(4);
+      const time = () => {
+        renderer.render(scene, camera);
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+        const start = performance.now();
+        for (let i = 0; i < frames; i++) renderer.render(scene, camera);
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+        return (performance.now() - start) / frames;
+      };
+      const { effect } = current;
+      const saved = { distress: effect.distress, progress: effect.progress };
+      effect.reset();
+      const without = time();
+      effect.setDistress(1, { immediate: true });
+      effect.setProgress(0.6);
+      effect.update(0);
+      const withEffect = time();
+      effect.reset();
+      effect.setDistress(saved.distress, { immediate: true });
+      effect.setProgress(saved.progress);
+      const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+      return { without, with: withEffect, frames, width: size.x, height: size.y };
+    }
+
+    /** Draws one frame at a set distress/progress, the pose held, and reads every pixel back. */
+    function still(distress, progress, seconds = 1.3) {
+      const { effect } = current;
+      effect.reset();
+      effect.setDistress(distress, { immediate: true });
+      effect.setProgress(progress);
+      effect.update(seconds);
+      renderer.render(scene, camera);
+      const gl = renderer.getContext();
+      const pixels = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
+      gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      return pixels;
+    }
+
+    const preview = window.__abstractionPreview = {
+      ready: false,
+      character: null,
+      shaderErrors,
+      measureCost: () => measureCost(),
+      /**
+       * Draws the effect off, at each stage, and off again, all inside one
+       * call so the character's own idle animation can't move between them,
+       * and reports how much of the picture each stage changed.
+       */
+      check() {
+        const differs = (a, b, i) => Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]) > 24;
+        const changed = (a, b) => {
+          let count = 0;
+          for (let i = 0; i < a.length; i += 4) if (differs(a, b, i)) count++;
+          return count / (a.length / 4);
+        };
+        // The scene without the body (its meshes only: Jax's own light stays on), to find where the body is.
+        const meshes = [];
+        current.root.traverse((child) => { if (child.isMesh && child.visible) meshes.push(child); });
+        for (const mesh of meshes) mesh.visible = false;
+        const empty = still(0, 0);
+        for (const mesh of meshes) mesh.visible = true;
+        const off = still(0, 0);
+        const rim = still(1, 0);
+        const half = still(1, 0.5);
+        const gone = still(1, 1);
+        const offAgain = still(0, 0);
+        // How bright the body was, and is once it's gone, over the pixels it covered.
+        let before = 0, after = 0, count = 0;
+        for (let i = 0; i < off.length; i += 4) {
+          if (!differs(off, empty, i)) continue;
+          before += off[i] + off[i + 1] + off[i + 2];
+          after += gone[i] + gone[i + 1] + gone[i + 2];
+          count++;
+        }
+        const linked = current.effect.shells.every((shell) => {
+          const program = renderer.properties.get(shell.material).currentProgram;
+          return program && program.diagnostics?.runnable !== false;
+        });
+        return {
+          shells: current.effect.shells.length, linked, shaderErrors,
+          rim: changed(off, rim), half: changed(off, half), gone: changed(off, gone), offAgain: changed(off, offAgain),
+          brightnessBefore: count ? before / count / 3 : 0, brightnessAfter: count ? after / count / 3 : 0,
+        };
+      },
+    };
+
+    const clock = new THREE.Clock();
+    renderer.setAnimationLoop(() => {
+      const delta = Math.min(clock.getDelta(), 0.1);
+      if (current) {
+        current.update(delta);
+        current.effect.update(delta);
+        if (current.effect.progress !== Number(ui.progress.value)) {
+          ui.progress.value = current.effect.progress;
+          ui['progress-value'].value = current.effect.progress.toFixed(2);
+        }
+      }
+      renderer.render(scene, camera);
+    });
+
+    const requested = new URLSearchParams(location.search).get('character');
+    ui.character.value = CHARACTERS[requested] ? requested : 'kaufmo';
+    show(ui.character.value);
+  </script>
+</body>
+</html>

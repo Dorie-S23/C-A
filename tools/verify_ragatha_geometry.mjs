@@ -98,7 +98,7 @@ const missing=await loadPomniRoom(undefined,{openingMode:'play'});
 console.warn=warning;GLTFLoader.prototype.load=originalLoad;
 assert.ok(missing.opening);assert.equal(missing.group.userData.ragathaCast,undefined);
 console.log('PASS Failed Ragatha loading preserves R5 and the staged entrance fallback');
-await import('../_verify_opening_audio.mjs');
+await import('../test/_verify_opening_audio.mjs');
 const context=THREE.AudioContext.getContext(),listener=new THREE.AudioListener();
 const manualAudio=createEntranceAudioSession(listener,room.group,undefined,{manual:true});
 let sourceCount=context.sources.length;manualAudio.start(0);assert.equal(context.sources.length,sourceCount);

@@ -60,6 +60,18 @@ export function createStoryProgress({ objectives, isStorySession }) {
     enteredMaze() {
       return isStorySession() && objectives.complete('enter-maze');
     },
+    /** Back to the start of Level 2 (Ribbit done, Kaufmo yet to hurry past), Level 1 kept. */
+    restartLevel2() {
+      if (!this.ribbitComplete) return false;
+      hallwaySeen = false;
+      kaufmoIntroduced = false;
+      const { completed } = objectives.snapshot();
+      objectives.restore({
+        active: 'find-kaufmo',
+        completed: completed.filter(id => !['find-kaufmo', 'collect-photos', 'check-kaufmo'].includes(id)),
+      });
+      return true;
+    },
     reset() { ribbitPoints = null; hallwaySeen = false; kaufmoIntroduced = false; },
     snapshot() { return { ribbitPoints, hallwaySeen, kaufmoIntroduced }; },
     restore(saved = {}) {

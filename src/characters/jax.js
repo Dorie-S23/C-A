@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { bendBone, SIDEWAYS, UP } from './bendBone.js';
+import { bendBone, SIDEWAYS, UP, FORWARD } from './bendBone.js';
 
 // "jax_from_tadc.glb": rigged (hips/spine/legs/arms down to fingers) but,
 // like Caine's model, ships with no baked animation clips — the run below
@@ -126,6 +126,7 @@ function findBone(root, prefix) {
  *   isRunning: () => boolean,
  *   setGlitching: (on: boolean) => void, glitch: () => void,
  *   setShown: (on: boolean) => void,
+ *   setDistressed: (on: boolean) => void, engageDistressed: (point: THREE.Vector3 | null) => void,
  *   bindPose: Map<THREE.Bone, THREE.Quaternion> }>}
  */
 export function loadJax() {
@@ -155,6 +156,10 @@ export function loadJax() {
       upperArmR: findBone(model, 'upperarmr'),
       lowerArmL: findBone(model, 'lowerarml'),
       lowerArmR: findBone(model, 'lowerarmr'),
+      chest: findBone(model, 'chest'),
+      neck: findBone(model, 'neck'),
+      shoulderL: findBone(model, 'shoulderl'),
+      shoulderR: findBone(model, 'shoulderr'),
       spine: findBone(model, 'spine'),
       head: findBone(model, 'head'),
     };
@@ -184,6 +189,10 @@ export function loadJax() {
       bone.quaternion.copy(rest.get(bone)).premultiply(swing);
     }
 
+    let distressed=false,engaged=false,engagement=0;
+    const restorePose=()=>{for(const [bone,rotation]of rest)bone.quaternion.copy(rotation);};
+    function setDistressed(value){distressed=Boolean(value);engaged=false;engagement=0;targetYaw=null;restorePose();}
+    function engageDistressed(point){engaged=Boolean(point);faceTowards(point);}
     let walk = null;
     let idleTime = 0;
     let targetYaw = null;
@@ -218,6 +227,7 @@ export function loadJax() {
 
     /** `stay`: stop and stand at `to` (the Lobby chase) rather than vanish there. */
     function playPassBy(from, to, duration, { style = 'run', stay = false } = {}) {
+      distressed=false;engaged=false;engagement=0;targetYaw=null;restorePose();
       jax.position.copy(from);
       jax.rotation.y = Math.atan2(to.x - from.x, to.z - from.z);
       jax.rotation.x = 0;
@@ -240,10 +250,23 @@ export function loadJax() {
 
     function update(deltaSeconds) {
       if (!walk) {
-        // Standing still (e.g. found in the maze) still breathes and
-        // shivers instead of holding dead still like a mannequin.
         stutter(deltaSeconds);
         const time = idleTime;
+        if(distressed){
+          restorePose();engagement=THREE.MathUtils.lerp(engagement,engaged?1:0,1-Math.exp(-deltaSeconds*1.4));
+          const breath=Math.sin(time*Math.PI*2*0.22),twitch=Math.pow(Math.max(0,Math.sin(time*0.9)),10)*Math.sin(time*38)*0.009;
+          bendBone(bones.spine,jax,SIDEWAYS,0.20+breath*0.007);
+          bendBone(bones.chest,jax,SIDEWAYS,0.12+breath*0.008+twitch);
+          bendBone(bones.neck,jax,SIDEWAYS,0.12-engagement*0.035);
+          bendBone(bones.head,jax,SIDEWAYS,0.26-engagement*0.08+twitch*0.6);
+          bendBone(bones.shoulderL,jax,FORWARD,-0.055);bendBone(bones.shoulderR,jax,FORWARD,0.055);
+          bendBone(bones.upperArmL,jax,SIDEWAYS,0.06);bendBone(bones.upperArmR,jax,SIDEWAYS,0.06);
+          poseLeg(bones.lowerArmL,THREE.MathUtils.degToRad(22));poseLeg(bones.lowerArmR,THREE.MathUtils.degToRad(22));
+          if(engaged&&targetYaw!==null){const diff=THREE.MathUtils.euclideanModulo(targetYaw-jax.rotation.y+Math.PI,Math.PI*2)-Math.PI;jax.rotation.y+=diff*(1-Math.exp(-deltaSeconds*0.8));}
+          return;
+        }
+        // Standing still (e.g. found in the maze) still breathes and
+        // shivers instead of holding dead still like a mannequin.
         if (bones.spine) bones.spine.quaternion.copy(rest.get(bones.spine));
         if (bones.head) bones.head.quaternion.copy(rest.get(bones.head));
         bendBone(bones.spine, jax, SIDEWAYS, IDLE_HUNCH_ANGLE);
@@ -313,7 +336,7 @@ export function loadJax() {
     }
 
     return {
-      jax, update, playPassBy, faceTowards, bindPose, setShown,
+      jax, update, playPassBy, faceTowards, setDistressed, engageDistressed, bindPose, setShown,
       isRunning: () => walk !== null,
       setGlitching(on) { glitching = on; },
       glitch() { skip.tear = GLITCH_SECONDS; },

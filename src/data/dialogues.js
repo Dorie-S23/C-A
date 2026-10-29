@@ -607,6 +607,8 @@ export const level2OpeningDialogue = [
 // a `gameOver` beat whose text is the Game Over card's message (see
 // src/levels/level1.js). Every other branch rejoins the main line.
 // Choice-checking lives in src/dialogue/choiceTally.js.
+// 'l1_shut_out' (after the win ending) is an unused lose scene, kept for
+// if the failure ever plays out in dialogue before the Game Over card.
 // `action` on a node names a stage direction the mission acts out in 3D
 // when that node is shown (knock, enterRoom, sitBesideRibbit,
 // ribbitSitsUp) — the text stays exactly as written.
@@ -771,6 +773,32 @@ export const level1RibbitDialogue = [
     text: 'And Pomni? …If Jax ever wants to talk, tell him I’ll make the hot chocolate.',
     next: null,
   },
+  // LOSE (not wired up): Ribbit shuts Pomni out. Nothing jumps here yet.
+  {
+    id: 'l1_shut_out',
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'You know what? Forget it. I don’t need someone else telling me what’s wrong with me.',
+  },
+  {
+    type: 'line',
+    speaker: 'pomni',
+    side: 'left',
+    mood: 'worried',
+    text: 'Ribbit, wait, I didn’t—',
+  },
+  {
+    type: 'line',
+    speaker: 'ribbit',
+    side: 'right',
+    text: 'Just go, Pomni. Please.',
+  },
+  {
+    type: 'beat',
+    text: 'Ribbit turns to the wall and pulls the blanket over her head. She isn’t listening anymore.',
+    next: null,
+  },
 ];
 
 export const ribbitFollowupDialogue = [
@@ -809,22 +837,24 @@ export const level2CompleteDialogue = [
   },
 ];
 
-// Enough pictures (PHOTO_THRESHOLD or more).
+// Enough pictures (PHOTO_THRESHOLD or more). The beat ids are where
+// main.js acts the photos out (actHandIn): handed over, spread on the
+// floor, one tapped, gathered up, clutched.
 export const level2ReturnDialogue = [
-  { type: 'beat', text: 'Pomni returns with the pictures. Kaufmo is sitting against the wall, scribbling. He looks up immediately.' },
+  { type: 'beat', text: 'Pomni returns with the pictures. Kaufmo is at his wall, scribbling. He looks round immediately.' },
   { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'shocked', text: 'You’re back. You’re back! Did you — tell me you —' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'I got the pictures. As requested.' },
-  { type: 'beat', text: 'She hands them over. Kaufmo spreads them out on the floor and goes quiet.' },
+  { id: 'handsOver', type: 'beat', text: 'She hands them over. Kaufmo spreads them out on the floor and goes quiet.' },
   { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'shocked', text: '…Oh.' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'I looked at them on the way back. It’s just an office. Desks, chairs, a sad little plant. Kind of boring, honestly.' },
   { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'worried', text: 'Exactly. Pomni, nothing in here is boring. Caine doesn’t do boring. Everything in this place is bright and loud and bouncing. But this?' },
-  { type: 'beat', text: 'He taps one of the pictures.' },
+  { id: 'tapsPicture', type: 'beat', text: 'He taps one of the pictures.' },
   { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'worried', text: 'This is somewhere that just… exists. Somewhere nobody designed to be fun. That’s not his. That’s from outside.' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'So why would Caine have pictures of it?' },
   { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'worried', text: 'That’s the question, isn’t it? Maybe he’s been there. Maybe he came from there. Maybe he’s just as stuck as we are and he’s not telling anyone.' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: '…That’s a lot of maybes.' },
   { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'happy', text: 'It’s a lot more than I had an hour ago.' },
-  { type: 'beat', text: 'He gathers the pictures carefully and holds them against his chest. His voice is steadier now, closer to his usual laid-back self.' },
+  { id: 'gathersPictures', type: 'beat', text: 'He gathers the pictures carefully and holds them against his chest. His voice is steadier now, closer to his usual laid-back self.' },
   { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'happy', text: 'These are the missing pieces, Pomni. I’ve been staring at half a puzzle for weeks. Now it’s starting to look like a picture.' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'So what happens now?' },
   { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'neutral', text: 'Now I sit with it. Line it all up. Figure out where this place is, and how we get there.' },
@@ -833,12 +863,12 @@ export const level2ReturnDialogue = [
   { type: 'line', speaker: 'kaufmo', side: 'right', direction: 'small laugh', mood: 'happy', text: 'Maybe a short one.' },
   { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'neutral', text: '…Hey. Thanks. For not calling me crazy. Well, for not only calling me crazy.' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: 'Don’t mention it. Seriously. Don’t mention it to anyone.' },
-  { type: 'beat', text: 'Kaufmo grins and turns back to the pictures, already muttering, but calm this time.', next: null },
+  { id: 'turnsBack', type: 'beat', text: 'Kaufmo grins and turns back to the pictures, already muttering, but calm this time.', next: null },
 ];
 
 // Straight after level2Return, still in his room: the hand-off to Level 3.
 export const level2SendoffDialogue = [
-  { type: 'line', speaker: 'kaufmo', side: 'right', direction: 'clutching the pictures, voice shaking, but this time with excitement', mood: 'happy', text: 'These are it, Pomni. These are the missing pieces. I think… I think I can actually do this.' },
+  { id: 'clutchingPictures', type: 'line', speaker: 'kaufmo', side: 'right', direction: 'clutching the pictures, voice shaking, but this time with excitement', mood: 'happy', text: 'These are it, Pomni. These are the missing pieces. I think… I think I can actually do this.' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Take your time. Don’t let anyone tell you it’s not possible.' },
   { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'happy', text: 'I’ll come find you the second I have it. Don’t go anywhere too dangerous.' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: 'We live in a digital circus. Everywhere is too dangerous.', next: null },
@@ -847,11 +877,11 @@ export const level2SendoffDialogue = [
 // Too few pictures: he comes apart. Ends in Game Over (main.js).
 export const level2AbstractionDialogue = [
   { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'happy', text: 'Pomni! You’re back. Tell me you found them. Please.' },
-  { type: 'line', speaker: 'pomni', side: 'left', direction: 'holds out what she has', mood: 'worried', text: 'This is all I could find.' },
-  { type: 'beat', text: 'Kaufmo takes the pictures, looks them over, then past her as if the rest should be there.' },
+  { id: 'holdsOut', type: 'line', speaker: 'pomni', side: 'left', direction: 'holds out what she has', mood: 'worried', text: 'This is all I could find.' },
+  { id: 'looksThemOver', type: 'beat', text: 'Kaufmo takes the pictures, looks them over, then past her as if the rest should be there.' },
   { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'neutral', distress: 1, text: '…This is it? There should be more. There has to be more. I counted. The pattern doesn’t work with this.' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'Maybe we can keep looking. We can still—' },
-  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'worried', distress: 2, text: 'No, no, no. It doesn’t close. Without the other pieces it doesn’t close. It’s just a picture of an office. It’s just an office.' },
+  { id: 'itDoesntClose', type: 'line', speaker: 'kaufmo', side: 'right', mood: 'worried', distress: 2, text: 'No, no, no. It doesn’t close. Without the other pieces it doesn’t close. It’s just a picture of an office. It’s just an office.' },
   { type: 'beat', text: 'Kaufmo starts pacing in circles again, faster. Faint static creeps in at the edges of everything.' },
   { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'sad', distress: 2, text: 'He said I was crazy. Jax said it, and everyone just… laughed. And I told myself I’d prove it. I just needed something real.' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'shocked', text: 'Kaufmo, you’re not crazy. Hey. Look at me.' },
@@ -859,6 +889,20 @@ export const level2AbstractionDialogue = [
   { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'shocked', distress: 3, text: 'The pieces don’t, they don’t, they don’t fit, there’s no way, there’s no way, there’s no—' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'shocked', text: 'Kaufmo! Stay with me! Please!' },
   { type: 'beat', distress: 3, text: 'His colours drain. He distorts and stretches while the room warps around him. The music cuts out to a single distorted tone.', next: null },
+];
+
+// The search clock runs out before Pomni is back: a cutaway to Kaufmo alone
+// in his room, waiting, until he can't any more. The last beat (id
+// 'abstracts') is where main.js plays the abstraction effect through, then
+// Game Over and Level 2 starts again from the top (kaufmoOutOfTime).
+export const level2TimeUpDialogue = [
+  { type: 'beat', text: 'Meanwhile, in Kaufmo’s room. He’s pacing in circles, glancing at the door every few steps.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', direction: 'to himself', mood: 'worried', text: 'She’s coming back. She said she’d find them. She’s coming back.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'worried', distress: 1, text: 'How long does it take to find five pictures? I could’ve found five pictures. I could’ve found ten.' },
+  { type: 'beat', text: 'He stops at the door and listens. Nothing. Faint static creeps in at the edges of everything.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'sad', distress: 2, text: 'She’s not coming. Nobody’s coming. They all think I made it up, and now she does too.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', direction: 'faster and faster', mood: 'shocked', distress: 3, text: 'No pictures, no pattern, no door, no exit, no, no, there’s no, there’s no—' },
+  { id: 'abstracts', type: 'beat', distress: 3, text: 'His colours drain. He distorts and stretches until there’s nothing left of Kaufmo, just a dark, churning shape where he stood.', next: null },
 ];
 
 // --- Level 2 into 3: Jax bolts, Ribbit in the hall ------------------------
@@ -912,4 +956,14 @@ export const level3JaxDialogue = [
 export const level2ReturnAndSendoffDialogue = [
   ...level2ReturnDialogue.map((node, i, all) => (i === all.length - 1 ? { ...node, next: undefined } : node)),
   ...level2SendoffDialogue,
+];
+
+// Provisional Last Act encounter; intentionally separate from the Lobby intro.
+export const level3JaxFinalDialogue = [
+  {id:'jaxFinal1',type:'line',speaker:'pomni',side:'left',mood:'worried',text:"Jax? I've been looking everywhere for you."},
+  {id:'jaxFinal2',type:'line',speaker:'jax',side:'right',text:'...Well, congratulations. You found me.'},
+  {id:'jaxFinal3',type:'line',speaker:'pomni',side:'left',mood:'worried',text:'Are you okay?'},
+  {id:'jaxFinal4',type:'line',speaker:'jax',side:'right',text:'Do I look okay to you?'},
+  {id:'jaxFinal5',type:'line',speaker:'pomni',side:'left',mood:'neutral',text:'I found everything. We can leave now.'},
+  {id:'jaxFinal6',type:'line',speaker:'jax',side:'right',text:'...You really came all this way?',next:null},
 ];

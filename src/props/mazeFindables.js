@@ -50,6 +50,8 @@ export function createBowlingBall() {
 export function createHotChocolateMug() {
   const group = new THREE.Group();
   group.name = 'MazeFindable';
+  // A readable gameplay prop, still rooted at the same floor position.
+  group.scale.setScalar(2.5);
   const material = glowMaterial(0xb5462f, { roughness: 0.6 });
 
   const body = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.055, 0.1, 16), material);
@@ -113,8 +115,15 @@ export function placeMazeFindable(room, items, itemId, label, createMesh, positi
     objects,
     anchor: mesh,
     radius: PICKUP_RADIUS,
+    // The line-of-sight check's own default aims at head height above the
+    // anchor (right for an NPC, whose anchor is its feet) — for a prop
+    // already sitting right at that height, that reads as "blocked" under
+    // any overhang the prop itself is in plain view under.
+    sightHeight: 0.3,
+    enabled: () => Boolean(mesh.parent) && !items.hasCollected(itemId),
     prompt: () => `Pick up ${label}`,
     interact: () => {
+      if (!mesh.parent || items.hasCollected(itemId)) return;
       mesh.removeFromParent();
       items.collect(itemId);
       const list = room.interactables;

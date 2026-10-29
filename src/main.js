@@ -8,6 +8,7 @@ import { loadTadcRoom } from './rooms/tadcRoom.js';
 import { loadMazeRoom } from './rooms/mazeRoom.js';
 import { loadKaufmoRoom } from './rooms/kaufmoRoom.js';
 import { loadPomni } from './characters/pomni.js';
+import { createPomniJump } from './characters/pomniJump.js';
 import { createPomniSpeaking } from './characters/pomniSpeaking.js';
 import { OPENING_HANDOFF } from './cinematics/pomniOpening.js';
 import { createOpeningAudio } from './cinematics/openingAudio.js';
@@ -26,8 +27,11 @@ import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold }
 import { createStoryProgress } from './game/storyProgress.js';
 import { createSaveSlots } from './game/saveGame.js';
 import { createLoadingBackgrounds } from './ui/loadingBackgrounds.js';
+import { createLoadingSprites } from './ui/loadingSprites.js';
 import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.js';
-import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT, PHOTO_THRESHOLD } from './state/level2Items.js';
+import { createLevel2Items, pickKaufmoScript, photoUrls, PHOTO_COUNT, PHOTO_THRESHOLD } from './state/level2Items.js';
+import {createMazeEncounter} from './levels/mazeEncounter.js';
+import {createMazeObjectiveHUD} from './ui/mazeObjectiveHUD.js';
 import { createMazeItems, createMazeSearch, MAZE_FINDABLES } from './state/mazeItems.js';
 import { runLevel1 } from './levels/level1.js';
 import { runHallwayScene } from './levels/level3Hallway.js';
@@ -43,10 +47,12 @@ import { createTutorialHUD } from './ui/tutorialHUD.js';
 import { createActionCaptions } from './ui/actionCaptions.js';
 import { createCaineConversation } from './game/caineConversation.js';
 import { createCaineMemory } from './state/caineMemory.js';
+import { distressFromDialogue } from './effects/abstraction.js';
+import { createHandInPhotos } from './props/handInPhotos.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
   level2IdleDialogue, level2CompleteDialogue, level2ReturnAndSendoffDialogue, level2AbstractionDialogue,
-  level3HallwayDialogue, level3JaxDialogue,
+  level2TimeUpDialogue, level3HallwayDialogue, level3JaxDialogue, level3JaxFinalDialogue,
   level2HallwayDialogue, level2RoomOpeningDialogue, ribbitFollowupDialogue,
 } from './data/dialogues.js';
 
@@ -72,8 +78,10 @@ const DIALOGUE_SCRIPTS = {
   level2Complete: { script: level2CompleteDialogue, room: 'kaufmo' },
   level2Return: { script: level2ReturnAndSendoffDialogue, room: 'kaufmo' },
   level2Abstraction: { script: level2AbstractionDialogue, room: 'kaufmo' },
+  level2TimeUp: { script: level2TimeUpDialogue, room: 'kaufmo' },
   level3Hallway: { script: level3HallwayDialogue, room: 'dorm' },
   level3Jax: { script: level3JaxDialogue, room: 'tadc' },
+  level3JaxFinal: {script:level3JaxFinalDialogue,room:'maze'},
 };
 
 const ROOM_LOADERS = {
@@ -92,7 +100,7 @@ const PREVIEW_CAMERA_OFFSET = 0.5;
 const PLAYER_RADIUS = 0.35;
 // Faster than her Walk/Run clips are authored at (WALK_CLIP_SPEED/RUN_CLIP_SPEED);
 // updatePomniWalk speeds the clips up to match, so her feet stay planted.
-const WALK_SPEED = 4.2; // metres per second
+const WALK_SPEED = 3.6; // metres per second
 const SPRINT_MULTIPLIER = 2.0; // running speed = WALK_SPEED × this
 // Dev builds only (npm run dev): crosses rooms fast for playtesting. Kept
 // moderate — every frame's step still goes through the wall probes, and a
@@ -171,11 +179,13 @@ scene.add(player);
 let pomni = null;
 let pomniMixer = null;
 let pomniSpeaking = null;
+let pomniJump = null;
 const pomniActions = {}; // lower-cased clip name -> AnimationAction
 let currentAction = null;
 const pomniReady = loadPomni().then(({ pomni: model, animations }) => {
   pomni = model;
   pomniSpeaking = createPomniSpeaking(pomni);
+  pomniJump = createPomniJump(pomni);
   pomni.position.y = -PLAYER_HEIGHT; // feet on the floor
   player.add(pomni);
 
@@ -194,7 +204,7 @@ const pomniReady = loadPomni().then(({ pomni: model, animations }) => {
   }
 });
 const pomniBones = {
-  Hips: null, RightArm: null, RightForeArm: null,
+  Hips: null, RightArm: null, RightForeArm: null, RightHand: null, LeftArm: null, LeftForeArm: null, LeftHand: null,
   LeftUpLeg: null, RightUpLeg: null, LeftLeg: null, RightLeg: null,
   Neck: null, Head: null,
 };
@@ -203,7 +213,8 @@ let pomniHipsHeight = 0.8; // hips above her feet when standing; measured on loa
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlaySubtitle = document.getElementById('overlay-subtitle');
-createLoadingBackgrounds(overlay); // (the cast's sprites, ui/loadingSprites.js, are off for now)
+createLoadingBackgrounds(overlay);
+createLoadingSprites(overlay);
 const roomPicker = document.getElementById('room-picker');
 const dialoguePicker = document.getElementById('dialogue-picker');
 const pauseMenu = document.getElementById('pause-menu');
@@ -310,6 +321,7 @@ roomPicker.querySelectorAll('button[data-room]').forEach((button) => {
     event.stopPropagation(); // don't also trigger the overlay's lock-on-click
     openingCompleted = false;
     resetObjectiveSession();
+    resetMazeAttempt(); // a fresh maze: new layout, both keepsakes back, full clock
     selectRoom(button.dataset.room);
   });
 });
@@ -359,8 +371,8 @@ document.getElementById('btn-level3').addEventListener('click', (event) => {
   storyProgress.finishRibbit(4);
   storyProgress.finishKaufmoIntro();
   // Carrying all five: talking to him hands them in and plays the real
-  // success scene, then the Level 2 card, Jax bolting out and the chase
-  // through to the Lobby and the maze.
+  // success scene, then the Level 2 card, Jax bolting through the Dorm Hall,
+  // his corner of the Lobby and the door into the maze.
   for (let i = 0; i < PHOTO_COUNT; i++) itemState.collect(`dev-level3-priming-${i}`);
   titleScreen.hide();
   selectRoom('kaufmo', { onReady: (room) => talkToKaufmo(room.kaufmoApi, loadToken) });
@@ -693,6 +705,7 @@ function returnToHome({ toRoomPicker = false } = {}) {
   portals = [];
   focusedInteractable = null;
   interactPrompt.hidden = true;
+  mazeEncounter?.dispose();mazeEncounter=null;
   foundJax = false;
   reachedExit = false;
   caught = false;
@@ -1136,18 +1149,18 @@ function triggerCaineArrival() {
  * straight through to DialogueUI: onComplete for a finished conversation,
  * onCancel for one abandoned with Escape, onChoice for each option picked,
  * distressFor to shake/tint a line by how upset its speaker is (0-3),
- * onNode for each node as it's shown (to act out its `action`), and
- * startAt/stopAt to play only part of the script (see createDialogueEngine).
+ * onNode for each node as it's shown (to act out its `action`), nextFor
+ * to send the script somewhere it wouldn't route itself, and startAt/stopAt to play only part of the script (see createDialogueEngine).
  *
  * @param {string} key a DIALOGUE_SCRIPTS key
  * @param {{ lookAt?: THREE.Vector3, onChoice?: (option, nextNode) => void,
  *   onComplete?: () => void, onCancel?: () => void,
  *   distressFor?: (lineNode) => number, onNode?: (node) => void,
- *   startAt?: string, stopAt?: string }} [options]
+ *   nextFor?: (node) => string | undefined, startAt?: string, stopAt?: string }} [options]
  */
 let dialogueGeneration = 0;
 function playRoomDialogue(key, {
-  lookAt, onChoice, onComplete, onCancel, distressFor, lineFor, onNode, startAt, stopAt,
+  lookAt, onChoice, onComplete, onCancel, distressFor, lineFor, nextFor, onNode, startAt, stopAt,
 } = {}) {
   const entry = DIALOGUE_SCRIPTS[key];
   if (!entry || dialogueUI.isActive) return false;
@@ -1162,7 +1175,7 @@ function playRoomDialogue(key, {
   resetMoveState();
   if (lookAt) turnPomniTowards(lookAt);
   dialogueUI.play(entry.script, {
-    onChoice, onComplete: finish(onComplete), onCancel: finish(onCancel), distressFor, lineFor, startAt, stopAt,
+    onChoice, onComplete: finish(onComplete), onCancel: finish(onCancel), distressFor, lineFor, nextFor, startAt, stopAt,
     onNode: withHallwayCutscene(key, onNode),
   });
   return true;
@@ -1242,28 +1255,8 @@ function attachStoryInteractions(room, roomKey, token) {
       },
     });
   }
-  if (roomKey === 'maze' && room.jaxEncounter) {
-    const current = () => token === loadToken && currentRoomInfo === room && currentRoomKey === 'maze';
-    const interaction = {
-      ...room.jaxEncounter,
-      prompt: () => 'Check on Jax',
-      enabled: () => current() && mazeSearch.status !== 'expired'
-        && mazeGameplayAvailable(gameplayHUDContext()) && canReachMazeJax(),
-      interact() {
-        if (!current() || mazeSearch.status === 'expired'
-          || !mazeGameplayAvailable(gameplayHUDContext()) || !canReachMazeJax()) return;
-        const missing = MAZE_FINDABLES.filter(({ id }) => !mazeItems.hasCollected(id));
-        if (missing.length) {
-          showHint(`Still needed: ${missing.map(({ label }) => label).join(' and ')}. Find them and return to Jax before time runs out.`, 6500);
-          return;
-        }
-        updateMazeSearch(0);
-        showHint('Both keepsakes are here and the search clock has stopped. Jax’s final conversation is not implemented yet; Level 3 is not complete.', 8000);
-      },
-    };
-    room.interactables.push(interaction);
-    return;
-  }
+  // The final maze conversation is now automatic; keep its anchor for
+  // the upstream countdown, without adding the superseded E-only placeholder.
   if (!preLevel1Session || roomKey !== 'dorm') return;
   const control = room.hallDoors?.ribbit?.control;
   if (!control) return;
@@ -1376,18 +1369,26 @@ function talkToKaufmo(kaufmoApi, token) {
   // as Ribbit's/Caine's own faceTowards/setSpeaking — previously he just
   // stood there frozen through the whole conversation.
   kaufmoApi.faceTowards(player.position);
+  // Between conversations he's at his theory wall (kaufmoRoom.js
+  // createWallRoutine); a conversation takes him off it.
+  const room = currentRoomInfo;
+  const routine = room?.kaufmoRoutine;
+  let actHandIn = null; // acts out the photos for level2Return/level2Abstraction (see handInActor)
   const onNode = (node) => {
     const speaking = node.speaker === 'kaufmo';
     kaufmoApi.setSpeaking(speaking);
+    kaufmoApi.setListening(node.speaker === 'pomni');
     kaufmoApi.setPose(speaking ? (node.mood || 'neutral') : 'neutral');
+    actHandIn?.(node);
   };
-  const stopTalking = () => { kaufmoApi.setSpeaking(false); kaufmoApi.setPose('neutral'); };
+  const stopTalking = () => { kaufmoApi.setSpeaking(false); kaufmoApi.setListening(false); kaufmoApi.setPose('neutral'); };
   // The conversation has its own shot: the room's staging if it has one
   // (Pomni put on her mark, the camera at the bed's corner — see
   // kaufmoRoom.js talkShot), else a two-shot (see twoShotCamera). The
   // follow camera comes back when it ends, however it ends.
   const talk = (key, { onComplete, onCancel, distressFor }) => {
     if (dialogueUI.isActive) return false;
+    routine?.pause();
     const staging = currentRoomInfo?.talkShot;
     let faceThis = lookAt;
     if (staging) {
@@ -1402,18 +1403,23 @@ function talkToKaufmo(kaufmoApi, token) {
       stage.lookWithHead(staging.pomniHeadAt);
     }
     const shot = staging ? { position: staging.camera.clone(), target: staging.target.clone() } : twoShotCamera(lookAt);
-    const release = () => {
+    // Back to his wall as the camera cuts back, unless the scene ends the
+    // level: then he stays as it left him, behind the card.
+    const release = (backToWall) => {
       if (stageCamera === shot) stageCamera = null;
       if (staging) stage.lookWithHead(null);
+      if (backToWall && room === currentRoomInfo) routine?.resume();
     };
+    const endsLevel = key === 'level2Return' || key === 'level2Abstraction';
     const started = playRoomDialogue(key, {
       lookAt: faceThis,
       onNode,
       distressFor,
-      onComplete() { release(); return onComplete(); },
-      onCancel() { release(); onCancel(); },
+      onComplete() { release(!endsLevel); return onComplete(); },
+      onCancel() { release(key !== 'level2Abstraction'); onCancel(); },
     });
     if (started) stageCamera = shot;
+    else release(true);
     return started;
   };
 
@@ -1443,6 +1449,7 @@ function talkToKaufmo(kaufmoApi, token) {
   if (key === 'level2Complete' && !itemState.isDone()) key = 'level2Return';
   storyProgress.presentedPhotos(itemState.totalPresented());
   if (key === 'level2Return') openingAudio.playChime('handIn');
+  if (key === 'level2Return' || key === 'level2Abstraction') actHandIn = handInActor(kaufmoApi, room);
   const finished = () => {
     if (!valid()) return;
     if (key === 'level2Return' && !itemState.isDone()) {
@@ -1458,8 +1465,94 @@ function talkToKaufmo(kaufmoApi, token) {
     distressFor: (line) => line.distress ?? 0,
     onComplete() { stopTalking(); finished(); },
     // He's already had the photos: backing out can't undo what happens.
-    onCancel() { stopTalking(); if (key === 'level2Abstraction') finished(); },
+    // Out of the success scene, though, it plays again from the top.
+    onCancel() {
+      stopTalking();
+      if (key === 'level2Abstraction') finished();
+      else if (room?.handInPhotos) { room.handInPhotos.dispose(); room.handInPhotos = null; }
+    },
   });
+}
+
+/**
+ * Acts out the photos changing hands on the beats level2Return and
+ * level2Abstraction mark (their ids in dialogues.js): Pomni holds them
+ * out and Kaufmo takes them; then he kneels and spreads them over the
+ * floor, taps one, gathers them up and clutches them to his chest — or,
+ * short of enough, looks them over and lets them fall. Each cue sets the
+ * whole state it needs, so a beat skipped before its motion finished
+ * doesn't leave the next one wrong. Returns the onNode hook.
+ */
+function handInActor(kaufmoApi, room) {
+  room.handInPhotos?.dispose();
+  const urls = photoUrls(itemState.snapshot().presented);
+  const photos = createHandInPhotos(urls, {
+    kaufmo: kaufmoApi.kaufmo,
+    kaufmoHands: kaufmoApi.hands,
+    pomniHands: () => (pomniBones.LeftHand && pomniBones.RightHand ? [pomniBones.LeftHand, pomniBones.RightHand] : null),
+    floorY: kaufmoApi.kaufmo.position.y,
+  });
+  room.group.add(photos.group);
+  room.handInPhotos = photos;
+
+  let cue = 0;
+  // A step of the current cue, dropped if a later cue has already started.
+  const later = (seconds, step) => {
+    const mine = cue;
+    photos.after(seconds, () => { if (mine === cue) step(); });
+  };
+  const act = (name) => kaufmoApi.setActivity(name);
+  const handOver = () => {
+    void stage.gesture('handOver');
+    act('receive');
+    later(0.3, () => photos.setMode('pomni'));
+    later(1.0, () => photos.setMode('kaufmo'));
+  };
+  return (node) => {
+    switch (node.id) {
+      case 'handsOver':
+        cue++;
+        handOver();
+        later(1.5, () => act('spread'));
+        later(1.9, () => photos.setMode('floor'));
+        break;
+      case 'tapsPicture':
+        cue++;
+        act('tap');
+        photos.setMode('floor');
+        photos.tap(2);
+        break;
+      case 'gathersPictures':
+        cue++;
+        act('kneel');
+        photos.setMode('kaufmo');
+        later(0.7, () => { act('clutch'); photos.setMode('chest'); });
+        break;
+      case 'turnsBack':
+        cue++;
+        act('study');
+        photos.setMode('kaufmo');
+        break;
+      case 'clutchingPictures':
+        cue++;
+        act('clutch');
+        photos.setMode('chest');
+        break;
+      case 'holdsOut':
+        cue++;
+        handOver();
+        later(1.3, () => act('study'));
+        break;
+      case 'itDoesntClose':
+        cue++;
+        act(null);
+        photos.setMode('dropped');
+        break;
+      default:
+        // Done tapping: back to kneeling over them as he talks.
+        if (node.type === 'line' && kaufmoApi.activity === 'tap') act('kneel');
+    }
+  };
 }
 
 // Talking to someone frames them both: the camera stands off Pomni's right
@@ -1576,7 +1669,9 @@ const storyProgress = createStoryProgress({ objectives, isStorySession: () => pr
 // --- Level 3 maze keepsakes ---------------------------------------------
 // Not scored, just a hint on pickup — same shared-instance-survives-room-
 // changes lifecycle as itemState above.
+let mazeEncounter=null,lastMazeExitHint=0;
 const mazeItems = createMazeItems({
+  onChange(){currentRoomInfo?.jaxBoundary?.sync();takeCheckpoint();},
   onCollect: (id, count, total) => {
     const label = MAZE_FINDABLES.find((findable) => findable.id === id)?.label ?? 'something';
     showHint(`Found the ${label}. (${count}/${total})`);
@@ -1586,6 +1681,8 @@ const mazeSearch = createMazeSearch();
 let mazeAttemptSeed = null;
 let mazeClockWasPlayable = false;
 document.addEventListener('visibilitychange', () => { mazeClockWasPlayable = false; });
+
+const mazeHUD=createMazeObjectiveHUD({root:document.getElementById('maze-objective-hud'),items:mazeItems});
 
 // --- Saving and loading -------------------------------------------------
 // Checkpoints only: the game keeps a snapshot of the story so far, taken
@@ -1604,14 +1701,17 @@ const ROOM_NAMES = {
 };
 
 function takeCheckpoint() {
-  // Story runs only (not previews), once the opening's over, in a real room.
-  if (!preLevel1Session || restoringSave || !openingCompleted || !ROOM_NAMES[currentRoomKey]) return;
+  // Preserve story checkpoint rules; the raw maze review can also save its
+  // own Level 3 progression without replaying the preceding story.
+  const mazeCheckpoint=currentRoomKey==='maze';
+  if ((!preLevel1Session&&!mazeCheckpoint) || restoringSave || (!openingCompleted&&!mazeCheckpoint) || !ROOM_NAMES[currentRoomKey]) return;
   checkpoint = {
     room: currentRoomKey,
     from: currentRoomFrom,
     objectives: objectives.snapshot(),
     story: storyProgress.snapshot(),
     items: itemState.snapshot(),
+    maze: mazeItems.snapshot(),
     escape: snapshotEscapeThreshold(),
     morningDialoguePending,
     // Shown on the slot, so a save says what it was.
@@ -1634,6 +1734,7 @@ function loadGame(data) {
     objectives.restore(data.objectives);
     storyProgress.restore(data.story);
     itemState.restore(data.items);
+    mazeItems.restore(data.maze);
     restoreEscapeThreshold(data.escape);
     morningDialoguePending = Boolean(data.morningDialoguePending);
     openingCompleted = true;
@@ -1733,11 +1834,11 @@ document.getElementById('btn-save-slots-back').addEventListener('click', (event)
   if (savePanelFromTitle) titleOptions.hidden = false;
 });
 
-// The photo search times out before all five photos are delivered: a
-// "LEVEL 2 FAILED" card (see restartPhotoSearch) and a restart (new spots,
-// same objective, back to the Lobby) — not yet the real "abstraction"
-// fail effect, which is a later pass. Objective changes arm/disarm the
-// clock; a retry resets it explicitly because the objective stays active.
+// The photo search times out before the photos are delivered: Kaufmo runs
+// out of patience and abstracts (see kaufmoOutOfTime), and Level 2 starts
+// again from the beginning. Objective changes arm/disarm the clock; a
+// retry after too few photos resets it explicitly because the objective
+// stays active.
 // Includes delivery through Dorm Hall; see docs/story-flow.md for timing checks.
 const SEARCH_TIMER_SECONDS = 240;
 let searchTimeLeft = null; // seconds left, or null while it isn't the active objective
@@ -1764,16 +1865,8 @@ function canReachMazeJax() {
 }
 
 function mazeSearchInstructions() {
-  if (mazeSearch.status === 'reached') {
-    return { title: 'Jax reached — search finished',
-      detail: 'The clock has stopped. Press E near Jax to check on him. His final conversation and the way out are not implemented; Level 3 is not complete.' };
-  }
-  const allItems = MAZE_FINDABLES.every(({ id }) => mazeItems.hasCollected(id));
-  return allItems
-    ? { title: 'Bring the keepsakes to Jax',
-      detail: 'Approach Jax directly, close enough to see him, to stop the search clock. Press E to check on him. The exit marker is not a goal.' }
-    : { title: 'Find Jax’s keepsakes',
-      detail: 'Find the bowling ball and hot chocolate mug. Press E to pick them up, then approach Jax. The exit marker is not a goal.' };
+  return {title:mazeItems.jaxComplete?'Reach the exit':mazeItems.hasAllRequired()?'Find Jax':"Find Jax's missing objects",
+    detail:mazeItems.jaxComplete?'The conversation is complete. Leave the maze.':mazeItems.hasAllRequired()?'Approach Jax with a clear view to begin the conversation.':'Find the bowling ball and hot chocolate mug, then approach Jax before time runs out.'};
 }
 
 function updateMazeSearch(deltaSeconds) {
@@ -1793,21 +1886,28 @@ function updateMazeSearch(deltaSeconds) {
     // the team's review — see dialogues.js's level2PayoffDialogue beat
     // that sent her in here. This is just a placeholder hint in the
     // meantime, not a stand-in for that scene.
-    showHint('Jax reached with both keepsakes — search clock stopped. Press E to check on him. His final conversation is not implemented yet.', 8000);
+    showHint('Jax reached with both keepsakes. Approach his stage to begin the conversation.', 5000);
   } else if (result === 'expired') {
     restartMazeSearch();
   }
 }
 
-async function restartMazeSearch() {
+function restartMazeSearch() {
+  return retryMaze('LEVEL 3 FAILED', 'Time’s up — find both keepsakes and reach Jax before the countdown ends.');
+}
+
+/**
+ * Level 3 failed (out of time, or caught by a gloink): the fail card, then
+ * a fresh attempt — a new maze, both keepsakes back in it, a full clock.
+ */
+async function retryMaze(title, subtitle) {
   const token = loadToken, session = storySessionId, memoryTicket = caineMemory.revision;
   const failedSeed = mazeAttemptSeed;
   const continued = await showLevelComplete(
-    'LEVEL 3 FAILED',
-    'Time’s up — find both keepsakes and reach Jax before the countdown ends.',
+    title, subtitle,
     { resume: false, chime: 'fail', buttonLabel: 'Retry', memoryRetry: 'maze' }
   );
-  if (!continued || token !== loadToken || currentRoomKey !== 'maze' || mazeSearch.status !== 'expired') return;
+  if (!continued || token !== loadToken || currentRoomKey !== 'maze') return;
   const seed = Math.floor(Math.random() * 0x100000000);
   resetMazeAttempt(seed === failedSeed ? (seed + 1) >>> 0 : seed);
   const room = await missionApi.travel('maze', { from: null });
@@ -1823,7 +1923,7 @@ function updateSearchTimer(deltaSeconds) {
   searchTimeLeft -= deltaSeconds;
   if (searchTimeLeft <= 0) {
     searchTimeLeft = null;
-    restartPhotoSearch();
+    void kaufmoOutOfTime();
   }
 }
 
@@ -1836,6 +1936,82 @@ async function restartPhotoSearch() {
   );
   if (!continued || token !== loadToken) return; // the player had already moved on by the time this landed
   await resetPhotoSearch(memoryTicket);
+}
+
+/**
+ * Time's up before Pomni is back: a cutaway to Kaufmo alone in his room
+ * (level2TimeUpDialogue), the shared abstraction effect following his
+ * distress line by line until he abstracts on the last beat. Then Game
+ * Over, and Level 2 from the beginning (restartLevel2). Escape skips to
+ * the end: he's gone either way.
+ */
+async function kaufmoOutOfTime() {
+  const session = storySessionId;
+  const room = currentRoomKey === 'kaufmo' ? currentRoomInfo : await missionApi.travel('kaufmo', { from: null });
+  if (!room?.kaufmoApi || session !== storySessionId) return;
+  const token = loadToken;
+  const memoryTicket = caineMemory.revision;
+  const { kaufmoApi, talkShot: staging } = room;
+  const { kaufmo, abstraction } = kaufmoApi;
+  resetMoveState();
+  room.kaufmoRoutine?.pause(); // off his wall, onto his mark
+  // Just him: she isn't back yet.
+  player.visible = false;
+  if (staging) {
+    kaufmo.position.x = staging.kaufmo.x;
+    kaufmo.position.z = staging.kaufmo.z;
+    kaufmo.updateMatrixWorld(true);
+    kaufmoApi.faceTowards(staging.kaufmoLooksAt);
+  }
+  stageCamera = {
+    position: staging?.camera.clone() ?? camera.position.clone(),
+    target: kaufmo.position.clone().setY(kaufmo.position.y + 1.2),
+  };
+
+  let over = false;
+  const gameOver = async () => {
+    if (over || token !== loadToken) return;
+    over = true;
+    kaufmoApi.setSpeaking(false);
+    abstraction.setProgress(1);
+    abstraction.setDistress(1, { immediate: true });
+    const retry = await showLevelComplete(
+      'Kaufmo has abstracted.',
+      'Time ran out before you got the photos back to him. Level 2 starts again from the beginning.',
+      { resume: false, chime: 'fail', buttonLabel: 'Retry Level 2', memoryRetry: 'level2' },
+    );
+    if (retry && token === loadToken) {
+      await restartLevel2();
+      caineMemory.recordRetry('level2', memoryTicket);
+    }
+  };
+  const started = playRoomDialogue('level2TimeUp', {
+    distressFor: (line) => line.distress ?? 0,
+    onNode(node) {
+      // A line without a level leaves him as upset as the last one.
+      if (node.distress !== undefined) abstraction.setDistress(distressFromDialogue(node.distress));
+      const speaking = node.speaker === 'kaufmo';
+      kaufmoApi.setSpeaking(speaking);
+      kaufmoApi.setPose(speaking ? (node.mood || 'neutral') : 'neutral');
+      // Holds the beat (its text hidden) while he comes apart.
+      if (node.id === 'abstracts') return abstraction.abstract();
+    },
+    onComplete: gameOver,
+    onCancel: gameOver,
+  });
+  if (!started) void gameOver();
+}
+
+/**
+ * Level 2 from its first beat, as if Pomni had just left Ribbit's room:
+ * Kaufmo hurrying past in the Dorm Hall, then his introduction, then a
+ * fresh search with new spots and a full clock. Level 1 is kept.
+ */
+async function restartLevel2() {
+  itemState.reset();
+  if (!storyProgress.restartLevel2()) return;
+  // Arriving from Ribbit's room plays the hallway pass-by (see selectRoom).
+  await missionApi.travel('dorm', { from: 'ribbit' });
 }
 
 /** A fresh photo search: new spots, a full clock and hints, back in the Lobby. */
@@ -1914,7 +2090,7 @@ function updateMazeItemsCounter(context) {
   const visible = mazeGameplayAvailable(context);
   if (mazeItemsCounter.hidden === visible) mazeItemsCounter.hidden = !visible;
 
-  const text = `Items found: ${mazeItems.totalFound()}/${MAZE_FINDABLES.length}`;
+  const text = `Objects found: ${mazeItems.totalFound()}/${MAZE_FINDABLES.length}`;
   if (mazeItemsCounter.textContent !== text) mazeItemsCounter.textContent = text;
   const timerVisible = visible && mazeSearch.status === 'searching';
   if (mazeSearchTimer.hidden === timerVisible) mazeSearchTimer.hidden = !timerVisible;
@@ -2004,6 +2180,7 @@ function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
   portals = [];
   focusedInteractable = null;
   interactPrompt.hidden = true;
+  mazeEncounter?.dispose();mazeEncounter=null;
   foundJax = false;
   reachedExit = false;
   caught = false;
@@ -2015,7 +2192,7 @@ function roomLoadOptions(roomKey, { from, preview, openingMode }) {
   return {
     from, playDialogue: playRoomDialogue, preview, endLevel, stage, items: itemState, travel: travelTo,
     objectives, showLevelComplete, playChime: openingAudio.playChime, mazeItems,
-    seed: roomKey === 'maze' ? mazeAttemptSeed ?? devMazeSeed : undefined,
+    seed: roomKey === 'maze' ? mazeItems.ensureSeed(mazeAttemptSeed ?? devMazeSeed) : undefined,
     mazeDoor: roomKey !== 'tadc' ? undefined
       : storyProgress.chasingJax ? 'jax' : storyProgress.mazeOpen ? 'open' : null,
     jaxHallway: roomKey === 'dorm' && storyProgress.findingJax,
@@ -2118,6 +2295,14 @@ function applyLoadedRoom({
   roomInteractables = currentRoomInfo.interactables;
   currentRoom = group;
   currentRoomKey = roomKey;
+  if(roomKey==='maze'){
+    mazeEncounter=createMazeEncounter({items:mazeItems,
+      playDialogue:handlers=>playRoomDialogue('level3JaxFinal',handlers),
+      onEngage:()=>currentRoomInfo?.jaxApi.engageDistressed(player.position),
+      onRelease:()=>currentRoomInfo?.jaxApi.engageDistressed(null),
+    });
+    foundJax=mazeItems.jaxComplete;
+  }
   ambience.setRoom(roomKey);
   controlsTutorial.enterRoom(roomKey);
   player.visible = true;
@@ -2136,9 +2321,9 @@ function applyLoadedRoom({
   // GLB rooms' meshes: the wall probes and floor raycast only test the
   // few entries whose boxes the query overlaps, padded by the player
   // radius so a mesh the player is touching is never skipped.
-  collisionMeshes = (roomCollisionMeshes ?? []).map((entry) => ({
-    mesh: entry.mesh,
-    box: entry.box,
+  // The room's own entries, not copies: her bedroom's wall cut-out swaps
+  // an entry's mesh when the door's opened, and that has to reach here.
+  collisionMeshes = (roomCollisionMeshes ?? []).map((entry) => Object.assign(entry, {
     paddedBox: entry.box.clone().expandByScalar(PLAYER_RADIUS),
     dynamic: entry.dynamic ?? false,
   }));
@@ -2197,6 +2382,7 @@ function applyLoadedRoom({
       mazeAttemptSeed = currentRoomInfo.mazeSeed;
       mazeSearch.start();
     }
+    if(mazeItems.jaxComplete)mazeSearch.tick(0,{playable:true,allItems:true,atJax:true});
     foundJax = mazeSearch.status === 'reached';
   }
   overlay.classList.remove('loading');
@@ -2300,6 +2486,7 @@ const move = { forward: false, back: false, left: false, right: false, sprint: f
 let jumpQueued = false;
 let airborne = false;
 let verticalVelocity = 0;
+let jumpsUsed = 0;
 
 window.addEventListener('keydown', (e) => {
   if (activeCinematic()?.active) {
@@ -2652,6 +2839,118 @@ function resolveWallCollisions(position) {
 }
 
 /**
+ * Swept circle-vs-box hit test for the maze's walls — resolveWallCollisions'
+ * depenetrate-after-the-fact check only catches a step that *lands* within
+ * a radius of a box; a fast enough step (sprinting, a frame hitch) can clear
+ * a thin wall's whole footprint in one go and never land there at all. This
+ * sweeps the full step first, each box pre-expanded by PLAYER_RADIUS (the
+ * player is a point moving through Minkowski-expanded boxes), so it catches
+ * that case the way firstWallHit's raycast already does for mesh rooms.
+ */
+function firstColliderHit(position, direction, distance) {
+  const feetY = position.y - PLAYER_HEIGHT;
+  let nearest = null;
+  const consider = (t, nx, nz) => {
+    if (t < 0 || t > distance) return;
+    if (nearest && t >= nearest.distance) return;
+    nearest = { distance: t, nx, nz };
+  };
+  for (const box of colliders) {
+    if (box.max.y <= feetY + STEP_HEIGHT || box.min.y >= position.y) continue;
+
+    // Already touching this box right now? Only a block if the step
+    // actually heads further in (closest-point normal, same test
+    // resolveWallCollisions uses) — mirrors firstWallHit's raycast, which
+    // simply can't hit a surface behind its own origin. Without this,
+    // moving *away* from a wall you're resting against would read as
+    // blocked too, freezing movement next to any wall.
+    {
+      const closestX = THREE.MathUtils.clamp(position.x, box.min.x, box.max.x);
+      const closestZ = THREE.MathUtils.clamp(position.z, box.min.z, box.max.z);
+      const dx = position.x - closestX, dz = position.z - closestZ;
+      const distSq = dx * dx + dz * dz;
+      if (distSq < PLAYER_RADIUS * PLAYER_RADIUS && distSq > 1e-9) {
+        const dist = Math.sqrt(distSq);
+        const nx = dx / dist, nz = dz / dist;
+        if (-(direction.x * nx + direction.z * nz) > 1e-4) consider(0, nx, nz);
+      }
+    }
+
+    // Not yet touching: sweep the step against the box's faces, each
+    // expanded by PLAYER_RADIUS (the player as a point moving through a
+    // Minkowski-expanded box) — but a box's *expanded corners* are square,
+    // not the rounded quarter-circle a real swept circle traces, so a
+    // slab hit landing past the box's actual edge (i.e. near a corner, not
+    // a flat face) is swapped for a proper swept-circle-vs-corner-point
+    // hit instead. Without that, the square overshoot can wall off a
+    // walkable gap right next to a corner — exactly where two walls meet.
+    let enter = -Infinity, exit = distance, axis = null, sign = 0, outsideSlab = false;
+    for (const [o, d, lo, hi, name] of [
+      [position.x, direction.x, box.min.x - PLAYER_RADIUS, box.max.x + PLAYER_RADIUS, 'x'],
+      [position.z, direction.z, box.min.z - PLAYER_RADIUS, box.max.z + PLAYER_RADIUS, 'z'],
+    ]) {
+      if (Math.abs(d) < 1e-9) {
+        if (o < lo || o > hi) outsideSlab = true;
+        continue;
+      }
+      const near = d > 0 ? (lo - o) / d : (hi - o) / d;
+      const far = d > 0 ? (hi - o) / d : (lo - o) / d;
+      if (near > enter) { enter = near; axis = name; sign = d > 0 ? -1 : 1; }
+      if (far < exit) exit = far;
+    }
+    if (outsideSlab || !axis || enter < 0 || enter > exit) continue;
+
+    const entryOther = axis === 'x' ? position.z + direction.z * enter : position.x + direction.x * enter;
+    const [oMin, oMax] = axis === 'x' ? [box.min.z, box.max.z] : [box.min.x, box.max.x];
+    if (entryOther >= oMin && entryOther <= oMax) {
+      consider(enter, axis === 'x' ? sign : 0, axis === 'z' ? sign : 0);
+      continue;
+    }
+    const cornerOther = entryOther < oMin ? oMin : oMax;
+    const cornerX = axis === 'x' ? (sign > 0 ? box.max.x : box.min.x) : cornerOther;
+    const cornerZ = axis === 'x' ? cornerOther : (sign > 0 ? box.max.z : box.min.z);
+    const ox = position.x - cornerX, oz = position.z - cornerZ;
+    const b = direction.x * ox + direction.z * oz;
+    const c = ox * ox + oz * oz - PLAYER_RADIUS * PLAYER_RADIUS;
+    const discriminant = b * b - c;
+    if (discriminant < 0) continue;
+    const t = -b - Math.sqrt(discriminant);
+    if (t < 0) continue;
+    const hx = position.x + direction.x * t - cornerX, hz = position.z + direction.z * t - cornerZ;
+    const hd = Math.hypot(hx, hz) || 1;
+    consider(t, hx / hd, hz / hd);
+  }
+  if (!nearest) return null;
+  hitNormal.set(nearest.nx, 0, nearest.nz);
+  return { distance: nearest.distance, normal: hitNormal };
+}
+
+/** The colliders-only rooms' (the maze) equivalent of moveWithCollisions:
+ * sweeps the frame's full step against the Box3 walls before applying it,
+ * instead of moving the whole step and depenetrating after the fact. */
+function moveWithBoxCollisions(player, direction, distance) {
+  const hit = firstColliderHit(player.position, direction, distance);
+  if (!hit) {
+    player.position.addScaledVector(direction, distance);
+    return;
+  }
+  player.position.addScaledVector(direction, hit.distance);
+
+  const leftover = distance - hit.distance;
+  if (leftover < 1e-4) return;
+
+  // Retry the leftover along the wall face, same as moveWithCollisions.
+  slideDelta.set(direction.x * leftover, 0, direction.z * leftover);
+  slideDelta.addScaledVector(hit.normal, -slideDelta.dot(hit.normal));
+  const slideLength = slideDelta.length();
+  if (slideLength < 1e-4) return;
+  slideDelta.divideScalar(slideLength);
+
+  const slideHit = firstColliderHit(player.position, slideDelta, slideLength);
+  player.position.addScaledVector(slideDelta, slideHit ? slideHit.distance : slideLength);
+}
+
+/**
  * Casts a short horizontal ray from the player and returns the first hit
  * that is genuinely wall-like, or null. Faces tilted mostly up/down are
  * ramps and ledges — the floor follow already handles those, so they must
@@ -2804,9 +3103,10 @@ function settleOnGround(player) {
  * body probes with them, which is what lets her clear a ledge mid-air.
  */
 function applyJump(deltaSeconds) {
-  if (jumpQueued && !airborne) {
+  if (jumpQueued && jumpsUsed < 2) {
     airborne = true;
     verticalVelocity = JUMP_SPEED;
+    jumpsUsed++;
   }
   jumpQueued = false;
   if (!airborne) return;
@@ -2817,6 +3117,7 @@ function applyJump(deltaSeconds) {
 function land() {
   airborne = false;
   verticalVelocity = 0;
+  jumpsUsed = 0;
 }
 
 /**
@@ -3206,6 +3507,7 @@ function dropRoomPreload() {
 function showRoomBehindDoor(entry, show) {
   entry.peeking = show;
   const { group, hallLink } = entry.result;
+  if (hallLink.door) hallLink.door.visible = !show;
   if (!show) {
     group.removeFromParent();
     bedroomClip.copy(KEEP_ALL);
@@ -3306,12 +3608,13 @@ function walkIntoHall(link) {
   // Still getting ready: the widened bounds hold her at the threshold.
   if (!roomReady(entry)) return;
 
-  // The hall's own copy of her door is shut, so she comes out just clear
-  // of it — it reads as having closed behind her.
+  // She comes out just clear of the doorway, and the hall's copy of her
+  // door stands open into her room, just as she left her own.
   const past = link.depthPast(player.position);
   const pose = carryPose(link.toHall, link.yawToHall);
   pose.feet.addScaledVector(link.outward, Math.max(0, HALL_DOOR_CLEARANCE - past));
   enterPreloadedRoom(entry, pose);
+  currentRoomInfo.hallDoors?.pomni?.control.open({ immediate: true });
   armCaineArrival();
 }
 
@@ -3328,6 +3631,7 @@ function walkIntoPomniRoom(entry, doorway) {
   const pose = carryPose(link.toHall.clone().invert(), -link.yawToHall);
   // Just clear of her (open) door's leaf and the doorway, inside.
   pose.feet.addScaledVector(link.outward, -Math.max(0, BEDROOM_DOOR_CLEARANCE - past));
+  if (link.door) link.door.visible = true; // the hall's copy goes with the hall
   enterPreloadedRoom(entry, pose);
   // Looking back out, the hall's right there through the open door.
   currentRoom.userData.dormHallPreview?.setVisible(true);
@@ -3354,14 +3658,21 @@ function travelTo(roomKey) {
 }
 
 function checkTriggers(player) {
-  if (currentRoomKey !== 'maze' || caught) return;
+  if (currentRoomKey !== 'maze' || caught || reachedExit) return;
 
   for (const hazard of hazards) {
     const dx = player.position.x - hazard.mesh.position.x;
     const dz = player.position.z - hazard.mesh.position.z;
     if (Math.hypot(dx, dz) < hazard.radius + PLAYER_RADIUS) {
       caught = true;
-      endLevel('Abstracted!', 'A patrolling hazard caught you — try again.');
+      // A hazard catch fails the attempt outright, same as the countdown
+      // expiring: retryMaze shows the fail card, then reseeds (a fresh
+      // layout, both keepsakes back) and restarts the full countdown.
+      const title = hazard.mesh.userData?.isGloink ? 'Gloinked!' : 'Abstracted!';
+      const subtitle = hazard.mesh.userData?.isGloink
+        ? 'A patrolling gloink caught you — try again.'
+        : 'A patrolling hazard caught you — try again.';
+      void retryMaze(title, subtitle);
       return;
     }
   }
@@ -3369,14 +3680,37 @@ function checkTriggers(player) {
   if (!triggers) return;
   triggerProbe.set(player.position.x, floorY + 0.5, player.position.z);
 
+
   updateMazeSearch(0);
-  const atExit = triggers.exit.containsPoint(triggerProbe);
-  if (atExit && !reachedExit) {
-    showHint(foundJax
-      ? 'This is a placeholder maze exit, not the circus exit. Jax’s final conversation and the way out are not implemented yet.'
-      : 'This is a placeholder maze exit, not a goal. Find both keepsakes and approach Jax directly before time runs out.', 6500);
+  if (triggers.exit.containsPoint(triggerProbe)) {
+    if(!mazeItems.hasAllRequired()||!mazeItems.jaxComplete){
+      const now=performance.now();
+      if(!lastMazeExitHint||now-lastMazeExitHint>3000){showHint(mazeItems.hasAllRequired()?"Find Jax and finish your conversation before leaving.":"Find Jax's missing bowling ball and hot chocolate mug first.");lastMazeExitHint=now;}
+      return;
+    }
+    foundJax=true;
+    reachedExit = true;
+    endLevel(
+      'Maze Complete!',
+      foundJax ? 'You found Jax and the exit.' : 'You reached the exit — but never found Jax.',
+    );
   }
-  reachedExit = atExit;
+}
+
+/** Automatic Last Act approach; no E press or broad found-Jax trigger. */
+function updateMazeFinalEncounter(){
+  if(currentRoomKey!=='maze'||!mazeEncounter||!currentRoomInfo?.jaxAnchor)return;
+  const anchor=currentRoomInfo.jaxAnchor;
+  const inRange=Math.hypot(player.position.x-anchor.x,player.position.z-anchor.z)<=2.35
+    &&Math.abs(player.position.y-PLAYER_HEIGHT-anchor.y)<0.65;
+  const eligible=mazeSearch.status!=='expired'&&isLocked&&readyToPlay&&!paused&&!dialogueUI.isActive&&!stageBusy()&&!activeCutscene&&!activeCinematic()?.active&&!activeJaxPass?.active&&!activeOpening?.active;
+  let visible=false;
+  if(inRange&&eligible&&mazeItems.hasAllRequired()){
+    const origin=player.position.clone().add(new THREE.Vector3(0,-0.1,0)),target=anchor.clone().setY(anchor.y+1.6),direction=target.sub(origin),distance=direction.length();
+    const ray=new THREE.Ray(origin,direction.normalize()),hit=new THREE.Vector3();
+    visible=!colliders.some(box=>ray.intersectBox(box,hit)&&origin.distanceTo(hit)<distance-0.03);
+  }
+  mazeEncounter.update({inRange,visible,eligible});
 }
 
 function updateMovement(deltaSeconds) {
@@ -3399,6 +3733,8 @@ function updateMovement(deltaSeconds) {
     const targetYaw = Math.atan2(wishDirection.x, wishDirection.z);
     pomni.rotation.y = dampAngle(pomni.rotation.y, targetYaw, TURN_SHARPNESS, deltaSeconds);
   }
+  // Standing still, she keeps facing whichever way she last walked: looking
+  // around with the mouse moves only the camera, never her.
 
   const frameStartX = player.position.x;
   const frameStartZ = player.position.z;
@@ -3442,8 +3778,16 @@ function updateMovement(deltaSeconds) {
     // Jumping straight up never runs acceptMove, so land her here.
     if (airborne && !settleOnGround(player)) land();
   } else {
-    player.position.addScaledVector(moveRight, velocity.x).addScaledVector(moveForward, -velocity.z);
+    moveDelta.set(0, 0, 0).addScaledVector(moveRight, velocity.x).addScaledVector(moveForward, -velocity.z);
+    const boxDistance = moveDelta.length();
+    if (boxDistance > 1e-6) {
+      moveDelta.divideScalar(boxDistance);
+      moveWithBoxCollisions(player, moveDelta, boxDistance);
+    }
 
+    // Belt-and-braces depenetration for any residual overlap (e.g. a wall
+    // that moved into the player, or floating-point slack at a corner);
+    // the sweep above is what stops sprinting from clearing a wall outright.
     resolveWallCollisions(player.position);
 
     if (bounds) {
@@ -3455,6 +3799,8 @@ function updateMovement(deltaSeconds) {
       }
     }
   }
+
+  currentRoomInfo?.jaxBoundary?.constrainMotion({x:frameStartX,z:frameStartZ},player.position,PLAYER_RADIUS);
 
   // Animate from how far she actually got, so walking into a wall doesn't bob.
   const moved = Math.hypot(player.position.x - frameStartX, player.position.z - frameStartZ);
@@ -3485,8 +3831,9 @@ function updatePomniWalk(dt, speed) {
   if (paused) dt = 0;
   if (pomniMixer) {
     pomniSpeaking?.remove();
+    pomniJump?.remove();
     animSpeed = THREE.MathUtils.damp(animSpeed, speed, 12, dt);
-    if (animSpeed < 0.2) {
+    if (airborne || animSpeed < 0.2) {
       playAction('idle');
     } else if (animSpeed > RUN_THRESHOLD && pomniActions.run) {
       playAction('run');
@@ -3497,16 +3844,20 @@ function updatePomniWalk(dt, speed) {
     }
     pomniMixer.update(dt);
     applyStagePose(dt);
+    pomniJump?.update(dt, airborne, verticalVelocity, jumpsUsed, animSpeed);
     pomniSpeaking?.update(dt, dialogueUI.currentSpeaker === 'pomni' && player.visible
-      && !activeOpening?.active && !stageWalk && !stageGesture && stageSeatY === null && animSpeed < .2);
+      && !activeOpening?.active && !stageWalk && !stageGesture && stageSeatY === null && animSpeed < .2,
+    dialogueUI.currentMood);
     return;
   }
 
-  walkAmount = THREE.MathUtils.damp(walkAmount, speed > 0.1 ? 1 : 0, 10, dt);
+  pomniJump?.remove();
+  walkAmount = THREE.MathUtils.damp(walkAmount, !airborne && speed > 0.1 ? 1 : 0, 10, dt);
   walkPhase += speed * dt * STEPS_PER_METRE * Math.PI;
 
   pomni.position.y = -PLAYER_HEIGHT + Math.abs(Math.sin(walkPhase)) * WALK_BOB_HEIGHT * walkAmount;
   pomni.rotation.z = Math.sin(walkPhase) * WALK_SWAY * walkAmount;
+  pomniJump?.update(dt, airborne, verticalVelocity, jumpsUsed, speed);
 }
 
 /** Cross-fades from whatever Pomni is playing to the named clip. */
@@ -3528,6 +3879,11 @@ const STAGE_WALK_SPEED = 1.6;   // m/s: an unhurried walk
 const KNOCK_DURATION = 1.4;     // seconds: raise, three taps, lower
 const KNOCK_TAPS = 3;
 const ARM_OUT_DURATION = 2.6;   // seconds: arm out to stop someone, held, lowered
+// Handing something over: both hands out in front of her, together,
+// held while it's taken (the photos, see handInActor), then lowered.
+// Seconds.
+const HAND_OVER = { raise: 0.45, hold: 0.8, lower: 0.5 };
+const HAND_OVER_DURATION = HAND_OVER.raise + HAND_OVER.hold + HAND_OVER.lower;
 const SEAT_CLEARANCE = 0.06;    // her hips this far above the seat
 const SIT_SHARPNESS = 6;
 
@@ -3571,7 +3927,7 @@ const stage = {
     });
   },
 
-  /** Plays a gesture on top of her idle: 'knock' (calls onTap at each rap) or 'armOut'. */
+  /** Plays a gesture on top of her idle: 'knock' (calls onTap at each rap), 'handOver' or 'armOut'. */
   gesture(name, { onTap } = {}) {
     stageGesture?.resolve(false);
     return new Promise((resolve) => {
@@ -3701,8 +4057,9 @@ function applyHeadLook(dt) {
  * Layers the staged gesture/seat on the clip pose updatePomniWalk just
  * played (see bendBone for the axes). Knock: right arm raised forward,
  * forearm rapping KNOCK_TAPS times. Arm out: the same arm held out nearly
- * straight, to stop whoever's in front of her. Sit: hips lowered onto the
- * seat, thighs forward, shins hanging.
+ * straight, to stop whoever's in front of her. Hand over: both hands out
+ * together, palms up. Sit: hips lowered onto the seat, thighs forward,
+ * shins hanging.
  */
 function applyStagePose(dt) {
   sitAmount = THREE.MathUtils.damp(sitAmount, stageSeatY === null ? 0 : 1, SIT_SHARPNESS, dt);
@@ -3741,7 +4098,19 @@ function applyStagePose(dt) {
     bendBone(pomniBones.RightArm, pomni, SIDEWAYS, -1.35 * raise);
     bendBone(pomniBones.RightForeArm, pomni, SIDEWAYS, -0.15 * raise);
   }
-  if (gesture.time >= (gesture.name === 'armOut' ? ARM_OUT_DURATION : KNOCK_DURATION)) {
+  if (gesture.name === 'handOver') {
+    const t = gesture.time;
+    const raise = THREE.MathUtils.smoothstep(t, 0, HAND_OVER.raise)
+      * (1 - THREE.MathUtils.smoothstep(t, HAND_OVER_DURATION - HAND_OVER.lower, HAND_OVER_DURATION));
+    for (const [side, sign] of [['Left', 1], ['Right', -1]]) {
+      bendBone(pomniBones[`${side}Arm`], pomni, SIDEWAYS, -0.95 * raise);
+      bendBone(pomniBones[`${side}ForeArm`], pomni, SIDEWAYS, -0.45 * raise);
+      bendBone(pomniBones[`${side}ForeArm`], pomni, UP, -sign * 0.45 * raise); // in toward the other hand
+      bendBone(pomniBones[`${side}Hand`], pomni, SIDEWAYS, 0.4 * raise); // palms up, flat
+    }
+  }
+  const duration = { handOver: HAND_OVER_DURATION, armOut: ARM_OUT_DURATION }[gesture.name] ?? KNOCK_DURATION;
+  if (gesture.time >= duration) {
     stageGesture = null;
     gesture.resolve(true);
   }
@@ -3891,10 +4260,15 @@ function nearestInRange(available = interactables) {
 
 /** Chest-height ray from Pomni to anchorPosition, ignoring the target's own meshes. */
 function hasLineOfSight(interactable) {
-  // Head to head height: furniture between them (a desk, a rocking horse)
-  // shouldn't hide someone standing right there; walls still do.
+  // Head to head height by default: furniture between them (a desk, a
+  // rocking horse) shouldn't hide someone standing right there; walls
+  // still do. That default assumes the anchor is a person's feet, though —
+  // a floor-level prop (a dropped photo, a maze keepsake) gives its own
+  // sightHeight instead, or checking a point ~1.6m above a 3cm-tall photo
+  // would read as "blocked" under any overhang/shelf the photo itself
+  // sits in plain view under.
   sightOrigin.set(player.position.x, player.position.y - 0.1, player.position.z);
-  sightTarget.set(anchorPosition.x, anchorPosition.y + PLAYER_HEIGHT - 0.1, anchorPosition.z);
+  sightTarget.set(anchorPosition.x, anchorPosition.y + (interactable.sightHeight ?? PLAYER_HEIGHT - 0.1), anchorPosition.z);
   sightDirection.subVectors(sightTarget, sightOrigin);
   const distance = sightDirection.length();
   if (distance < 1e-6) return true;
@@ -3940,7 +4314,10 @@ function animate() {
   fastForwardCutscenes();
   if (!paused) {
     updateMovers(delta);
-    if (!activeOpening?.active) roomUpdate?.(delta, player.position);
+    // playerActive: she's actually in play, so maze Gloinks may see her.
+    if (!activeOpening?.active) roomUpdate?.(delta, player.position, {
+      playerActive: isLocked && readyToPlay && !dialogueUI.isActive && !activeCutscene && !stageBusy(),
+    });
     refreshDynamicColliders();
   }
   if (!paused && stageDelay) {
@@ -3985,6 +4362,7 @@ function animate() {
   // crossing from completing between two renders on slower machines.
   if (!paused) activeJaxPass?.update(Math.min(rawDelta, .1));
   minimap.update(player.position.x, player.position.z, cameraYaw);
+  updateMazeFinalEncounter();
   updateInteractionFocus();
   const hudContext = gameplayHUDContext();
   updateMemoryCaption(delta, hudContext);
@@ -3993,10 +4371,8 @@ function animate() {
   const photoReturn = objectives.active?.id === 'collect-photos' && itemState.totalFound() >= PHOTO_COUNT
     ? { title: 'Return to Kaufmo', detail: 'Go through the Dorm Hall to his room. Press E on Kaufmo to deliver the photos before time runs out.' }
     : objectives.active;
-  const mazeHUD = currentRoomKey === 'maze';
-  objectiveHUD.update(mazeHUD ? { ...hudContext, session: true,
-    menu: hudContext.menu || !savePanel.hidden || document.hidden } : hudContext,
-    roomShowsMinimap(currentRoomKey), mazeHUD ? mazeSearchInstructions() : photoReturn);
+  objectiveHUD.update({...hudContext,room:currentRoomKey==='maze'?null:hudContext.room}, roomShowsMinimap(currentRoomKey), photoReturn);
+  mazeHUD.update(hudContext,currentRoomKey);
   tutorialHUD.update(hudContext, focusedBedroomDoor());
   updateMazeItemsCounter(hudContext);
   updatePictureCounter();
@@ -4033,7 +4409,7 @@ function roomShowsMinimap(roomKey) {
 }
 
 function focusedBedroomDoor() {
-  return currentRoomKey === 'pomni' && focusedInteractable?.prompt() === 'Exit to Hallway';
+  return currentRoomKey === 'pomni' && Boolean(focusedInteractable?.bedroomExit);
 }
 
 /** Development-only A/B review: no gameplay/input settings or production API. */

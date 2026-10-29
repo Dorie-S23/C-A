@@ -142,18 +142,20 @@ try {
   await chase(() => window.__chase.selectRoom('dorm', { from: 'kaufmo' }));
   await readyRoom('dorm');
   let h = await hall();
-  assert.ok(h && !h.jaxShown && !h.ribbitVisible, JSON.stringify(h));
+  assert.ok(h && h.jaxShown && !h.jaxRunning && !h.ribbitVisible, JSON.stringify(h));
   await page.waitForTimeout(600);
   assert.equal((await state()).dialogueActive, false, 'the scene waits for the player to have control');
+  assert.equal((await hall()).jaxRunning, false, 'so does Jax, down the hall');
   await chase(() => window.__chase.lock());
   await until(async () => (await hall()).jaxRunning, 'Jax to bolt');
-  h = await hall();
-  assert.ok(h.jaxShown && (await state()).stagedCamera, JSON.stringify(h));
-  await page.waitForTimeout(1500);
+  assert.ok((await state()).stagedCamera);
+  await page.waitForTimeout(1300);
   await shot('1-hall-bolt');
   await advance(saying('Jax, wait!'));
+  h = await hall();
+  assert.ok(!h.jaxShown && !h.jaxRunning, 'he’s gone up the hall before she shouts after him');
   await shot('2-hall-jax-wait');
-  console.log('PASS Stepping out of Kaufmo’s room, Jax bolts past her up the hall');
+  console.log('PASS Stepping out of Kaufmo’s room, Jax bolts from down the hall back up it past her');
 
   await advance(saying('Pomni? Was that Jax?'));
   assert.equal((await hall()).ribbitVisible, true);

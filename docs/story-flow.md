@@ -46,21 +46,48 @@ The playable sequence is:
    the remaining time continues without resetting. E hands Kaufmo every held
    photo at once, which stops the clock, even with one second left. With at
    least 4 (`PHOTO_THRESHOLD`) he plays his success scene and send-off, then
-   **Level 2 Complete**. With fewer he abstracts and the attempt ends on a
+   **Level 2 Complete** and the way into Level 3 (steps 8 to 11). With fewer
+   he abstracts and the attempt ends on a
    **Retry Level 2** card. Early pickups are retained but do not bypass his
    introduction. Expiring before the hand-in fails even if all photos have been
-   found. Either retry clears held/delivered photos and Level 2 points, chooses
-   new spots, and restarts at the same default Lobby spawn with 4 minutes.
-   Level 1 points are preserved.
+   found: the game cuts to Kaufmo alone in his room (`level2TimeUpDialogue`),
+   the shared abstraction effect (`src/effects/abstraction.js`) following each
+   line's distress until he abstracts on the last beat, then a **Kaufmo has
+   abstracted.** card. Its **Retry Level 2** restarts the level from the
+   beginning: Find Kaufmo again, his Dorm Hall pass-by outside Ribbit's door
+   (`storyProgress.restartLevel2()`), his introduction, then a new search.
+   The too-few retry goes straight back to the Lobby search. Both clear
+   held/delivered photos and Level 2 points and choose new spots, and the
+   search restarts at the same default Lobby spawn with 4 minutes. Level 1
+   points are preserved.
+
+   Between conversations Kaufmo works at his theory wall, the clear wall
+   across from his door (`createWallRoutine` in `kaufmoRoom.js`, the wall
+   itself `src/props/theoryWall.js`): he writes a block of notes, steps back
+   to think it over, then moves along to the next spot. His marker inks the
+   wall wherever his hand goes. Talking to him puts both of them on their
+   marks, and he goes back to the wall when the conversation ends. Once the
+   success scene has played, the photos are pinned up among his notes. The
+   hand-in scenes act the photos out on their beats (`handInActor` in
+   `main.js`, the node ids in `dialogues.js`): Pomni holds them out, and he
+   takes them, kneels and spreads them on the floor, taps one, gathers them
+   and clutches them to his chest. With too few, he looks them over and lets
+   them fall. Both characters gesture by the mood of their lines
+   (`kaufmoTalk.js`, `pomniSpeaking.js`). Kaufmo also nods along while Pomni
+   talks. `tools/kaufmo-animation-preview.html` shows his poses outside the
+   game.
 8. The successful hand-in completes **Hear Kaufmo’s Theory** and enables
    **Find Jax** before the Level 2 card, so a save made after it resumes from
    there. Continue hands control back in Kaufmo's room, and Pomni walks out
    into the Dorm Hall herself.
 9. Outside his door, Dorsa's transition script plays (`level3Hallway`,
    staged by `src/levels/level3Hallway.js`; `dormHallRoom.js` loads Jax and
-   Ribbit for it). It waits until the player has control. Jax bolts past her
-   up the hall and out through the arch, Ribbit walks up, and when she steps
-   to follow him Pomni stops her with her arm out and sends her for the
+   Ribbit for it). It waits until the player has control. Jax is down the
+   hall by Ribbit's door, back turned, and bolts back up it past her and out
+   of sight, on the route and at the speed of the hall gathering
+   (`hallwayGatheringPlan` and `JAX_RUN_SPEED` in
+   `src/cutscenes/hallwayGatheringCutscene.js`). Ribbit walks up, and when she
+   steps to follow him Pomni stops her with her arm out and sends her for the
    others. Its end completes **Find Jax** and enables **Follow Jax**.
 10. In the Lobby, Jax is alone in the corner the toy blocks make with the
     north end of the long wall of bedroom doors, back turned, his idle
@@ -103,8 +130,8 @@ Verification:
 ```sh
 npm test
 node tools/verify_level1_browser.mjs # Vite on 5173; installed Chrome
-node _verify_objectives.mjs
-node _verify_caine_interaction.mjs
+node test/_verify_objectives.mjs
+node test/_verify_caine_interaction.mjs
 npm run build
 ```
 
@@ -119,7 +146,8 @@ Screenshots and the report are written to ignored `artifacts/story-flow/`.
 
 `node tools/verify_photo_search_timer_browser.mjs` checks the initial countdown,
 a too-small hand-in (Kaufmo abstracts, Retry Level 2), two consecutive
-timeout/retry cycles and equal start positions, pause/loading/dialogue
+timeouts (Kaufmo's cutaway and abstraction, then a restart at his Dorm Hall
+pass-by and introduction) and equal start positions, pause/loading/dialogue
 exclusion, actual photo pickup and Kaufmo interaction callbacks, stable
 positions on a Lobby revisit, visible timing in Dorm Hall, failure with all
 photos held, immediate last-second final delivery, and cancellation of a

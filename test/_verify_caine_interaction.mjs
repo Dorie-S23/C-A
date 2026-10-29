@@ -1,0 +1,41 @@
+import '../tools/testCanvas.mjs';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { createObjectiveController } from '../src/game/objectives.js';
+import { createCaineConversation } from '../src/game/caineConversation.js';
+import { loadDormHallRoom } from '../src/rooms/dormHallRoom.js';
+const objectives=createObjectiveController();let story=false,current=true,refuse=false,fail=false;
+const calls=[],hints=[];
+const caine=createCaineConversation({objectives,isStorySession:()=>story,showHint:t=>hints.push(t),playDialogue:(key,options)=>{calls.push({key,options});if(fail)throw Error('optional start failure');return !refuse;}});
+const position=new THREE.Vector3(-2,0,-38);
+assert.equal(caine.talk(position),false);assert.equal(calls.length,0);assert.equal(objectives.active,null);assert.ok(hints[0].includes('Ragatha'));
+story=true;assert.equal(caine.talk(position),false);assert.equal(objectives.active,null);
+objectives.activate('find-caine');assert.equal(caine.talk(position,()=>current),true);assert.equal(caine.busy,true);assert.equal(caine.talk(position),false);assert.equal(calls.length,1);assert.equal(calls[0].key,'level1Open');assert.equal(calls[0].options.lookAt,position);
+console.log('PASS Early interaction cannot skip Ragatha; warning starts once using existing dialogue key/camera framing');
+calls[0].options.onCancel();calls[0].options.onComplete();assert.equal(caine.busy,false);assert.equal(objectives.active.id,'find-caine');assert.equal(objectives.isComplete('find-caine'),false);
+assert.equal(caine.talk(position,()=>current),true);calls[1].options.onComplete();calls[1].options.onComplete();assert.equal(objectives.isComplete('find-caine'),true);assert.equal(objectives.active.id,'find-ribbit');assert.equal(caine.enabled,false);assert.equal(caine.talk(position),false);
+console.log('PASS Cancellation permits retry; success completes Find Caine and activates Find Ribbit without replay/reset');
+objectives.reset();caine.cancelPending();assert.equal(caine.enabled,true);objectives.activate('find-caine');
+caine.talk(position,()=>current);const stale=calls.at(-1).options;caine.cancelPending();caine.talk(position,()=>current);stale.onComplete();assert.equal(caine.busy,true);assert.equal(objectives.active.id,'find-caine');
+current=false;calls.at(-1).options.onComplete();assert.equal(caine.busy,false);assert.equal(objectives.active.id,'find-caine');
+current=true;refuse=true;assert.equal(caine.talk(position,()=>current),false);assert.equal(caine.busy,false);refuse=false;fail=true;assert.throws(()=>caine.talk(position),/failure/);assert.equal(caine.busy,false);fail=false;
+console.log('PASS New game resets eligibility; room disposal, stale callbacks, rejected starts and failures cannot award progress');
+
+globalThis.ProgressEvent ??= class {};
+// This geometry/controller check does not decode portrait images in Node.
+// Browser checks exercise the real TextureLoader and door icons.
+const originalTextureLoad = THREE.TextureLoader.prototype.load;
+THREE.TextureLoader.prototype.load = function () { return new THREE.Texture(); };
+GLTFLoader.prototype.load=function(url,onLoad,_progress,onError){try{const b=fs.readFileSync(new URL(url.replace(/^\.\//,''),new URL('../public/',import.meta.url)));let j;if(b.readUInt32LE(0)===0x46546c67){const l=b.readUInt32LE(12);j=JSON.parse(b.subarray(20,20+l));j.buffers[0].uri='data:application/octet-stream;base64,'+b.subarray(28+l).toString('base64');}else j=JSON.parse(b);delete j.images;delete j.textures;j.materials=j.materials?.map(({name,doubleSided})=>({name,doubleSided}));new GLTFLoader().parseAsync(JSON.stringify(j),'').then(onLoad,onError);}catch(e){onError(e)}};
+const room = await loadDormHallRoom(undefined, { from: 'pomni' });
+assert.equal(room.group.getObjectByName('Caine'), undefined);
+assert.equal(room.interactables.some(i => i.prompt() === 'Talk to Caine'), false);
+assert.ok(room.hallDoors.ribbit.control.interactable.objects.length > 0);
+assert.equal(typeof room.hallDoors.ribbit.shut, 'function');
+assert.ok(room.hallDoors.ribbit.portal);
+assert.equal(typeof room.pomniDoorway.crossed, 'function');
+assert.equal(typeof room.update, 'function');
+console.log('PASS Dorm Hall supplies the Ribbit knock/portal and seamless Pomni doorway; Caine is owned by his arrival cutscene');
+THREE.TextureLoader.prototype.load = originalTextureLoad;

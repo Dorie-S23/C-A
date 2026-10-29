@@ -70,6 +70,59 @@
                 to { transform: translate(var(--drift-x, 8%), var(--drift-y, 8%)); }
             }
 
+            #loading-parade {
+                position: absolute;
+                inset-inline: 0;
+                bottom: 0;
+                height: var(--sprite-height);
+                box-sizing: border-box;
+                display: none;
+                align-items: flex-end;
+                justify-content: space-evenly;
+                gap: clamp(0.25rem, 2vw, 1.5rem);
+                padding-inline: 1.5vw;
+                overflow: hidden;
+                pointer-events: none;
+                z-index: 1;
+            }
+            #overlay.loading #loading-parade { display: flex; }
+            #loading-parade.around-screen {
+                position: absolute;
+                inset: 0;
+                height: auto;
+            }
+            #loading-parade.around-screen .loading-sprite {
+                position: absolute;
+                animation-name: loading-sprite-hop-around;
+            }
+            #loading-parade.around-screen .loading-sprite:nth-child(1) { top: 11%; left: 50%; }
+            #loading-parade.around-screen .loading-sprite:nth-child(2) { top: 26%; left: 82%; }
+            #loading-parade.around-screen .loading-sprite:nth-child(3) { top: 59%; left: 90%; }
+            #loading-parade.around-screen .loading-sprite:nth-child(4) { top: 85%; left: 68%; }
+            #loading-parade.around-screen .loading-sprite:nth-child(5) { top: 85%; left: 32%; }
+            #loading-parade.around-screen .loading-sprite:nth-child(6) { top: 59%; left: 10%; }
+            #loading-parade.around-screen .loading-sprite:nth-child(7) { top: 26%; left: 18%; }
+            .loading-sprite {
+                display: block;
+                flex: 0 1 auto;
+                height: var(--sprite-height);
+                max-width: 16vw;
+                background-repeat: no-repeat;
+                animation: loading-sprite-hop 0.8s ease-in-out infinite;
+                filter: saturate(1.28) contrast(1.08) drop-shadow(0 2px 5px rgba(18, 10, 28, 0.5));
+                will-change: transform;
+            }
+            .loading-sprite:nth-child(2n) { animation-delay: -0.27s; }
+            .loading-sprite:nth-child(3n) { animation-delay: -0.53s; }
+            @keyframes loading-sprite-hop {
+                0%, 100% { transform: translateY(0); }
+                50% { transform: translateY(-4px); }
+            }
+            @keyframes loading-sprite-hop-around {
+                0%, 100% { transform: translate(-50%, -50%); }
+                50% { transform: translate(-50%, calc(-50% - 4px)); }
+            }
+
             #room-picker {
                 display: flex;
                 gap: 1em;
@@ -1118,16 +1171,25 @@
                     animation: none;
                 }
             }
+
+            #maze-objective-hud #maze-items-counter, #maze-objective-hud #maze-search-timer {position:static;background:none;border:0;padding:0;margin:7px 0 0;color:#bcbad7;font-size:.78rem;}
+            /* Last Act reuses the compact objective HUD's visibility policy. */
+            #maze-objective-hud {position:fixed;top:1rem;right:1rem;width:min(285px,calc(100vw - 2rem));box-sizing:border-box;padding:14px 17px;background:linear-gradient(135deg,rgba(23,24,45,.95),rgba(49,26,73,.94));border:1px solid #765194;border-left:3px solid #b13d83;border-radius:9px;color:#eae6e2;font-family:system-ui,sans-serif;pointer-events:none;z-index:5;box-shadow:0 7px 24px #0005;}
+            #maze-objective-hud[hidden]{display:none}
+            #maze-objective-hud .maze-kicker{font-size:.65rem;letter-spacing:.14em;color:#c79ee1;margin:0 0 7px}
+            #maze-objective-hud h2{font-size:1rem;line-height:1.3;margin:0 0 9px}
+            #maze-objective-hud p[data-maze-count]{font-size:.78rem;color:#bcbad7;margin:0}
+            #maze-objective-hud ul{list-style:none;padding:0;margin:9px 0 0;font-size:.8rem;line-height:1.8}
+            #maze-objective-hud li.collected{color:#d2b3e8}
+            @media(max-width:600px){#maze-objective-hud{padding:10px 12px;width:min(250px,calc(100vw - 2rem))}}
+
         </style>
     </head>
     <body>
-        <div id="overlay">
-            <h1 id="overlay-title">Choose a room</h1>
-            <p id="overlay-subtitle">
-                WASD / Arrow keys to move, mouse to look, Shift to sprint, Space to jump, E to
-                interact &mdash; Esc to release the mouse
-            </p>
-            <div id="room-picker">
+        <div id="overlay" class="loading">
+            <h1 id="overlay-title">Loading&hellip;</h1>
+            <p id="overlay-subtitle"></p>
+            <div id="room-picker" hidden>
                 <button data-room="pomni">Pomni's Room</button>
                 <button data-room="tadc">Circus Lobby</button>
                 <button data-room="dorm">Dorm Hall</button>
@@ -1135,7 +1197,7 @@
                 <button data-room="maze">Maze (raw, no intro)</button>
                 <button data-room="kaufmo">Kaufmo's Room</button>
             </div>
-            <div id="dialogue-picker">
+            <div id="dialogue-picker" hidden>
                 <button data-story>
                     &#9654; Story: Pre-Level 1 &rarr; Level 1
                 </button>
@@ -1146,18 +1208,13 @@
                     &#9654; Level 3
                 </button>
             </div>
-            <button id="btn-title">&larr; Title screen</button>
+            <button id="btn-title" hidden>&larr; Title screen</button>
             <div id="pause-menu" hidden>
                 <p id="caine-pause-joke" class="caine-memory-text" role="status" aria-live="polite" hidden></p>
                 <button id="btn-resume">&#9654; Resume</button>
                 <button id="btn-save">&#128190; Save Game</button>
                 <button id="btn-pause-load">Load Game</button>
                 <button id="btn-home">&#8962; Back to Home</button>
-                <label class="title-toggle">
-                    <input id="caine-memory-pause-enabled" data-caine-enabled type="checkbox" />
-                    <span>Caine remembers (local captions)</span>
-                </label>
-                <button type="button" data-caine-clear>Clear Caine’s Memory</button>
             </div>
         </div>
         <div id="level-complete-panel" class="title-panel" hidden>
@@ -1239,6 +1296,10 @@
             </div>
         </div>
         <div id="crosshair" hidden></div>
+        <aside id="maze-objective-hud" role="status" aria-live="polite" aria-atomic="true" hidden>
+            <p class="maze-kicker">LEVEL 3: THE LAST ACT</p>
+            <h2 data-maze-title></h2><p id="maze-items-counter" data-maze-count hidden></p><p id="maze-search-timer" role="timer" aria-live="off" hidden></p><ul data-maze-checklist></ul>
+        </aside>
         <aside id="caine-memory-caption" class="caine-memory-text" role="status" aria-live="polite" aria-atomic="true" hidden></aside>
         <aside id="objective-hud" role="status" aria-live="polite" aria-atomic="true" hidden>
             <div class="objective-label"><span aria-hidden="true">&#10022; </span>Current objective</div>
@@ -1252,8 +1313,7 @@
             <small>X &middot; Dismiss tips</small>
         </aside>
         <div id="picture-counter" role="status" hidden>Photos found: 0/5 · Delivered: 0/5</div>
-        <div id="maze-items-counter" role="status" aria-live="polite" aria-atomic="true" hidden>Items found: 0/2</div>
-        <div id="maze-search-timer" role="timer" aria-live="off" hidden>Time left: 3:00</div>
+
         <div id="search-timer" role="status" hidden>Time left: 4:00</div>
         <div id="hint-key" hidden>Press H for a hint</div>
         <div id="hint"></div>

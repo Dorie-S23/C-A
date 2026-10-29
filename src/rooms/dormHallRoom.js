@@ -6,6 +6,7 @@ import { attachRoomBehindDoor, sill } from './connectRooms.js';
 import { ICONS } from '../ui/portraitIcons.js';
 import { loadJax } from '../characters/jax.js';
 import { loadRibbit } from '../characters/ribbit.js';
+import { hallwayGatheringPlan } from '../cutscenes/hallwayGatheringCutscene.js';
 
 // Exported from "Dorm Hall V7.blend" by tools/blender/export_dorm_hall_v7.py,
 // which converts the materials the glTF exporter can't read — re-run it
@@ -59,14 +60,11 @@ const VIEW_RANGE = 15;
 const ARRIVAL_DISTANCE = 1.8; // matches portals.js's door arrivals
 
 // Level 2 into 3 (levels/level3Hallway.js): Pomni steps out of Kaufmo's
-// room and Jax bolts past her, from further down the hall, all the way up
-// it and out through the entrance arch's curtain. Ribbit comes up from her
-// own door's end and stops beside her.
-const JAX_HALLWAY = {
-  jaxFrom: { x: 1.7, z: -104 },
-  jaxTo: { x: 0.2, z: 0.9 },
-  ribbit: { x: -0.2, z: -96.5 },
-};
+// room to find Jax down the hall by Ribbit's door, back turned, and he
+// bolts back up it past her, on the route the hall gathering staged
+// (cutscenes/hallwayGatheringCutscene.js hallwayGatheringPlan). Ribbit comes
+// up from her own door's end and stops beside her.
+const RIBBIT_MARK = { x: -0.2, z: -96.5 };
 
 /**
  * @param {{ from?: string, items?: object, travel?: Function, jaxHallway?: boolean }} [options]
@@ -103,7 +101,12 @@ export function loadDormHallRoom(onProgress, { from, items, travel, jaxHallway }
       if (!frameObject) continue;
       const centre = new THREE.Box3().setFromObject(frameObject).getCenter(new THREE.Vector3());
       const inFront = new THREE.Vector3(HALL_CENTRE_X, centre.y, centre.z);
-      const door = openHingedDoor(room.group, frame, slab, inFront, room.collisionMeshes);
+      // Pomni's swings into her room instead, on the same jamb her room's
+      // own door hangs from (its knob's at the other edge), so it's the
+      // same door from either side.
+      if (to === 'pomni') mirrorLeaf(room.group.getObjectByName(slab));
+      const swingToward = to === 'pomni' ? new THREE.Vector3(2 * centre.x - HALL_CENTRE_X, centre.y, centre.z) : inFront;
+      const door = openHingedDoor(room.group, frame, slab, swingToward, room.collisionMeshes);
       if (!door) continue;
       const guest = guestRooms[to];
       const doorway = guest?.doorway;
@@ -172,23 +175,24 @@ export function loadDormHallRoom(onProgress, { from, items, travel, jaxHallway }
 }
 
 /**
- * Jax and Ribbit for the hall scene, both out of sight until their beats:
- * Jax hidden at the start of his run (his light stays in the scene, dimmed,
- * so it never changes the light count), Ribbit hidden at her mark. Both
- * build their shaders with the room's (warmUp). The scene hooks in through
- * room.storyUpdate.
+ * Jax and Ribbit for the hall scene: Jax on his mark, glitching, his back
+ * to Kaufmo's door (once he's run, he's hidden with his light kept in the
+ * scene, dimmed, so it never changes the light count), Ribbit hidden at
+ * hers until her beat. Both build their shaders with the room's (warmUp).
+ * The scene hooks in through room.storyUpdate.
  */
 function addJaxHallway(room, [jaxApi, ribbitApi], outsideKaufmo) {
-  const floorY = outsideKaufmo.y;
-  const point = ({ x, z }) => new THREE.Vector3(x, floorY, z);
+  const { jax, jaxRun } = hallwayGatheringPlan(room);
   const marks = {
     pomni: outsideKaufmo.clone(),
-    jaxFrom: point(JAX_HALLWAY.jaxFrom),
-    jaxTo: point(JAX_HALLWAY.jaxTo),
-    ribbit: point(JAX_HALLWAY.ribbit),
+    jax,
+    jaxRun,
+    ribbit: new THREE.Vector3(RIBBIT_MARK.x, outsideKaufmo.y, RIBBIT_MARK.z),
   };
-  jaxApi.jax.position.copy(marks.jaxFrom);
-  jaxApi.setShown(false);
+  jaxApi.jax.position.copy(jax);
+  jaxApi.jax.rotation.y = Math.atan2(jax.x - marks.pomni.x, jax.z - marks.pomni.z); // back turned
+  jaxApi.setShown(true);
+  jaxApi.setGlitching(true);
   ribbitApi.ribbit.position.copy(marks.ribbit);
   ribbitApi.ribbit.visible = false;
   room.group.add(jaxApi.jax, ribbitApi.ribbit);
@@ -197,10 +201,8 @@ function addJaxHallway(room, [jaxApi, ribbitApi], outsideKaufmo) {
   const warmUp = room.warmUp;
   room.warmUp = (renderer, scene, camera) => {
     warmUp?.(renderer, scene, camera);
-    jaxApi.setShown(true);
     ribbitApi.ribbit.visible = true;
     renderer.compile(scene, camera);
-    jaxApi.setShown(false);
     ribbitApi.ribbit.visible = false;
   };
   const update = room.update;
@@ -301,6 +303,22 @@ function onlyRenderWhenSeen(room, guest, control, roomBounds, doorway) {
  * her through into her room: whether it's open, and when she's stepped
  * past it. `hallSide` is any point out in the hall.
  */
+/** Flips a door leaf end for end across its own width, knob and all. */
+function mirrorLeaf(slab) {
+  if (!slab) return;
+  slab.updateWorldMatrix(true, true);
+  const box = new THREE.Box3().setFromObject(slab);
+  const size = box.getSize(new THREE.Vector3());
+  const centre = box.getCenter(new THREE.Vector3());
+  const flip = size.x >= size.z ? [-1, 1, 1] : [1, 1, -1];
+  const world = new THREE.Matrix4().makeTranslation(centre.x, centre.y, centre.z)
+    .multiply(new THREE.Matrix4().makeScale(...flip))
+    .multiply(new THREE.Matrix4().makeTranslation(-centre.x, -centre.y, -centre.z))
+    .multiply(slab.matrixWorld);
+  world.premultiply(slab.parent.matrixWorld.clone().invert()).decompose(slab.position, slab.quaternion, slab.scale);
+  slab.updateMatrixWorld(true);
+}
+
 function walkInDoorway(frameBox, hallSide, control) {
   const size = frameBox.getSize(new THREE.Vector3());
   const centre = frameBox.getCenter(new THREE.Vector3());

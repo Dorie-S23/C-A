@@ -73,8 +73,10 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
       audio = null;
     }
   }
+  // The room's own door control, when it has one, so it knows where the leaf is.
+  const control = room.group.userData.bedroomDoor;
   function door(amount) {
-    hinge.setOpenFraction(amount);
+    if (control) control.hold(amount); else hinge.setOpenFraction(amount);
   }
   function view(position, target) {
     // The look target can lie inside the swinging panel's arc. Probe from
@@ -170,7 +172,7 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
   function beginReturn() {
     if (cast) sound('dispose');
     if (actor) actor.visible = false;
-    door(1); // Pomni's exit stays open; restore source walls only on room disposal.
+    door(1); // Shut again only once Ragatha's gone (see the return below).
     releasePosition = camera.position.clone();
     releaseTarget = cast ? camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(2).add(releasePosition) : shotTarget.clone();
     phase = 'returning'; returning = 0;
@@ -214,10 +216,12 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
       else if (follow) {
         returning = Math.min(RETURN_SECONDS, returning + Math.max(0, delta));
         const blend = ease(returning, 0, RETURN_SECONDS);
-        door(1);
+        door(1 - blend); // she's gone: swing it shut behind her
         view(releasePosition.clone().lerp(follow.position, blend), releaseTarget.clone().lerp(follow.target, blend));
         if (returning >= RETURN_SECONDS) {
           phase = 'done';
+          // Shut, there's nothing to see beyond it (a room door control does this itself).
+          if (!control && blocking) blocking.setVisible(false);
           if (!completed) { completed = true; onComplete?.(); }
         }
       }
@@ -247,8 +251,14 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
     },
     dispose() {
       if (phase === 'disposed') return;
-      phase = 'disposed'; sound('dispose'); door(0);
-      if (actor) { actor.visible = false; blocking.setVisible(false); blocking.aperture.setEnabled(false); }
+      // Once it's played out the door's the room's again, wherever Pomni's left it.
+      const finished = phase === 'done';
+      phase = 'disposed'; sound('dispose');
+      if (!finished) door(0);
+      if (actor) {
+        actor.visible = false;
+        if (!finished) { blocking.setVisible(false); blocking.aperture.setEnabled(false); }
+      }
       if(exitTarget){const index=exitInteraction.objects.indexOf(exitTarget);if(index!==-1)exitInteraction.objects.splice(index,1);}
       // No callback: leaving a room must never resurrect it or start dialogue.
     },

@@ -10,19 +10,14 @@ import { LOBBY_REACH } from './lobbyReach.js';
 import { decodeReachMap } from './reachMap.js';
 import { createLobbyMazeDoor } from './lobbyMazeDoor.js';
 import { loadJax } from '../characters/jax.js';
+import { PHOTO_URLS } from '../state/level2Items.js';
 
 // Level 2's five office photos (see PHOTO_COUNT in level2Items.js),
-// scattered round the lobby rather than sitting in Kaufmo's own room — a
-// real search, not a hand-in on arrival. scatterPictures() keeps wall spots
-// in the shared item state for the whole attempt. Only a retry or New Game
-// picks new positions. ca6.png exists alongside these but isn't used.
-const PICTURES = [
-  { id: 'ca1', url: './models/objects/ca1.png' },
-  { id: 'ca2', url: './models/objects/ca2.png' },
-  { id: 'ca3', url: './models/objects/ca3.png' },
-  { id: 'ca4', url: './models/objects/ca4.png' },
-  { id: 'ca5', url: './models/objects/ca5.png' },
-];
+// scattered on the floor round the lobby rather than sitting in Kaufmo's
+// own room — a real search, not a hand-in on arrival. scatterPictures()
+// keeps the floor spots in the shared item state for the whole attempt.
+// Only a retry or New Game picks new positions.
+const PICTURES = Object.entries(PHOTO_URLS).map(([id, url]) => ({ id, url }));
 
 // The castle's brick walls (arched windows, battlements), taken from the
 // Sketchfab "The Digital Circus" model. The lobby's own export only has a
@@ -51,15 +46,24 @@ const LANDMARK_REACH = 6;
 const lobbyReach = decodeReachMap(LOBBY_REACH);
 const PHOTO_VIEW_DISTANCE = 2.5;
 const EYE_HEIGHT = 1.5;
-// ...and out in the open, not tucked behind a building: seen face-on from
-// at least PHOTO_OPEN_MIN points of a PHOTO_OPEN_STEP grid of walkable
-// floor within PHOTO_OPEN_RADIUS. A spot with nothing in the way sees ~56,
-// so this is half of that. Measured against the real Lobby, the old
-// close-up check alone let ~5% of spots through that only a narrow pocket
-// of floor could see, and a few facing a wall no one could see at all.
+// ...and out in the open, not tucked behind a building: seen from at
+// least PHOTO_OPEN_MIN points of a PHOTO_OPEN_STEP grid of walkable floor
+// within PHOTO_OPEN_RADIUS. A spot with nothing in the way sees ~56, so
+// this is half of that. Measured against the real Lobby, the close-up
+// check alone let a few spots through that only a narrow pocket of floor
+// could see.
 const PHOTO_OPEN_RADIUS = 12;
 const PHOTO_OPEN_STEP = 2;
 const PHOTO_OPEN_MIN = 28;
+// One photo always lands on top of the small red/orange stair landing
+// near the stage (playtest request, confirmed by screenshot) — an
+// unnamed six-step staircase, not in lobbyReach (it's not flat ground,
+// so the walkable-floor map skips it). y is explicit rather than found
+// by the usual downward raycast: real floor is visible underneath the
+// landing through the open stair structure, and "lowest hit" (the right
+// call almost everywhere else, to skip a shelf/ceiling above the real
+// floor) finds that lower floor instead of the landing itself here.
+const STAGE_STEPS_SPOT = { x: 2, y: 2.24, z: 8.6 };
 
 // Level 3's way into the maze (lobbyMazeDoor.js): one of the bedroom doors
 // on the long wall that runs south from the Dorm Hall arch, a different
@@ -98,6 +102,7 @@ export function loadTadcRoom(onProgress, { from, items, mazeDoor } = {}) {
     useRealVertexColours(room.group);
     tidyStageEdge(room.group);
     singleSided(room.group, SINGLE_SIDED);
+    separateFlushBlocks(room);
     const doors = setupLobbyDoors(room.group, room.spawn, room.collisionMeshes);
     room.interactables = doors.interactables;
     room.update = doors.update;
@@ -118,6 +123,7 @@ export function loadTadcRoom(onProgress, { from, items, mazeDoor } = {}) {
         isOpen: (origin) => lobbyReach.has(origin.x, origin.z),
         isReachable: (spot) => photoInView(room.group, spot, defaultSpawn.y)
           && photoInOpen(room.group, spot, defaultSpawn.y),
+        pinned: { id: PICTURES[0].id, ...STAGE_STEPS_SPOT },
       });
       room.photoPositions = pictures.remaining;
       const doorsUpdate = room.update;
@@ -184,16 +190,15 @@ function addMazeDoor(room, doors, { armed, floorY, from, jaxApi }) {
 const viewRaycaster = new THREE.Raycaster();
 
 /**
- * Walkable floor cells within `radius` of a photo spot on a `step` grid,
- * in front of its face only: from behind, the frame hides the photo (and
- * a spot on the far side of a wall isn't findable from the near side).
+ * Walkable floor cells within `radius` of a photo spot on a `step` grid.
+ * Lying flat and face-up, a photo is visible from any direction (unlike a
+ * wall mount, there's no "behind the frame" side to exclude).
  */
-function floorInFront({ position, rotationY }, radius, step) {
-  const facing = { x: Math.sin(rotationY), z: Math.cos(rotationY) };
+function floorAround({ position }, radius, step) {
   const cells = [];
   for (let dx = -radius; dx <= radius; dx += step) {
     for (let dz = -radius; dz <= radius; dz += step) {
-      if (Math.hypot(dx, dz) > radius || dx * facing.x + dz * facing.z <= 0) continue;
+      if (Math.hypot(dx, dz) > radius) continue;
       const x = position.x + dx, z = position.z + dz;
       if (lobbyReach.has(x, z)) cells.push({ x, z });
     }
@@ -223,21 +228,20 @@ function photoSeenFrom(group, position, x, z, floorY) {
 
 /**
  * Whether some walkable floor within PHOTO_VIEW_DISTANCE of a photo spot
- * sees it unobstructed, trying the floor straight out in front of it
- * first. Without this a spot could be on the inside of a sealed gap in
- * the toy blocks: near the floor plan's walkable cells, but out of sight.
+ * sees it unobstructed, trying the nearest floor cells first. Without this
+ * a spot could be on the inside of a sealed gap in the toy blocks: near
+ * the floor plan's walkable cells, but out of sight.
  */
 function photoInView(group, spot, floorY) {
-  const { position, rotationY } = spot;
-  const front = { x: position.x + Math.sin(rotationY) * 1.5, z: position.z + Math.cos(rotationY) * 1.5 };
-  const cells = floorInFront(spot, PHOTO_VIEW_DISTANCE, lobbyReach.step);
-  cells.sort((a, b) => Math.hypot(a.x - front.x, a.z - front.z) - Math.hypot(b.x - front.x, b.z - front.z));
+  const { position } = spot;
+  const cells = floorAround(spot, PHOTO_VIEW_DISTANCE, lobbyReach.step);
+  cells.sort((a, b) => Math.hypot(a.x - position.x, a.z - position.z) - Math.hypot(b.x - position.x, b.z - position.z));
   return cells.some(({ x, z }) => photoSeenFrom(group, position, x, z, floorY));
 }
 
 /** Whether enough of the floor around a photo spot sees it (PHOTO_OPEN_MIN). */
 function photoInOpen(group, spot, floorY) {
-  const cells = floorInFront(spot, PHOTO_OPEN_RADIUS, PHOTO_OPEN_STEP);
+  const cells = floorAround(spot, PHOTO_OPEN_RADIUS, PHOTO_OPEN_STEP);
   let seen = 0;
   for (const [i, { x, z }] of cells.entries()) {
     if (photoSeenFrom(group, spot.position, x, z, floorY) && ++seen >= PHOTO_OPEN_MIN) return true;
@@ -276,6 +280,40 @@ function replaceCastleWalls(room, walls) {
 // their back faces fighting their front ones (see replaceCastleWalls).
 // They share materials with the rest of the lobby, so each gets its own.
 const SINGLE_SIDED = ['Castle_Stairs'];
+
+// The lobby's toy-block walls ("Rubber" and "Plastic" pieces, many of
+// them whole stacks of blocks merged into one mesh) were modelled with
+// neighbours overlapping a few millimetres, their faces flush. Where two
+// overlap, each one's face is in the very same place as the other's, and as
+// they're different colours the overlap flickers (z-fights) as the camera
+// moves. Moving geometry would shift whole walls, so each piece gets its own
+// small depth bias instead (polygon offset, one of FLUSH_LAYERS steps):
+// where two faces coincide, the one with the stronger bias always wins.
+// The steps are fractions of the depth buffer's resolution, far too small to
+// push anything visibly through anything else.
+const FLUSH_MATERIALS = new Set(['Rubber', 'Plastic']);
+const FLUSH_LAYERS = 16;
+
+function separateFlushBlocks(room) {
+  let index = 0;
+  room.group.traverse((mesh) => {
+    if (!mesh.isMesh || mesh.isSkinnedMesh) return;
+    const materials = [mesh.material].flat();
+    if (!materials.some((material) => FLUSH_MATERIALS.has(material.name))) return;
+    // Neighbours are usually consecutive in the export, so stepping by a
+    // number coprime to FLUSH_LAYERS keeps neighbours on different layers.
+    const layer = (index++ * 5) % FLUSH_LAYERS;
+    const own = materials.map((material) => {
+      if (!FLUSH_MATERIALS.has(material.name)) return material;
+      const copy = material.clone();
+      copy.polygonOffset = true;
+      copy.polygonOffsetFactor = 0;
+      copy.polygonOffsetUnits = -layer;
+      return copy;
+    });
+    mesh.material = Array.isArray(mesh.material) ? own : own[0];
+  });
+}
 
 function singleSided(group, names) {
   for (const name of names) {

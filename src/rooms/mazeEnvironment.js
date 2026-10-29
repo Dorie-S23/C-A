@@ -276,26 +276,31 @@ export function createMazeEnvironment({ maze, layout, cellCenter, cellSize }) {
     js=SIDES.find(side=>stageCell.walls[side.wall]);
   }
   const stage = frame(stageCell, js, 'JaxTheatreBackdrop');
-  box(stage, palette.purple, 0, 1.5, 0.11, 4.2, 2.94, 0.035);
-  for (let i = -4; i <= 4; i++) box(stage, palette.magenta, i * 0.45, 1.5, 0.14, 0.05, 2.9, 0.02, 0.15);
-  for (const x of [-1.8, 1.8]) curtain(stage, x, 1.52, 0.2, 0.52, 2.85, palette.purple);
-  board(stage, 'THE LAST ACT', 'EVERY SMILE HAS A REFLECTION', 0, 3.35, 0.15, 3.65);
-  mesh(stage, geometry.arch, palette.gold, 0, 2.64, 0.13, 1.95, 1.12, 1);
-  for (const x of [-1.08, 1.08]) {
-    box(stage, palette.gold, x, 1.82, 0.19, 1.04, 1.75, 0.045);
-    box(stage, palette.darkMirror, x, 1.82, 0.22, 0.94, 1.65, 0.015);
-    const shards = [ [[-0.43,-0.74],[-0.12,-0.3],[-0.43,0.51]], [[-0.4,0.76],[-0.08,-0.22],[0.43,0.76]], [[0.43,0.65],[-0.03,-0.27],[0.43,0.12]], [[0.4,0.03],[-0.07,-0.35],[0.25,-0.77]], [[0.17,-0.78],[-0.14,-0.37],[-0.35,-0.77]] ];
-    shards.forEach((points, i) => {
-      const shape = new THREE.Shape(); points.forEach(([xx, yy], n) => n ? shape.lineTo(xx, yy) : shape.moveTo(xx, yy)); shape.closePath();
-      const key = `shard${i}`; geometry[key] ??= new THREE.ShapeGeometry(shape);
-      mesh(stage, geometry[key], i % 2 ? palette.silver : palette.pale, x, 1.82, 0.234 + i * 0.002);
-    });
-  }
-  for (let i = 0; i <= 14; i++) { const a = i / 14 * Math.PI; bulb(stage, Math.cos(a) * 1.95, 2.64 + Math.sin(a) * 1.12, 0.19, 0.05); }
-  const carpet = mesh(stage, geometry.disc, palette.magenta, 0, 0.01, 2.13, 1.8, 1.8, 1); carpet.rotation.x = -Math.PI / 2;
-  const rim = mesh(stage, geometry.ring, palette.gold, 0, 0.012, 2.13, 1.8, 1.8, 1.8); rim.rotation.x = -Math.PI / 2;
+  // No marquee, no footlights, no red carpet: this reads as the storage
+  // nook he's wedged himself into, not a stage he's been put on display in.
+  box(stage, palette.ink, 0, 1.5, 0.11, 4.2, 2.94, 0.035);
+  mesh(stage, geometry.archInset, textileJax, 0, 1.55, 0.13);
+  // One loose drape, bunched and off-centre rather than a matched
+  // theatrical pair, as if he's half-hidden behind it.
+  curtain(stage, -1.2, 1.3, 0.2, 0.58, 2.5, palette.purple);
+  // Crates and a jar shoved into the corner, same clutter language as the
+  // search alcoves, so the spot reads as something he's hiding among.
+  box(stage, palette.red, 1.3, 0.38, 0.19, 1.0, 0.66, 0.26);
+  const lid = mesh(stage, geometry.chestLid, palette.red, 1.3, 0.72, 0.19); lid.rotation.z = Math.PI / 2;
+  mesh(stage, geometry.jar, palette.magenta, 1.75, 0.2, 0.2, 0.1, 0.22, 0.09);
+  // One small, unframed cracked-mirror shard, low and off-centre — a quiet
+  // callback to the circus's mirrors, not a stage reveal.
+  const shardShape = new THREE.Shape();
+  [[-0.22, -0.3], [-0.05, -0.05], [0.08, -0.33], [0.21, -0.02], [0.05, 0.3], [-0.1, 0.0]]
+    .forEach(([xx, yy], n) => n ? shardShape.lineTo(xx, yy) : shardShape.moveTo(xx, yy));
+  shardShape.closePath();
+  geometry.jaxShard ??= new THREE.ShapeGeometry(shardShape);
+  mesh(stage, geometry.jaxShard, palette.darkMirror, -1.7, 1.05, 0.14, 0.85, 0.85, 1);
   stage.updateMatrixWorld(true);
-  views.jax = { position: stage.localToWorld(new THREE.Vector3(0, 1.9, 6.4)).toArray(), target: [jc.x, 1.65, jc.z] };
+  // Derived straight from Jax's own cell centre, so it's correct whether or
+  // not the backdrop had to attach to an alternate wall (four-way cells).
+  root.userData.jaxStageCentre = jc.clone().setY(0.01).toArray();
+  views.jax = { position: stage.localToWorld(new THREE.Vector3(0, 1.6, 3.4)).toArray(), target: [jc.x, 1.3, jc.z] };
 
   // Merge identical static primitives into instanced batches. The entire maze
   // shares unit geometry and a small material palette instead of thousands

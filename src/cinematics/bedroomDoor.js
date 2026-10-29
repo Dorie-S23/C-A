@@ -1,7 +1,15 @@
 import * as THREE from 'three';
 
-/** Derive this bedroom's hinge from the real panel, handle and frame geometry. */
+/**
+ * Derive this bedroom's hinge from the real panel, handle and frame geometry.
+ * One hinge per room: Ragatha's entrance and the room's own door control
+ * share it rather than nesting a second pivot around the same slab.
+ */
 export function createBedroomDoorHinge({ group, collisionMeshes, insidePoint }) {
+  return group.userData.bedroomDoorHinge ??= hangBedroomDoor({ group, collisionMeshes, insidePoint });
+}
+
+function hangBedroomDoor({ group, collisionMeshes, insidePoint }) {
   const slab = group.getObjectByName('Door_Slab024');
   const panel = group.getObjectByName('Plane_1');
   const handle = group.getObjectByName('Plane_2');
