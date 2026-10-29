@@ -26,11 +26,16 @@ const UP = new THREE.Vector3(0, 1, 0);
  * @param {Array<{ mesh: THREE.Mesh, box: THREE.Box3, dynamic?: boolean }>} collisionMeshes
  *   the room's collision entries; each leaf is added, flagged dynamic so
  *   main.js keeps its box in step with the swing
- * @returns {{ interactables: Array, update: (deltaSeconds: number) => void }}
+ * @returns {{ interactables: Array, update: (deltaSeconds: number) => void,
+ *   get: (frameName: string) => LobbyDoor | null }}
+ *
+ * @typedef {{ frame: THREE.Mesh, doorway: THREE.Mesh | null, outward: THREE.Vector3,
+ *   readonly isOpen: boolean, open: (options?: { immediate?: boolean }) => void }} LobbyDoor
+ *   `outward` points from the wall into the lobby, square to it
  */
 export function setupLobbyDoors(group, spawn, collisionMeshes) {
   const reference = group.getObjectByName(REFERENCE_DOOR);
-  if (!reference) return { interactables: [], update() {} };
+  if (!reference) return { interactables: [], update() {}, get: () => null };
 
   const frames = [];
   group.traverse((child) => {
@@ -45,16 +50,35 @@ export function setupLobbyDoors(group, spawn, collisionMeshes) {
     collisionMeshes.push({ mesh: door.leaf, box: new THREE.Box3().setFromObject(door.leaf), dynamic: true });
   }
 
+  const interactables = doors.map((door) => ({
+    objects: [door.leaf, door.frame, door.doorway].filter(Boolean),
+    prompt: () => (door.open ? 'Close door' : 'Open door'),
+    interact: () => {
+      door.open = !door.open;
+    },
+  }));
   return {
-    interactables: doors.map((door) => ({
-      objects: [door.leaf, door.frame, door.doorway].filter(Boolean),
-      prompt: () => (door.open ? 'Close door' : 'Open door'),
-      interact: () => {
-        door.open = !door.open;
-      },
-    })),
+    interactables,
     update(deltaSeconds) {
       for (const door of doors) swing(door, deltaSeconds);
+    },
+    /** One door by its frame's name (one of them leads into the maze: lobbyMazeDoor.js). */
+    get(frameName) {
+      const door = doors.find((d) => d.frame.name === frameName);
+      if (!door) return null;
+      return {
+        frame: door.frame,
+        doorway: door.doorway,
+        outward: door.outward,
+        get isOpen() { return door.open; },
+        open({ immediate = false } = {}) {
+          door.open = true;
+          if (!immediate) return;
+          door.angle = door.openAngle;
+          door.pivot.rotation.y = door.openAngle;
+          door.pivot.updateMatrixWorld(true);
+        },
+      };
     },
   };
 }
@@ -205,6 +229,7 @@ function createDoor(group, frame, parts, spawn) {
     pivot,
     parts,
     doorway: null,
+    outward: null,
     towardRoom: towardRoom.normalize(),
     open: false,
     angle: 0,
@@ -220,6 +245,7 @@ function addDoorway(group, door, doors) {
   // Snap to the panel's through-axis so the doorway sits square to the wall.
   if (Math.abs(intoWall.x) > Math.abs(intoWall.z)) intoWall.set(Math.sign(intoWall.x), 0, 0);
   else intoWall.set(0, 0, Math.sign(intoWall.z));
+  door.outward = intoWall.clone().negate();
 
   const doorMeshes = doors.flatMap((d) => [d.frame, d.leaf]);
   const wallHit = new THREE.Raycaster(center, intoWall, 0, 3)

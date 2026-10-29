@@ -52,6 +52,33 @@ The playable sequence is:
    found. Either retry clears held/delivered photos and Level 2 points, chooses
    new spots, and restarts at the same default Lobby spawn with 4 minutes.
    Level 1 points are preserved.
+8. The successful hand-in completes **Hear Kaufmo’s Theory** and enables
+   **Find Jax** before the Level 2 card, so a save made after it resumes from
+   there. Continue hands control back in Kaufmo's room, and Pomni walks out
+   into the Dorm Hall herself.
+9. Outside his door, Dorsa's transition script plays (`level3Hallway`,
+   staged by `src/levels/level3Hallway.js`; `dormHallRoom.js` loads Jax and
+   Ribbit for it). It waits until the player has control. Jax bolts past her
+   up the hall and out through the arch, Ribbit walks up, and when she steps
+   to follow him Pomni stops her with her arm out and sends her for the
+   others. Its end completes **Find Jax** and enables **Follow Jax**.
+10. In the Lobby, Jax is alone in the corner the toy blocks make with the
+    north end of the long wall of bedroom doors, back turned, his idle
+    glitching (`src/levels/level3Lobby.js`). Coming within 6 m of him starts
+    `level3Jax` on staged shots. Its `action`s play the stage directions: he
+    turns, a glitch tears across him, and he runs off along the doors. The
+    camera cuts to Pomni before he reaches them. Escape before he runs resets
+    the talk until Pomni steps back and approaches again; once he has run,
+    the scene counts as finished.
+11. The talk completes **Follow Jax** and enables **Find the Door to the
+    Maze**. One of the five doors round the middle of that wall (`MAZE_DOORS`
+    in `tadcRoom.js`, Plane119 to Plane124) leads into the maze, picked afresh
+    each time the game runs (`lobbyMazeDoor.js`). It looks and opens like the
+    rest, onto the same black void, until Jax has run through it; from then on
+    opening it twists the `mazePortal.js` portal open in its doorway, including
+    after a load, and walking into it loads the maze and completes the
+    objective. It's left off the minimap. `tools/verify_jax_chase_browser.mjs`
+    plays steps 8–11 for real.
 
 `src/game/storyProgress.js` owns the post-Caine milestones. Objectives and
 milestones survive room changes. Ribbit's completed pose and an unscored

@@ -30,8 +30,9 @@ import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.
 import { createLevel2Items, pickKaufmoScript, PHOTO_COUNT, PHOTO_THRESHOLD } from './state/level2Items.js';
 import { createMazeItems, createMazeSearch, MAZE_FINDABLES } from './state/mazeItems.js';
 import { runLevel1 } from './levels/level1.js';
+import { runHallwayScene } from './levels/level3Hallway.js';
+import { runLobbyScene } from './levels/level3Lobby.js';
 import { kaufmoHallwayPlan, preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
-import { preloadJaxFleeCutscene, playJaxFleeCutscene } from './cutscenes/jaxFleeCutscene.js';
 import { createMinimap } from './ui/minimap.js';
 import { nearestLandmark } from './rooms/lobbyLandmarks.js';
 import { createObjectiveController } from './game/objectives.js';
@@ -45,7 +46,7 @@ import { createCaineMemory } from './state/caineMemory.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
   level2IdleDialogue, level2CompleteDialogue, level2ReturnAndSendoffDialogue, level2AbstractionDialogue,
-  level3JaxDialogue,
+  level3HallwayDialogue, level3JaxDialogue,
   level2HallwayDialogue, level2RoomOpeningDialogue, ribbitFollowupDialogue,
 } from './data/dialogues.js';
 
@@ -71,6 +72,7 @@ const DIALOGUE_SCRIPTS = {
   level2Complete: { script: level2CompleteDialogue, room: 'kaufmo' },
   level2Return: { script: level2ReturnAndSendoffDialogue, room: 'kaufmo' },
   level2Abstraction: { script: level2AbstractionDialogue, room: 'kaufmo' },
+  level3Hallway: { script: level3HallwayDialogue, room: 'dorm' },
   level3Jax: { script: level3JaxDialogue, room: 'tadc' },
 };
 
@@ -357,7 +359,8 @@ document.getElementById('btn-level3').addEventListener('click', (event) => {
   storyProgress.finishRibbit(4);
   storyProgress.finishKaufmoIntro();
   // Carrying all five: talking to him hands them in and plays the real
-  // success scene, then the Level 2 card and the Lobby scene before the maze.
+  // success scene, then the Level 2 card, Jax bolting out and the chase
+  // through to the Lobby and the maze.
   for (let i = 0; i < PHOTO_COUNT; i++) itemState.collect(`dev-level3-priming-${i}`);
   titleScreen.hide();
   selectRoom('kaufmo', { onReady: (room) => talkToKaufmo(room.kaufmoApi, loadToken) });
@@ -1206,6 +1209,8 @@ const missionApi = {
   showHint,
   showLevelComplete,
   isRoom: room => currentRoom === room.group,
+  /** The player has control: mouse captured, room ready, not paused. */
+  get playing() { return isLocked && readyToPlay && !paused; },
   get token() { return loadToken; },
   get session() { return storySessionId; },
   get stage() {
@@ -1220,6 +1225,23 @@ function startMission(key) {
 }
 
 function attachStoryInteractions(room, roomKey, token) {
+  if (roomKey === 'tadc' && room.jaxCorner && storyProgress.chasingJax) {
+    runLobbyScene(missionApi, room, {
+      onGone() {
+        if (token !== loadToken || !storyProgress.caughtUpWithJax()) return;
+        showHint('Jax went through one of the doors along this wall. Open them to find the way into the maze.', 7000);
+      },
+    });
+    return;
+  }
+  if (roomKey === 'dorm' && room.jaxHallway && storyProgress.findingJax) {
+    runHallwayScene(missionApi, room, {
+      onDone() {
+        if (token !== loadToken || !storyProgress.sawJaxBolt()) return;
+        showHint('Jax ran out to the Circus Lobby. Follow him through the curtained arch.', 6500);
+      },
+    });
+  }
   if (roomKey === 'maze' && room.jaxEncounter) {
     const current = () => token === loadToken && currentRoomInfo === room && currentRoomKey === 'maze';
     const interaction = {
@@ -1358,19 +1380,6 @@ function talkToKaufmo(kaufmoApi, token) {
     const speaking = node.speaker === 'kaufmo';
     kaufmoApi.setSpeaking(speaking);
     kaufmoApi.setPose(speaking ? (node.mood || 'neutral') : 'neutral');
-    // Jax bolting past is a wordless cutaway, same technique as Pre-Level
-    // 1's jaxPassByText: returning a promise here hides the dialogue box
-    // and holds this beat until the cutscene resolves, then its own
-    // caption text shows — see withHallwayCutscene for the sibling case.
-    if (node.id === 'jaxBurstsPast') {
-      return preloadJaxFleeCutscene().then((assets) => {
-        if (!assets || !valid()) { if (assets) disposeObject3D(assets.scene); return; }
-        return new Promise((resolve) => {
-          const finish = () => { disposeObject3D(assets.scene); resolve(); };
-          runCutscene({ ...playJaxFleeCutscene(renderer, assets), cancel: finish }, finish);
-        });
-      }).catch((error) => console.warn('Jax flee cutscene unavailable; continuing dialogue.', error));
-    }
   };
   const stopTalking = () => { kaufmoApi.setSpeaking(false); kaufmoApi.setPose('neutral'); };
   // The conversation has its own shot: the room's staging if it has one
@@ -1437,7 +1446,8 @@ function talkToKaufmo(kaufmoApi, token) {
   const finished = () => {
     if (!valid()) return;
     if (key === 'level2Return' && !itemState.isDone()) {
-      if (preLevel1Session) objectives.complete('check-kaufmo');
+      // Before the card, so a save from here on picks up the way into Level 3.
+      storyProgress.finishLevel2();
       itemState.markDone();
       void finishKaufmoLevel(token);
     } else if (key === 'level2Abstraction') {
@@ -1503,15 +1513,22 @@ function clearView(from, to) {
 }
 
 /**
- * After the success scene: the Level 2 card, then the Lobby, where Pomni
- * finds Jax by the tent and Ribbit catches up at the maze entrance
- * (level3Jax), then into the maze for Level 3. The Lobby scene is dialogue
- * over the room for now; Jax and Ribbit aren't staged there in 3D yet.
+ * After the success scene: the Level 2 card. The story's already on
+ * 'find-jax' (see talkToKaufmo): Pomni walks out into the Dorm Hall, where
+ * level3Hallway.js has Jax bolt past her, then on to the Lobby, where
+ * level3Lobby.js stages the rest on the way into the maze. Outside the story
+ * (a room picked from the list) there's nothing to stage, so it's straight
+ * to the Lobby conversation and the maze, as before.
  */
 async function finishKaufmoLevel(token) {
   const title = 'Level 2 Complete';
   const subtitle = 'Kaufmo has his missing pieces. Now someone should check on Jax.';
-  if (!await showLevelComplete(title, subtitle, { resume: false }) || token !== loadToken) return;
+  const story = storyProgress.findingJax;
+  if (!await showLevelComplete(title, subtitle, { resume: story }) || token !== loadToken) return;
+  if (story) {
+    showHint('Head back out into the Dorm Hall and look for Jax.', 6000);
+    return;
+  }
   const lobby = await missionApi.travel('tadc', { from: null });
   if (!lobby) return;
   const here = loadToken;
@@ -1913,7 +1930,7 @@ function updatePictureCounter() {
   // including the Dorm Hall and any detours. Hide the Level 2 HUD afterward.
   const searchActive = objectives.active?.id === 'collect-photos';
   const visible = (searchActive || currentRoomKey === 'tadc' || currentRoomKey === 'kaufmo')
-    && (!preLevel1Session || storyProgress.kaufmoIntroduced)
+    && (!preLevel1Session || storyProgress.kaufmoIntroduced) && !itemState.isDone()
     && isLocked && readyToPlay && !paused && !dialogueUI.isActive
     && !activeCutscene && !activeCinematic()?.active && !stageBusy() && !titleScreen.active
     && overlay.classList.contains('hidden') && controlsPanel.hidden
@@ -1999,6 +2016,9 @@ function roomLoadOptions(roomKey, { from, preview, openingMode }) {
     from, playDialogue: playRoomDialogue, preview, endLevel, stage, items: itemState, travel: travelTo,
     objectives, showLevelComplete, playChime: openingAudio.playChime, mazeItems,
     seed: roomKey === 'maze' ? mazeAttemptSeed ?? devMazeSeed : undefined,
+    mazeDoor: roomKey !== 'tadc' ? undefined
+      : storyProgress.chasingJax ? 'jax' : storyProgress.mazeOpen ? 'open' : null,
+    jaxHallway: roomKey === 'dorm' && storyProgress.findingJax,
     ribbitStory: {
       complete: () => storyProgress.ribbitComplete,
       points: () => storyProgress.ribbitPoints,
@@ -2050,6 +2070,7 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
         try { rehearseBedroomFromHall(result, roomPreload); } catch (error) { console.warn('Could not rehearse her room from the hall.', error); }
       }
       applyLoadedRoom(result, onReady && (() => onReady(result)), roomKey, openingMode === 'play');
+      if (roomKey === 'maze') storyProgress.enteredMaze();
       takeCheckpoint();
       if (roomKey === 'dorm') armCaineArrival();
       if (preLevel1Session && roomKey === 'dorm' && from === 'ribbit' && storyProgress.hallwayPending) {
@@ -3506,6 +3527,7 @@ function playAction(name) {
 const STAGE_WALK_SPEED = 1.6;   // m/s: an unhurried walk
 const KNOCK_DURATION = 1.4;     // seconds: raise, three taps, lower
 const KNOCK_TAPS = 3;
+const ARM_OUT_DURATION = 2.6;   // seconds: arm out to stop someone, held, lowered
 const SEAT_CLEARANCE = 0.06;    // her hips this far above the seat
 const SIT_SHARPNESS = 6;
 
@@ -3549,7 +3571,7 @@ const stage = {
     });
   },
 
-  /** Plays a gesture on top of her idle. 'knock' calls onTap at each rap. */
+  /** Plays a gesture on top of her idle: 'knock' (calls onTap at each rap) or 'armOut'. */
   gesture(name, { onTap } = {}) {
     stageGesture?.resolve(false);
     return new Promise((resolve) => {
@@ -3678,8 +3700,9 @@ function applyHeadLook(dt) {
 /**
  * Layers the staged gesture/seat on the clip pose updatePomniWalk just
  * played (see bendBone for the axes). Knock: right arm raised forward,
- * forearm rapping KNOCK_TAPS times. Sit: hips lowered onto the seat,
- * thighs forward, shins hanging.
+ * forearm rapping KNOCK_TAPS times. Arm out: the same arm held out nearly
+ * straight, to stop whoever's in front of her. Sit: hips lowered onto the
+ * seat, thighs forward, shins hanging.
  */
 function applyStagePose(dt) {
   sitAmount = THREE.MathUtils.damp(sitAmount, stageSeatY === null ? 0 : 1, SIT_SHARPNESS, dt);
@@ -3712,8 +3735,13 @@ function applyStagePose(dt) {
     }
     bendBone(pomniBones.RightArm, pomni, SIDEWAYS, -1.25 * raise);
     bendBone(pomniBones.RightForeArm, pomni, SIDEWAYS, (-0.9 + 0.35 * rap) * raise);
+  } else if (gesture.name === 'armOut') {
+    const t = gesture.time;
+    const raise = THREE.MathUtils.smoothstep(t, 0, 0.3) * (1 - THREE.MathUtils.smoothstep(t, ARM_OUT_DURATION - 0.4, ARM_OUT_DURATION));
+    bendBone(pomniBones.RightArm, pomni, SIDEWAYS, -1.35 * raise);
+    bendBone(pomniBones.RightForeArm, pomni, SIDEWAYS, -0.15 * raise);
   }
-  if (gesture.time >= KNOCK_DURATION) {
+  if (gesture.time >= (gesture.name === 'armOut' ? ARM_OUT_DURATION : KNOCK_DURATION)) {
     stageGesture = null;
     gesture.resolve(true);
   }

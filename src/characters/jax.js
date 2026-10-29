@@ -81,6 +81,20 @@ const IDLE_TREMBLE_ANGLE = THREE.MathUtils.degToRad(1.1);
 const IDLE_HUNCH_ANGLE = THREE.MathUtils.degToRad(6); // a little drawn in on himself, not standing tall
 const TURN_SHARPNESS = 5; // matches ribbit.js's/kaufmoTalk.js's own faceTowards rate
 
+// Glitching (setGlitching; Level 3's "his idle is jerky, with small
+// stutters"): every so often the idle skips like a scratched recording.
+// The pose holds for a frame or two, his head and shoulders jerk to one
+// side and he jumps a few centimetres, then he carries on from a little
+// further along. glitch() is one bigger tear across him, skipping every
+// frame for a moment.
+const STUTTER_GAP = [0.3, 1.0];    // seconds of smooth idle between skips
+const STUTTER_HOLD = [0.06, 0.14]; // how long each skip holds
+const STUTTER_SKIP = 0.35;         // seconds of idle jumped over
+const STUTTER_JERK = THREE.MathUtils.degToRad(7);
+const STUTTER_SHIFT = 0.035;       // metres
+const GLITCH_SECONDS = 0.4;
+const GLITCH_SIZE = 2.5;           // how much bigger its skips are
+
 /**
  * Finds a bone by a loose, punctuation-insensitive match on its name.
  * glTF export mangles "upper_leg.L_53_59" in ways that vary by loader
@@ -106,8 +120,12 @@ function findBone(root, prefix) {
  *
  * @returns {Promise<{ jax: THREE.Group,
  *   update: (deltaSeconds: number) => void,
- *   playPassBy: (from: THREE.Vector3, to: THREE.Vector3, duration: number) => void,
+ *   playPassBy: (from: THREE.Vector3, to: THREE.Vector3, duration: number,
+ *     options?: { style?: 'run' | 'sly', stay?: boolean }) => void,
  *   faceTowards: (worldPoint: THREE.Vector3 | null) => void,
+ *   isRunning: () => boolean,
+ *   setGlitching: (on: boolean) => void, glitch: () => void,
+ *   setShown: (on: boolean) => void,
  *   bindPose: Map<THREE.Bone, THREE.Quaternion> }>}
  */
 export function loadJax() {
@@ -167,11 +185,39 @@ export function loadJax() {
     }
 
     let walk = null;
-    let time = 0;
+    let idleTime = 0;
     let targetYaw = null;
     const ownPosition = new THREE.Vector3();
+    let glitching = false;
+    const skip = { gap: 0, hold: 0, jerk: 0, shift: 0, tear: 0 };
+    const between = ([min, max]) => min + Math.random() * (max - min);
 
-    function playPassBy(from, to, duration, { style = 'run' } = {}) {
+    /** Advances the idle's clock, holding and jumping it while glitching. */
+    function stutter(deltaSeconds) {
+      skip.tear = Math.max(0, skip.tear - deltaSeconds);
+      if (!glitching && skip.tear === 0) {
+        idleTime += deltaSeconds;
+        skip.jerk = skip.shift = 0;
+        return;
+      }
+      if (skip.hold > 0) {
+        skip.hold -= deltaSeconds;
+        return;
+      }
+      idleTime += deltaSeconds;
+      skip.jerk = skip.shift = 0;
+      skip.gap -= deltaSeconds;
+      if (skip.gap > 0 && skip.tear === 0) return;
+      const size = skip.tear > 0 ? GLITCH_SIZE : 1;
+      skip.hold = between(STUTTER_HOLD);
+      skip.gap = between(STUTTER_GAP);
+      idleTime += STUTTER_SKIP;
+      skip.jerk = (Math.random() * 2 - 1) * STUTTER_JERK * size;
+      skip.shift = (Math.random() * 2 - 1) * STUTTER_SHIFT * size;
+    }
+
+    /** `stay`: stop and stand at `to` (the Lobby chase) rather than vanish there. */
+    function playPassBy(from, to, duration, { style = 'run', stay = false } = {}) {
       jax.position.copy(from);
       jax.rotation.y = Math.atan2(to.x - from.x, to.z - from.z);
       jax.rotation.x = 0;
@@ -181,7 +227,8 @@ export function loadJax() {
       // the run starts from a clean bind pose rather than a frozen bend.
       if (bones.spine) bones.spine.quaternion.copy(rest.get(bones.spine));
       if (bones.head) bones.head.quaternion.copy(rest.get(bones.head));
-      walk = { from: from.clone(), to: to.clone(), duration, elapsed: 0, style };
+      model.position.x = 0;
+      walk = { from: from.clone(), to: to.clone(), duration, elapsed: 0, style, stay };
     }
 
     /** Turns him (smoothly, while idle) toward a world point; null stops turning. */
@@ -192,16 +239,22 @@ export function loadJax() {
     }
 
     function update(deltaSeconds) {
-      time += deltaSeconds;
       if (!walk) {
         // Standing still (e.g. found in the maze) still breathes and
         // shivers instead of holding dead still like a mannequin.
+        stutter(deltaSeconds);
+        const time = idleTime;
         if (bones.spine) bones.spine.quaternion.copy(rest.get(bones.spine));
         if (bones.head) bones.head.quaternion.copy(rest.get(bones.head));
         bendBone(bones.spine, jax, SIDEWAYS, IDLE_HUNCH_ANGLE);
         bendBone(bones.spine, jax, UP, Math.sin(time * IDLE_BREATHE_HZ * Math.PI * 2) * IDLE_BREATHE_ANGLE);
         bendBone(bones.spine, jax, SIDEWAYS, Math.sin(time * IDLE_TREMBLE_HZ * Math.PI * 2) * IDLE_TREMBLE_ANGLE);
         bendBone(bones.head, jax, SIDEWAYS, Math.sin(time * IDLE_TREMBLE_HZ * Math.PI * 2 + 1.3) * IDLE_TREMBLE_ANGLE);
+        if (skip.jerk) {
+          bendBone(bones.head, jax, UP, skip.jerk);
+          bendBone(bones.spine, jax, SIDEWAYS, skip.jerk * 0.5);
+        }
+        model.position.x = skip.shift;
         poseLeg(bones.lowerArmL, IDLE_ELBOW_BEND);
         poseLeg(bones.lowerArmR, IDLE_ELBOW_BEND);
 
@@ -234,11 +287,36 @@ export function loadJax() {
       jax.rotation.z = sly ? Math.sin(phase) * .025 : 0;
 
       if (t >= 1) {
-        jax.visible = false;
+        if (walk.stay) {
+          // Back to rest, so the idle branch above starts from a clean pose
+          // instead of freezing mid-stride.
+          for (const [bone, quaternion] of rest) bone.quaternion.copy(quaternion);
+          jax.position.copy(walk.to);
+          jax.rotation.x = 0;
+          jax.rotation.z = 0;
+        } else {
+          jax.visible = false;
+        }
         walk = null;
       }
     }
 
-    return { jax, update, playPassBy, faceTowards, bindPose };
+    /**
+     * Shows or hides him while keeping his light in the scene, just dimmed
+     * to nothing: a light coming or going changes the scene's light count,
+     * and that recompiles every material in view.
+     */
+    function setShown(on) {
+      jax.visible = true;
+      model.visible = on;
+      keyLight.intensity = on ? KEY_LIGHT_INTENSITY : 0;
+    }
+
+    return {
+      jax, update, playPassBy, faceTowards, bindPose, setShown,
+      isRunning: () => walk !== null,
+      setGlitching(on) { glitching = on; },
+      glitch() { skip.tear = GLITCH_SECONDS; },
+    };
   });
 }

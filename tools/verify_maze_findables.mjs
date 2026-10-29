@@ -48,6 +48,8 @@ GLTFLoader.prototype.load = function (url, onLoad, _progress, onError) {
   assert.equal(room.interactables.length, MAZE_FINDABLES.length, 'one pickup interactable per findable');
   console.log(`PASS both findables placed (${meshes.length}) with matching interactables`);
 
+  assert.ok(room.interactables.every((pickup, i) => pickup.anchor === meshes[i] && pickup.radius > 4.5 / 2),
+    'each pickup is offered from outside its pocket without aiming at it');
   const [firstPickup] = room.interactables;
   assert.ok(firstPickup.prompt().startsWith('Pick up '), `unexpected prompt: ${firstPickup.prompt()}`);
   firstPickup.interact();
