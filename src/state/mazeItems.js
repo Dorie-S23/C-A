@@ -35,7 +35,7 @@ export function mazeObjective(items){
   return {title:items.jaxComplete?'Reach the exit':items.hasAllRequired()?'Find Jax':"Find Jax's missing objects",count:MAZE_FINDABLES.filter(item=>items.hasCollected(item.id)).length,complete:items.jaxComplete};
 }
 
-export const MAZE_SEARCH_SECONDS = 180;
+export const MAZE_SEARCH_SECONDS = 300;
 
 /** Per-attempt gameplay clock; reaching Jax is not a Level 3 completion. */
 export function createMazeSearch() {

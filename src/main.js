@@ -3584,6 +3584,13 @@ function checkTriggers(player) {
     const dz = player.position.z - hazard.mesh.position.z;
     if (Math.hypot(dx, dz) < hazard.radius + PLAYER_RADIUS) {
       caught = true;
+      // A hazard catch fails the attempt outright, same as the countdown
+      // expiring: reseed so the next try gets a fresh layout and keepsake
+      // placement, and clear the clock so it starts the full countdown
+      // again instead of resuming already-expired.
+      const failedSeed = mazeAttemptSeed;
+      const seed = Math.floor(Math.random() * 0x100000000);
+      resetMazeAttempt(seed === failedSeed ? (seed + 1) >>> 0 : seed);
       const title = hazard.mesh.userData?.isGloink ? 'Gloinked!' : 'Abstracted!';
       const subtitle = hazard.mesh.userData?.isGloink
         ? 'A patrolling gloink caught you — try again.'
@@ -3648,6 +3655,11 @@ function updateMovement(deltaSeconds) {
   if (wishDirection.lengthSq() > 1e-8) {
     const targetYaw = Math.atan2(wishDirection.x, wishDirection.z);
     pomni.rotation.y = dampAngle(pomni.rotation.y, targetYaw, TURN_SHARPNESS, deltaSeconds);
+  } else if (!firstPerson) {
+    // Stepping backward/sideways can leave her facing the camera; once
+    // she's not being steered anywhere, ease back to the standard
+    // over-the-shoulder framing so the player can still read "forward".
+    pomni.rotation.y = dampAngle(pomni.rotation.y, cameraYaw + Math.PI, TURN_SHARPNESS * 0.4, deltaSeconds);
   }
 
   const frameStartX = player.position.x;
