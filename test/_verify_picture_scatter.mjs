@@ -86,6 +86,32 @@ test('places all three pictures on the floor, each its own spot, none in the kee
   }
 });
 
+test('a pinned picture always lands near its fixed point, others still keep spacing clear of it', () => {
+  for (let trial = 0; trial < 15; trial++) {
+    const room = buildRoom();
+    scatterPictures(room, createLevel2Items(), PICTURES, SPAWN, [], {
+      ...SMALL_ROOM_OPTIONS, rng: createSeededRandom(trial + 1), pinned: { id: 'ca2', x: 1, z: 1 },
+    });
+    const pictures = placedPictures(room);
+    assert.equal(pictures.length, 3);
+    assert.ok(pictures.some((picture) => Math.hypot(picture.position.x - 1, picture.position.z - 1) < 2),
+      `trial ${trial + 1}: no picture landed near the pinned point`);
+    for (const picture of pictures) {
+      if (Math.hypot(picture.position.x - 1, picture.position.z - 1) < 2) continue;
+      assert.ok(Math.hypot(picture.position.x - 1, picture.position.z - 1) >= SMALL_ROOM_OPTIONS.spacing,
+        `trial ${trial + 1}: another picture landed within spacing of the pinned one`);
+    }
+  }
+});
+
+test('a pinned id with nothing below it falls back to the random pool instead of vanishing', () => {
+  const room = buildRoom();
+  scatterPictures(room, createLevel2Items(), PICTURES, SPAWN, [], {
+    ...SMALL_ROOM_OPTIONS, pinned: { id: 'ca1', x: 9999, z: 9999 }, // nothing out there to land on
+  });
+  assert.equal(placedPictures(room).length, 3, 'the unreachable pin falls back rather than dropping a photo');
+});
+
 test('a replay scatters them differently, not back to the same three spots', () => {
   const firstSpotKeys = new Set();
   for (let trial = 0; trial < 30; trial++) {

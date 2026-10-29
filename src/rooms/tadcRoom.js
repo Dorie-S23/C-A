@@ -53,6 +53,13 @@ const EYE_HEIGHT = 1.5;
 const PHOTO_OPEN_RADIUS = 12;
 const PHOTO_OPEN_STEP = 2;
 const PHOTO_OPEN_MIN = 28;
+// One photo always lands by the small steps at the foot of the stage
+// (playtest request) — the stage's own floor isn't in lobbyReach at all
+// (it's set dressing, not meant to be walked onto), so this is the
+// nearest confirmed-walkable point right at its front edge, centred on
+// its width. Best effort pending an in-game look: nudge x (toward/away
+// from the stage) or z (left/right along it) if it's not quite on them.
+const STAGE_STEPS_SPOT = { x: -28, z: 24.6 };
 
 export function loadTadcRoom(onProgress, { from, items } = {}) {
   return Promise.all([
@@ -89,6 +96,7 @@ export function loadTadcRoom(onProgress, { from, items } = {}) {
         isOpen: (origin) => lobbyReach.has(origin.x, origin.z),
         isReachable: (spot) => photoInView(room.group, spot, defaultSpawn.y)
           && photoInOpen(room.group, spot, defaultSpawn.y),
+        pinned: { id: PICTURES[0].id, ...STAGE_STEPS_SPOT },
       });
       room.photoPositions = pictures.remaining;
       const doorsUpdate = room.update;
