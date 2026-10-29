@@ -2883,8 +2883,40 @@ function resolveWallCollisions(position) {
 function firstColliderHit(position, direction, distance) {
   const feetY = position.y - PLAYER_HEIGHT;
   let nearest = null;
+  const consider = (t, nx, nz) => {
+    if (t < 0 || t > distance) return;
+    if (nearest && t >= nearest.distance) return;
+    nearest = { distance: t, nx, nz };
+  };
   for (const box of colliders) {
     if (box.max.y <= feetY + STEP_HEIGHT || box.min.y >= position.y) continue;
+
+    // Already touching this box right now? Only a block if the step
+    // actually heads further in (closest-point normal, same test
+    // resolveWallCollisions uses) — mirrors firstWallHit's raycast, which
+    // simply can't hit a surface behind its own origin. Without this,
+    // moving *away* from a wall you're resting against would read as
+    // blocked too, freezing movement next to any wall.
+    {
+      const closestX = THREE.MathUtils.clamp(position.x, box.min.x, box.max.x);
+      const closestZ = THREE.MathUtils.clamp(position.z, box.min.z, box.max.z);
+      const dx = position.x - closestX, dz = position.z - closestZ;
+      const distSq = dx * dx + dz * dz;
+      if (distSq < PLAYER_RADIUS * PLAYER_RADIUS && distSq > 1e-9) {
+        const dist = Math.sqrt(distSq);
+        const nx = dx / dist, nz = dz / dist;
+        if (-(direction.x * nx + direction.z * nz) > 1e-4) consider(0, nx, nz);
+      }
+    }
+
+    // Not yet touching: sweep the step against the box's faces, each
+    // expanded by PLAYER_RADIUS (the player as a point moving through a
+    // Minkowski-expanded box) — but a box's *expanded corners* are square,
+    // not the rounded quarter-circle a real swept circle traces, so a
+    // slab hit landing past the box's actual edge (i.e. near a corner, not
+    // a flat face) is swapped for a proper swept-circle-vs-corner-point
+    // hit instead. Without that, the square overshoot can wall off a
+    // walkable gap right next to a corner — exactly where two walls meet.
     let enter = -Infinity, exit = distance, axis = null, sign = 0, outsideSlab = false;
     for (const [o, d, lo, hi, name] of [
       [position.x, direction.x, box.min.x - PLAYER_RADIUS, box.max.x + PLAYER_RADIUS, 'x'],
@@ -2899,39 +2931,27 @@ function firstColliderHit(position, direction, distance) {
       if (near > enter) { enter = near; axis = name; sign = d > 0 ? -1 : 1; }
       if (far < exit) exit = far;
     }
-    if (outsideSlab || !axis || enter > exit) continue;
+    if (outsideSlab || !axis || enter < 0 || enter > exit) continue;
 
-    let hitDistance, nx, nz;
-    if (enter >= 0) {
-      // A genuine future crossing: block there.
-      hitDistance = enter;
-      nx = axis === 'x' ? sign : 0;
-      nz = axis === 'z' ? sign : 0;
-    } else {
-      // enter < 0 means the slab already contained the start point on every
-      // bounded axis — already resting against/touching this box, not
-      // approaching it. The axis-aligned slab normal above isn't
-      // trustworthy here (it's an artefact of which axis happened to bound
-      // last, not the real nearest face), so use the same closest-point
-      // normal resolveWallCollisions uses, and only treat it as a block if
-      // the step actually heads further in — exactly what firstWallHit's
-      // raycast would do, since it simply can't hit a surface behind its
-      // own origin. Skipping that check (and just clamping to 0 always)
-      // would make moving *away* from any wall you're resting against read
-      // as blocked too, freezing all movement next to a wall.
-      const closestX = THREE.MathUtils.clamp(position.x, box.min.x, box.max.x);
-      const closestZ = THREE.MathUtils.clamp(position.z, box.min.z, box.max.z);
-      const dx = position.x - closestX, dz = position.z - closestZ;
-      const distSq = dx * dx + dz * dz;
-      if (distSq >= PLAYER_RADIUS * PLAYER_RADIUS || distSq < 1e-9) continue;
-      const dist = Math.sqrt(distSq);
-      nx = dx / dist; nz = dz / dist;
-      const approach = -(direction.x * nx + direction.z * nz);
-      if (approach <= 1e-4) continue; // moving away from or along the face
-      hitDistance = 0;
+    const entryOther = axis === 'x' ? position.z + direction.z * enter : position.x + direction.x * enter;
+    const [oMin, oMax] = axis === 'x' ? [box.min.z, box.max.z] : [box.min.x, box.max.x];
+    if (entryOther >= oMin && entryOther <= oMax) {
+      consider(enter, axis === 'x' ? sign : 0, axis === 'z' ? sign : 0);
+      continue;
     }
-    if (nearest && hitDistance >= nearest.distance) continue;
-    nearest = { distance: hitDistance, nx, nz };
+    const cornerOther = entryOther < oMin ? oMin : oMax;
+    const cornerX = axis === 'x' ? (sign > 0 ? box.max.x : box.min.x) : cornerOther;
+    const cornerZ = axis === 'x' ? cornerOther : (sign > 0 ? box.max.z : box.min.z);
+    const ox = position.x - cornerX, oz = position.z - cornerZ;
+    const b = direction.x * ox + direction.z * oz;
+    const c = ox * ox + oz * oz - PLAYER_RADIUS * PLAYER_RADIUS;
+    const discriminant = b * b - c;
+    if (discriminant < 0) continue;
+    const t = -b - Math.sqrt(discriminant);
+    if (t < 0) continue;
+    const hx = position.x + direction.x * t - cornerX, hz = position.z + direction.z * t - cornerZ;
+    const hd = Math.hypot(hx, hz) || 1;
+    consider(t, hx / hd, hz / hd);
   }
   if (!nearest) return null;
   hitNormal.set(nearest.nx, 0, nearest.nz);
