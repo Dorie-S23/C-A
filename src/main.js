@@ -426,6 +426,13 @@ dialoguePicker.querySelectorAll('button[data-story]').forEach((button) => {
     startNewGame(); // the story for real, from the opening
   });
 });
+// The narrated intro panels, then on into the new game like PLAY. Always
+// plays, even with dev mode's skip-cutscenes on, since it was asked for.
+document.getElementById('btn-backstory').addEventListener('click', (event) => {
+  event.stopPropagation();
+  openingAudio.unlock(); // while this click still counts as a user gesture
+  introStory.play(() => startNewGame());
+});
 
 // --- Developer jumps ----------------------------------------------------
 // Every level, and every cutscene between them, from its own start, so any
