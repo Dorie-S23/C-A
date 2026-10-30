@@ -217,8 +217,12 @@ let currentAction = null;
 const pomniReady = loadPomni().then(({ pomni: model, animations }) => {
   pomni = model;
   pomniSpeaking = createPomniSpeaking(pomni);
-  pomniJump = createPomniJump(pomni);
-  pomniGaitArms = createPomniGaitArms(pomni, animations);
+  // The Mixamo clips from her folder (characters/pomniClips.js) bring their
+  // own jump and arm swing; the procedural ones stand in only without them.
+  const clip = (name) => animations.find((one) => one.name.toLowerCase() === name);
+  jumpClip = clip('jump')?.userData.retargeted ? clip('jump') : null;
+  pomniJump = jumpClip ? null : createPomniJump(pomni);
+  pomniGaitArms = clip('walk')?.userData.retargeted ? null : createPomniGaitArms(pomni, animations);
   pomni.position.y = -PLAYER_HEIGHT; // feet on the floor
   player.add(pomni);
 
@@ -234,6 +238,11 @@ const pomniReady = loadPomni().then(({ pomni: model, animations }) => {
   if (pomniBones.Hips) {
     pomni.updateMatrixWorld(true);
     pomniHipsHeight = pomniBones.Hips.getWorldPosition(new THREE.Vector3()).y - pomni.position.y;
+    // How fast each retargeted gait carries her at her size, so her feet
+    // keep pace with the ground (see updatePomniWalk).
+    const pace = (name) => clip(name)?.userData.speedPerHipHeight * pomniHipsHeight;
+    if (pace('walk') > 0) walkClipSpeed = pace('walk');
+    if (pace('run') > 0) runClipSpeed = pace('run');
   }
 });
 const pomniBones = {
@@ -3661,8 +3670,19 @@ const TURN_SHARPNESS = 14;     // higher = snappier turning
 // is sped up/slowed down by actual speed ÷ this so her feet stay planted.
 const WALK_CLIP_SPEED = 1.1; // Retain the R5-compatible 1.6 m character scale.
 const RUN_CLIP_SPEED = 2.85;
+// Measured from the clips themselves once they've loaded, if they can be.
+let walkClipSpeed = WALK_CLIP_SPEED;
+let runClipSpeed = RUN_CLIP_SPEED;
+// Her Mixamo Jumping clip (null without it): played from its take-off
+// to its landing over the jump's real airtime, 2 · JUMP_SPEED / GRAVITY,
+// then holding the landing frame for any longer fall. Each jump of a
+// double jump starts it over.
+let jumpClip = null;
+let jumpStartedFor = 0; // the jumpsUsed it last started for
+const JUMP_AIRTIME = (2 * JUMP_SPEED) / GRAVITY;
 const RUN_THRESHOLD = WALK_SPEED * 1.4; // above this she's sprinting
 const ACTION_FADE = 0.2;       // seconds to cross-fade between clips
+const JUMP_FADE = 0.08;        // into the jump: quick, she leaves the ground at once
 let animSpeed = 0;             // smoothed ground speed, so clips don't flicker
 // Fallback hop-and-waddle for a model without clips (e.g. the placeholder).
 const STEPS_PER_METRE = 1.4;
@@ -5130,7 +5150,10 @@ function updateMovement(deltaSeconds) {
   if (shouldShowObjective(gameplayHUDContext()) && (move.forward || move.back || move.left || move.right || padMoving)) {
     controlsTutorial.move(moved, sprinting);
   }
-  updatePomniWalk(deltaSeconds, deltaSeconds > 0 ? moved / deltaSeconds : 0);
+  // Her animation goes by the speed she'd move without the dev build's
+  // boost (DEV_SPEED_MULTIPLIER), so it looks the same in both; and she
+  // only breaks into a run when sprinting (Shift), walking otherwise.
+  updatePomniWalk(deltaSeconds, deltaSeconds > 0 ? moved / deltaSeconds / DEV_SPEED_MULTIPLIER : 0, { sprinting });
 
   checkTriggers(player, deltaSeconds);
   checkPortals();
@@ -5150,21 +5173,23 @@ function dampAngle(current, target, sharpness, dt) {
  * clips (the placeholder), walking is faked: a small hop per step plus a
  * side-to-side waddle, faded in and out with her speed.
  */
-function updatePomniWalk(dt, speed) {
+function updatePomniWalk(dt, speed, { sprinting = false } = {}) {
   if (paused) dt = 0;
   if (pomniMixer) {
     pomniSpeaking?.remove();
     pomniJump?.remove();
     pomniGaitArms?.remove();
     animSpeed = THREE.MathUtils.damp(animSpeed, speed, 12, dt);
-    if (airborne || animSpeed < 0.2) {
+    if (airborne && jumpClip && jumpsUsed > 0) {
+      playJump();
+    } else if (airborne || animSpeed < 0.2) {
       playAction('idle');
-    } else if (animSpeed > RUN_THRESHOLD && pomniActions.run) {
+    } else if (sprinting && animSpeed > RUN_THRESHOLD && pomniActions.run) {
       playAction('run');
-      pomniActions.run.timeScale = animSpeed / RUN_CLIP_SPEED;
+      pomniActions.run.timeScale = animSpeed / runClipSpeed;
     } else {
       playAction('walk');
-      pomniActions.walk.timeScale = animSpeed / WALK_CLIP_SPEED;
+      pomniActions.walk.timeScale = animSpeed / walkClipSpeed;
     }
     pomniMixer.update(dt);
     applyStagePose(dt);
@@ -5185,6 +5210,29 @@ function updatePomniWalk(dt, speed) {
   pomni.rotation.z = Math.sin(walkPhase) * WALK_SWAY * walkAmount;
   pomniGaitArms?.update(dt, speed, airborne);
   pomniJump?.update(dt, airborne, verticalVelocity, jumpsUsed, speed);
+}
+
+/** Her Jumping clip through the air (see jumpClip): started at its take-off on each jump. */
+function playJump() {
+  const jump = pomniActions.jump;
+  const { takeoff, landing } = jumpClip.userData;
+  if (currentAction !== jump || jumpsUsed !== jumpStartedFor) {
+    jumpStartedFor = jumpsUsed;
+    jump.reset();
+    jump.setLoop(THREE.LoopOnce, 1);
+    jump.clampWhenFinished = true;
+    jump.time = takeoff;
+    jump.timeScale = (landing - takeoff) / JUMP_AIRTIME;
+    if (currentAction !== jump) {
+      jump.fadeIn(JUMP_FADE).play();
+      currentAction?.fadeOut(JUMP_FADE);
+      currentAction = jump;
+    } else {
+      jump.play();
+    }
+  }
+  // Still falling past where the clip lands: hold just before touch-down.
+  if (jump.time >= landing) { jump.time = landing; jump.timeScale = 0; }
 }
 
 /** Cross-fades from whatever Pomni is playing to the named clip. */

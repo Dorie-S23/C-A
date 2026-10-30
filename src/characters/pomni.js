@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DecalGeometry } from 'three/examples/jsm/geometries/DecalGeometry.js';
+import { loadPomniClips } from './pomniClips.js';
 
 const POMNI_URL = './models/characters/pomni/pomni.glb';
 const POMNI_HEIGHT = 1.6; // Caine is 2.6; agree on this with the team
@@ -84,21 +85,35 @@ const ARM_SAMPLES_PER_SECOND = 30;
 const IDLE_START = 2 / 30; // seconds
 
 // The Walk/Run finger keys clench her hands into a claw with the thumb
-// splayed out. Those clips use her relaxed Idle finger pose instead, so
-// her hands also stay the same as she starts and stops walking.
-const RELAXED_FINGER_CLIPS = ['walk', 'run'];
+// splayed out (and the Mixamo files in her folder have no finger keys at
+// all). Those clips use her relaxed Idle finger pose instead, so her hands
+// also stay the same as she starts and stops walking.
+const RELAXED_FINGER_CLIPS = ['walk', 'run', 'jump'];
 const FINGER_BONE = /Hand(Thumb|Index|Middle|Ring|Pinky)\d/;
 
 /**
  * Loads Pomni with her origin on the floor between her feet, facing +Z.
  * The model carries Idle, Walk and Run clips (Mixamo, in place) for an
- * AnimationMixer rooted at the returned group.
+ * AnimationMixer rooted at the returned group; the Mixamo files in her
+ * folder (pomniClips.js) replace its Walk and Run and add a Jump, with
+ * userData.retargeted set on each.
  * Falls back to a capsule placeholder if the model isn't there yet.
  * @returns {Promise<{ pomni: THREE.Group, animations: THREE.AnimationClip[] }>}
  */
 export function loadPomni() {
   return new GLTFLoader().loadAsync(POMNI_URL)
-    .then((gltf) => {
+    .then(async (gltf) => {
+      // Retargeted onto her rest pose, so before anything below moves it.
+      const extra = await loadPomniClips(gltf.scene).catch((error) => {
+        console.warn('Pomni\'s Mixamo animations could not be loaded; keeping her own.', error);
+        return [];
+      });
+      for (const clip of extra) {
+        clip.userData.retargeted = true;
+        const same = gltf.animations.findIndex((own) => own.name.toLowerCase() === clip.name.toLowerCase());
+        if (same >= 0) gltf.animations[same] = clip;
+        else gltf.animations.push(clip);
+      }
       trimIdleTPose(gltf.animations);
       naturalArms(gltf.animations, gltf.scene);
       relaxFingers(gltf.animations);
@@ -162,7 +177,8 @@ function naturalArms(clips, model) {
   const [shoulderWorld, armWorld, foreWorld, handWorld, local] = [q(), q(), q(), q(), q()];
   for (const clip of clips) {
     const settings = ARM_SWING[clip.name.toLowerCase()];
-    if (!settings) continue;
+    // The retargeted Mixamo clips' own arms already clear her body.
+    if (!settings || clip.userData.retargeted) continue;
     const count = Math.max(2, Math.round(clip.duration * ARM_SAMPLES_PER_SECOND));
     const times = Array.from({ length: count + 1 }, (_, i) => (clip.duration * i) / count);
 
