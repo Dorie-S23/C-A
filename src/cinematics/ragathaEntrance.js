@@ -4,6 +4,12 @@ import { createRagathaBlocking } from './ragathaBlocking.js';
 
 export const ENTRANCE_SECONDS = 4;
 const RETURN_SECONDS = 1.25;
+// How far (of the way from facing each other to facing the two-shot's
+// camera) Ragatha and Pomni stand turned out, so their faces read. Ragatha's
+// head turns a little back to Pomni, and her curls hide her face side-on.
+const RAGATHA_CHEAT = .5;
+const POMNI_CHEAT = .3;
+const GROUND_EASE = 12; // how quickly she steps up onto/down off the rug's edging
 const ease = (t, a, b) => THREE.MathUtils.smootherstep(t, a, b);
 
 /** Room-owned staged arrival. No substitute character or bedroom asset edits. */
@@ -49,7 +55,7 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
     doorOpeningStarted = true; onDoorOpening?.();
   }
   const groundRay = new THREE.Raycaster();
-  const bodyBox = new THREE.Box3();
+  let groundY = null;
   // Side-on two-shot: both characters in the foreground, doorway behind them.
   const talkTarget = blocking ? room.spawn.clone().lerp(blocking.talk,.5).setY(1.2) : null;
   const talkCamera = blocking ? center.clone().addScaledVector(inward,5.95).addScaledVector(side,.4).setY(2.2) : null;
@@ -97,6 +103,21 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
     onDialogue?.(controller.finishDialogue);
   }
   function setStage(next) { stage = next; stageTime = 0; }
+  // The yaw at `from` facing `to`, turned `cheat` of the way round to the two-shot's camera.
+  function cheatedYaw(from, to, cheat) {
+    const toOther = Math.atan2(to.x - from.x, to.z - from.z);
+    const toCamera = Math.atan2(talkCamera.x - from.x, talkCamera.z - from.z);
+    return toOther + cheat * (THREE.MathUtils.euclideanModulo(toCamera - toOther + Math.PI, Math.PI * 2) - Math.PI);
+  }
+  // Where she turns to for the greeting: towards Pomni, cheated round to
+  // the camera, with her head and wave on Pomni.
+  function greetingFacing() {
+    const at = actor.position, yaw = cheatedYaw(at, room.spawn, RAGATHA_CHEAT);
+    return new THREE.Vector3(at.x + Math.sin(yaw), at.y, at.z + Math.cos(yaw));
+  }
+  function greet() {
+    cast.faceTowards(greetingFacing()); cast.lookTowards(room.spawn);
+  }
   function walk(points, done) {
     const next = () => {
       if (routeIndex >= points.length) { done(); return; }
@@ -116,9 +137,10 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
       const hit=groundRay.intersectObjects(room.collisionMeshes.map(e=>e.mesh),false)[0];
       if(hit)ground=Math.max(ground,hit.point.y);
     }
-    bodyBox.makeEmpty();
-    actor.traverse(o=>{if(o.isMesh&&o!==cast.collider)bodyBox.expandByObject(o);});
-    actor.position.y += ground + .003 - bodyBox.min.y;
+    // Her feet are at her origin whatever her legs are doing (loadRagatha);
+    // eased, so a probe crossing the rug's edge doesn't jolt her.
+    groundY = groundY === null || dt <= 0 ? ground : THREE.MathUtils.damp(groundY, ground, GROUND_EASE, dt);
+    actor.position.y = groundY + .003;
     const distance = Math.hypot(actor.position.x-previousPosition.x,actor.position.z-previousPosition.z);
     if (distance < .1) stride += distance; // skips never emit a burst of footsteps
     previousPosition.copy(actor.position);
@@ -137,7 +159,7 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
         if (stageTime >= 1.95) {
           setStage('walking-in');
           walk([blocking.threshold, blocking.talk], () => {
-            cast.faceTowards(room.spawn); cast.setPose('wave'); setStage('greeting');
+            greet(); cast.setPose('wave'); setStage('greeting');
           });
         }
       } else if (stage === 'greeting') {
@@ -181,6 +203,11 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
     get active() { return ['entering', 'dialogue', 'exiting', 'returning'].includes(phase); },
     get phase() { return phase; }, get elapsed() { return elapsed; },
     get skippable() { return phase === 'entering' || phase === 'exiting'; },
+    /** The yaw Pomni turns to while Ragatha greets and talks to her, else null. */
+    get pomniFacing() {
+      if (!cast || !(phase === 'dialogue' || (phase === 'entering' && stage === 'greeting'))) return null;
+      return cheatedYaw(room.spawn, actor.position, POMNI_CHEAT);
+    },
     get diagnostics() { return cast ? { stage, visible: actor.visible, position: actor.position.toArray(),
       yaw: actor.rotation.y, route: blocking.measurements, exitElapsed } : null; },
     dialogueNode(node) {
@@ -235,7 +262,8 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
         actor.position.copy(blocking.talk); cast.walkTo(blocking.talk); cast.update(0);
         cast.update(.75); // settle the old stride without replaying movement/audio
         previousPosition.copy(actor.position); stride = 0;
-        cast.faceTowards(room.spawn); actor.rotation.y = Math.atan2(room.spawn.x - actor.position.x, room.spawn.z - actor.position.z);
+        greet(); const facing = greetingFacing();
+        actor.rotation.y = Math.atan2(facing.x - actor.position.x, facing.z - actor.position.z);
         actor.visible = true; blocking.setVisible(true); blocking.aperture.setEnabled(true); sound('pause');
         moveActor(0);
       }
@@ -245,7 +273,7 @@ export function createRagathaEntrance({ room, camera, resolveCamera, audio, cast
       if (phase !== 'dialogue') return;
       if (cast) {
         phase = 'exiting'; setStage('turning-out'); stride = 0;
-        cast.setSpeaking(false); cast.setPose('idle'); cast.faceTowards(blocking.threshold);
+        cast.setSpeaking(false); cast.setPose('idle'); cast.lookTowards(null); cast.faceTowards(blocking.threshold);
         sound('resume', elapsed); // The door is already open; no duplicate creak.
       } else beginReturn();
     },

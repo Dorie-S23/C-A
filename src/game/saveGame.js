@@ -45,3 +45,37 @@ export function createSaveSlots(storage = globalThis.localStorage) {
     },
   };
 }
+
+// --- Save files ------------------------------------------------------------
+// A save can also leave the browser as a file the player keeps (a backup,
+// another computer): the same checkpoint JSON, tagged so a stray .json
+// isn't mistaken for one.
+export const SAVE_FILE_FORMAT = 'tadc-save';
+
+/** The text of a save file for `checkpoint`, ready to write to disk. */
+export function saveFileContents(checkpoint) {
+  return JSON.stringify({
+    format: SAVE_FILE_FORMAT, ...checkpoint, version: SAVE_VERSION, savedAt: new Date().toISOString(),
+  }, null, 2);
+}
+
+/**
+ * Reads a save file back. Returns the checkpoint to load; `{ incompatible: true }`
+ * for a save from another version of the game; null for anything that isn't
+ * one of the game's saves (another file, a damaged one).
+ */
+export function parseSaveFile(text) {
+  let data;
+  try { data = JSON.parse(text); } catch { return null; }
+  if (data?.format !== SAVE_FILE_FORMAT) return null;
+  if (data.version !== SAVE_VERSION) return { incompatible: true, savedAt: data.savedAt ?? null };
+  // What loadGame needs at the least: a room and the objectives.
+  if (typeof data.room !== 'string' || typeof data.objectives !== 'object' || data.objectives === null) return null;
+  return data;
+}
+
+/** A file name saying what the save is: tadc-save-find-ribbit-2026-10-30.json */
+export function saveFileName(checkpoint, when = new Date()) {
+  const what = checkpoint?.objectives?.active ?? checkpoint?.room ?? 'save';
+  return `${SAVE_FILE_FORMAT}-${String(what).replace(/[^a-z0-9-]+/gi, '-')}-${when.toISOString().slice(0, 10)}.json`;
+}

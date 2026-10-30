@@ -401,9 +401,10 @@
             #pause-menu #btn-resume:hover {
                 --ticket: #ec3b4f;
             }
-            /* Over the pause menu, so a darker backdrop than other panels. */
+            /* Save/load dialog sits above the pause menu. */
             #save-slots {
-                background: rgba(0, 0, 0, 0.85);
+                background: radial-gradient(ellipse at center, rgba(48, 16, 62, 0.68), rgba(8, 3, 16, 0.92));
+                backdrop-filter: blur(3px);
             }
             #save-slot-list {
                 display: flex;
@@ -420,6 +421,17 @@
             #save-slot-list button:disabled {
                 opacity: 0.45;
                 cursor: default;
+            }
+            #save-file-actions {
+                display: flex;
+                flex-direction: column;
+                gap: 0.6em;
+                margin-top: 0.4em;
+                padding-top: 0.9em;
+                border-top: 1px dashed rgba(232, 180, 74, 0.65);
+            }
+            #save-file-actions button[hidden] {
+                display: none;
             }
             .save-slot-name {
                 font-weight: 700;
@@ -481,11 +493,15 @@
                 bottom: 3em;
                 left: 50%;
                 transform: translateX(-50%) translateY(10px);
+                display: flex;
+                align-items: center;
+                gap: 0.85em;
                 color: #fff;
-                background: rgba(0, 0, 0, 0.65);
-                border: 1px solid rgba(255, 255, 255, 0.3);
-                border-radius: 4px;
-                padding: 0.6em 1.2em;
+                background: linear-gradient(135deg, rgba(45, 19, 39, 0.97), rgba(19, 13, 28, 0.97));
+                border: 1px solid rgba(255, 204, 104, 0.82);
+                border-radius: 14px 14px 14px 5px;
+                box-shadow: 0 8px 26px rgba(0, 0, 0, 0.48), inset 0 0 0 2px rgba(177, 61, 131, 0.2);
+                padding: 0.65em 1.1em 0.65em 0.75em;
                 font-size: 1em;
                 opacity: 0;
                 pointer-events: none;
@@ -494,6 +510,24 @@
                     transform 0.2s ease;
                 z-index: 5;
             }
+            #hint-portrait {
+                width: 4.1em;
+                height: 4.1em;
+                flex: 0 0 auto;
+                object-fit: contain;
+                filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.38));
+            }
+            #hint-portrait[hidden], #hint-kicker[hidden] { display: none; }
+            #hint-copy { display: flex; flex-direction: column; gap: 0.12em; }
+            #hint-kicker {
+                color: #ffd27a;
+                font-size: 0.65em;
+                font-weight: 800;
+                letter-spacing: 0.13em;
+                text-transform: uppercase;
+            }
+            #hint-text { line-height: 1.35; }
+            #hint.hint--caine { border-width: 2px; }
             body:has(#maze-items-counter:not([hidden])) #hint {
                 width: min(580px, calc(100vw - 2rem));
                 box-sizing: border-box;
@@ -533,6 +567,41 @@
             #prompt[hidden] {
                 display: none;
             }
+
+            .title-music-toggle {
+                position: fixed;
+                top: 0.85rem;
+                left: 0.85rem;
+                z-index: 11;
+                display: grid;
+                place-items: center;
+                width: 36px;
+                height: 36px;
+                padding: 0;
+                border: 1px solid rgba(255, 211, 112, 0.78);
+                border-radius: 50%;
+                color: #fff1c6;
+                background: rgba(43, 22, 54, 0.82);
+                box-shadow: 0 2px 10px rgba(15, 5, 24, 0.3);
+                font: 700 17px/1 system-ui, sans-serif;
+                cursor: none;
+                opacity: 0;
+                transform: scale(0.82);
+                transition: opacity 0.22s ease, transform 0.22s ease, background 0.16s ease;
+            }
+            .title-music-toggle.is-visible { opacity: 1; transform: scale(1); }
+            .title-music-toggle:hover { background: rgba(92, 38, 83, 0.48); }
+            .title-music-toggle:focus-visible { outline: 2px solid #fff1c6; outline-offset: 2px; }
+            .title-music-toggle.is-muted::after {
+                content: "";
+                position: absolute;
+                width: 23px;
+                height: 2px;
+                border-radius: 2px;
+                background: #ffd370;
+                transform: rotate(-45deg);
+            }
+            .title-music-toggle[hidden] { display: none; }
 
             /* Credits: a circus programme. A striped big-top valance, a
                swaying gold title over chasing marquee bulbs, and the credits
@@ -887,33 +956,6 @@
                     transition: none;
                 }
             }
-            #credits-btn {
-                position: fixed;
-                bottom: 1em;
-                right: 1em;
-                z-index: 11; /* above #overlay so it works on the home and pause screens */
-                color: #fff;
-                background: rgba(0, 0, 0, 0.4);
-                border: 1px solid rgba(255, 255, 255, 0.3);
-                border-radius: 4px;
-                padding: 0.4em 0.8em;
-                font-size: 0.85em;
-                cursor: pointer;
-            }
-
-            #controls-btn {
-                position: fixed;
-                bottom: 1em;
-                right: 6.5em;
-                z-index: 11; /* above #overlay so it works on the home and pause screens */
-                color: #fff;
-                background: rgba(0, 0, 0, 0.4);
-                border: 1px solid rgba(255, 255, 255, 0.3);
-                border-radius: 4px;
-                padding: 0.4em 0.8em;
-                font-size: 0.85em;
-                cursor: pointer;
-            }
             #controls {
                 position: fixed;
                 inset: 0;
@@ -1033,6 +1075,206 @@
             #level-complete-panel.level-complete-pop .title-panel-box {
                 animation: level-complete-pop 0.35s cubic-bezier(0.2, 0.8, 0.3, 1.1);
             }
+            /* Game over and level endings share the intermission screen's
+               striped valance, gold trim, and ticket styling. */
+            #level-complete-panel {
+                background: radial-gradient(ellipse at center, rgba(48, 16, 62, 0.58), rgba(8, 3, 16, 0.88));
+                backdrop-filter: blur(3px);
+            }
+            #level-complete-panel .title-panel-box {
+                position: relative;
+                isolation: isolate;
+                width: min(56rem, calc(100vw - 2rem));
+                min-width: 0;
+                max-width: none;
+                box-sizing: border-box;
+                gap: 0.9rem;
+                padding: 4.15rem clamp(1.1rem, 4vw, 2.6rem) 1.7rem;
+                overflow: hidden;
+                background: radial-gradient(130% 75% at 50% 0%, #43205d 0%, #261236 58%, #170a22 100%);
+                border: 3px solid #e8b44a;
+                border-radius: 18px;
+                box-shadow: 0 0 0 5px #1d0d29, 0 0 0 7px #a87523, 0 26px 70px rgba(0, 0, 0, 0.65);
+            }
+            #level-complete-panel .title-panel-box::before {
+                content: "";
+                position: absolute;
+                z-index: -1;
+                inset: 0 0 auto;
+                height: 2.3rem;
+                background: repeating-linear-gradient(90deg, #d8283c 0 1.5rem, #f6e7c8 1.5rem 3rem);
+                -webkit-mask:
+                    linear-gradient(#000 0 0) top / 100% calc(100% - 0.75rem) no-repeat,
+                    radial-gradient(circle 0.75rem at 50% 0, #000 97%, transparent) bottom / 1.5rem 0.75rem repeat-x;
+                mask:
+                    linear-gradient(#000 0 0) top / 100% calc(100% - 0.75rem) no-repeat,
+                    radial-gradient(circle 0.75rem at 50% 0, #000 97%, transparent) bottom / 1.5rem 0.75rem repeat-x;
+            }
+            #level-complete-caine {
+                display: block;
+                width: min(500px, 100%);
+                max-height: 145px;
+                height: auto;
+                object-fit: contain;
+                margin: -1.35rem auto -0.55rem;
+            }
+            #level-complete-caine[hidden] { display: none; }
+            @media (max-height: 540px) {
+                #level-complete-panel .title-panel-box { max-height: calc(100dvh - 2rem); overflow-y: auto; }
+                #level-complete-caine { max-height: 90px; }
+            }
+            #level-complete-title {
+                font-family: 'Luckiest Guy', 'Trebuchet MS', sans-serif;
+                font-weight: 400;
+                font-size: clamp(2.2rem, 6vw, 3.3rem);
+                line-height: 1;
+                letter-spacing: 0.03em;
+                color: #ffd27a;
+                text-shadow: 0 3px 0 #b0163f, 0 6px 0 #3d0a1a, 0 10px 18px rgba(0, 0, 0, 0.45);
+            }
+            #level-complete-subtitle {
+                color: #f6e7c8;
+                font-size: clamp(1.1rem, 2.6vw, 1.45rem);
+                opacity: 1;
+            }
+            #level-complete-panel #caine-retry-caption {
+                max-width: 48rem;
+                margin: 0 auto;
+                padding: 0.65rem 0.9rem;
+                color: #f3dcff;
+                font-size: clamp(0.95rem, 2.4vw, 1.15rem);
+                line-height: 1.45;
+                background: rgba(255, 255, 255, 0.06);
+                border: 1px dashed rgba(232, 180, 74, 0.6);
+                border-radius: 10px;
+            }
+            #level-complete-panel #btn-level-complete-continue {
+                position: relative;
+                width: 100%;
+                padding: 0.7em 1em;
+                color: #fff3d6;
+                background: #d8283c;
+                border: 2px solid #f6e7c8;
+                border-radius: 8px;
+                box-shadow: 0 4px 0 #79152a, 0 8px 18px rgba(0, 0, 0, 0.3);
+                font-family: 'Luckiest Guy', 'Trebuchet MS', sans-serif;
+                font-size: clamp(1.1rem, 2.8vw, 1.35rem);
+                letter-spacing: 0.04em;
+                transition: transform 0.12s ease, background-color 0.12s ease;
+            }
+            #level-complete-panel #btn-level-complete-continue:hover {
+                transform: translateY(-2px);
+                background: #ec3b4f;
+            }
+            #level-complete-panel #btn-level-complete-continue:active {
+                transform: translateY(2px);
+                box-shadow: 0 2px 0 #79152a;
+            }
+            #level-complete-panel #btn-level-complete-continue:focus-visible {
+                outline: 3px solid #ffd27a;
+                outline-offset: 4px;
+            }
+            /* The save/load screen uses the same striped tent and gold frame. */
+            #save-slots .title-panel-box {
+                position: relative;
+                isolation: isolate;
+                width: min(38rem, calc(100vw - 2rem));
+                min-width: 0;
+                max-width: none;
+                max-height: calc(100dvh - 2rem);
+                box-sizing: border-box;
+                padding: 4.1rem clamp(1rem, 4vw, 1.8rem) 1.4rem;
+                overflow-y: auto;
+                background: radial-gradient(130% 75% at 50% 0%, #43205d 0%, #261236 58%, #170a22 100%);
+                border: 3px solid #e8b44a;
+                border-radius: 18px;
+                box-shadow: 0 0 0 5px #1d0d29, 0 0 0 7px #a87523, 0 26px 70px rgba(0, 0, 0, 0.65);
+            }
+            #save-slots .title-panel-box::before {
+                content: "";
+                position: absolute;
+                z-index: -1;
+                inset: 0 0 auto;
+                height: 2.3rem;
+                background: repeating-linear-gradient(90deg, #d8283c 0 1.5rem, #f6e7c8 1.5rem 3rem);
+                -webkit-mask:
+                    linear-gradient(#000 0 0) top / 100% calc(100% - 0.75rem) no-repeat,
+                    radial-gradient(circle 0.75rem at 50% 0, #000 97%, transparent) bottom / 1.5rem 0.75rem repeat-x;
+                mask:
+                    linear-gradient(#000 0 0) top / 100% calc(100% - 0.75rem) no-repeat,
+                    radial-gradient(circle 0.75rem at 50% 0, #000 97%, transparent) bottom / 1.5rem 0.75rem repeat-x;
+            }
+            #save-slots-title {
+                font-family: 'Luckiest Guy', 'Trebuchet MS', sans-serif;
+                font-weight: 400;
+                font-size: clamp(2rem, 5vw, 2.8rem);
+                line-height: 1;
+                color: #ffd27a;
+                text-shadow: 0 3px 0 #b0163f, 0 6px 0 #3d0a1a, 0 10px 18px rgba(0, 0, 0, 0.45);
+            }
+            #save-slots-note {
+                color: #f6e7c8;
+                line-height: 1.4;
+                opacity: 1;
+            }
+            #save-slots #save-slot-list button {
+                position: relative;
+                width: 100%;
+                min-height: 4.1rem;
+                box-sizing: border-box;
+                padding: 0.7em 1em 0.7em 2.8em;
+                color: #5a0f22;
+                background: #f6e7c8;
+                border: 0;
+                border-radius: 8px;
+                box-shadow: 0 4px 0 #a87523, 0 7px 14px rgba(0, 0, 0, 0.26);
+                transition: transform 0.12s ease, background-color 0.12s ease;
+            }
+            #save-slots #save-slot-list button::before {
+                content: "★";
+                position: absolute;
+                left: 1rem;
+                top: 50%;
+                transform: translateY(-50%);
+                color: #b0163f;
+            }
+            #save-slots #save-slot-list button:hover:not(:disabled),
+            #save-slots #save-file-actions button:hover:not(:disabled) {
+                transform: translateY(-2px);
+                background: #fff4dc;
+            }
+            #save-slots #save-slot-list button:disabled {
+                opacity: 0.58;
+            }
+            #save-slots .save-slot-name { font-size: 1.05em; }
+            #save-slots .save-slot-detail { color: #5b4c55; opacity: 1; line-height: 1.35; }
+            #save-slots #save-file-actions button,
+            #save-slots #btn-save-slots-back {
+                position: relative;
+                width: 100%;
+                padding: 0.65em 1em;
+                color: #fff3d6;
+                background: #7b4fa3;
+                border: 2px solid #f6e7c8;
+                border-radius: 8px;
+                box-shadow: 0 4px 0 #1d0d29;
+                font-family: 'Luckiest Guy', 'Trebuchet MS', sans-serif;
+                letter-spacing: 0.03em;
+                transition: transform 0.12s ease, background-color 0.12s ease;
+            }
+            #save-slots #save-file-actions button:disabled { opacity: 0.55; cursor: default; }
+            #save-slots #save-file-actions button:hover:not(:disabled) { background: #9163bb; }
+            #save-slots #btn-save-slots-back {
+                background: #d8283c;
+                box-shadow: 0 4px 0 #79152a;
+            }
+            #save-slots #btn-save-slots-back:hover { background: #ec3b4f; }
+            #save-slots #save-file-actions button:focus-visible,
+            #save-slots #btn-save-slots-back:focus-visible,
+            #save-slots #save-slot-list button:focus-visible {
+                outline: 3px solid #ffd27a;
+                outline-offset: 3px;
+            }
             .title-panel-box label.title-toggle {
                 flex-direction: row;
                 align-items: center;
@@ -1051,6 +1293,93 @@
             .title-panel-box button:hover {
                 background: rgba(255, 255, 255, 0.22);
             }
+            #title-options {
+                background: radial-gradient(ellipse at center, rgba(48, 16, 62, 0.68), rgba(8, 3, 16, 0.92));
+                backdrop-filter: blur(3px);
+            }
+            #title-options .title-panel-box,
+            #controls-card {
+                position: relative;
+                isolation: isolate;
+                width: min(38rem, calc(100vw - 2rem));
+                min-width: 0;
+                max-width: none;
+                max-height: calc(100dvh - 2rem);
+                box-sizing: border-box;
+                padding: 4.1rem clamp(1rem, 4vw, 1.8rem) 1.4rem;
+                overflow-y: auto;
+                background: radial-gradient(130% 75% at 50% 0%, #43205d 0%, #261236 58%, #170a22 100%);
+                border: 3px solid #e8b44a;
+                border-radius: 18px;
+                box-shadow: 0 0 0 5px #1d0d29, 0 0 0 7px #a87523, 0 26px 70px rgba(0, 0, 0, 0.65);
+                color: #fff;
+            }
+            #title-options .title-panel-box::before,
+            #controls-card::before {
+                content: "";
+                position: absolute;
+                z-index: -1;
+                inset: 0 0 auto;
+                height: 2.3rem;
+                background: repeating-linear-gradient(90deg, #d8283c 0 1.5rem, #f6e7c8 1.5rem 3rem);
+                -webkit-mask:
+                    linear-gradient(#000 0 0) top / 100% calc(100% - 0.75rem) no-repeat,
+                    radial-gradient(circle 0.75rem at 50% 0, #000 97%, transparent) bottom / 1.5rem 0.75rem repeat-x;
+                mask:
+                    linear-gradient(#000 0 0) top / 100% calc(100% - 0.75rem) no-repeat,
+                    radial-gradient(circle 0.75rem at 50% 0, #000 97%, transparent) bottom / 1.5rem 0.75rem repeat-x;
+            }
+            #title-options .title-panel-box h2,
+            #controls-card h2 {
+                margin: 0;
+                color: #ffd27a;
+                font-family: 'Luckiest Guy', 'Trebuchet MS', sans-serif;
+                font-size: clamp(2rem, 5vw, 2.8rem);
+                font-weight: 400;
+                line-height: 1;
+                text-shadow: 0 3px 0 #b0163f, 0 6px 0 #3d0a1a, 0 10px 18px rgba(0, 0, 0, 0.45);
+            }
+            #title-options .title-panel-box label { color: #f6e7c8; }
+            #title-options .title-panel-box label.title-toggle { color: #eee4f4; }
+            #title-options input[type="range"] { accent-color: #ffd27a; }
+            #title-options #caine-memory-note { color: #d9cde6; opacity: 1; font-size: 0.82rem; line-height: 1.4; }
+            #title-options .title-panel-box button,
+            #controls-card button {
+                position: relative;
+                width: 100%;
+                padding: 0.65em 1em;
+                color: #5a0f22;
+                background: #f6e7c8;
+                border: 0;
+                border-radius: 8px;
+                box-shadow: 0 4px 0 #a87523, 0 7px 14px rgba(0, 0, 0, 0.26);
+                font-family: 'Luckiest Guy', 'Trebuchet MS', sans-serif;
+                letter-spacing: 0.03em;
+                transition: transform 0.12s ease, background-color 0.12s ease;
+            }
+            #title-options .title-panel-box button:hover,
+            #controls-card button:hover {
+                transform: translateY(-2px);
+                background: #fff4dc;
+            }
+            #title-options #btn-options-back,
+            #title-options #btn-new-game {
+                color: #fff3d6;
+                background: #d8283c;
+                box-shadow: 0 4px 0 #79152a;
+            }
+            #title-options #btn-options-back:hover,
+            #title-options #btn-new-game:hover { background: #ec3b4f; }
+            #title-options button:focus-visible,
+            #controls-card button:focus-visible {
+                outline: 3px solid #ffd27a;
+                outline-offset: 3px;
+            }
+            #controls { background: radial-gradient(ellipse at center, rgba(48, 16, 62, 0.68), rgba(8, 3, 16, 0.92)); backdrop-filter: blur(3px); }
+            #controls-card { min-width: 0; }
+            #controls-close { color: #f6e7c8; }
+            #controls-list dd { color: #f6e7c8; opacity: 1; }
+            #controls-card kbd { color: #5a0f22; background: #f6e7c8; border-color: #e8b44a; border-bottom-color: #a87523; }
             #btn-title {
                 margin-top: 1.2em;
                 font-size: 0.9em;
@@ -1253,19 +1582,25 @@
             }
             #objective-hud[hidden] { display: none; }
             #tutorial-hud {
-                position: fixed; left: 1rem; bottom: 1rem;
-                width: min(260px, calc(100vw - 2rem)); box-sizing: border-box;
-                padding: 12px 16px; color: #fff8e9;
-                background: linear-gradient(135deg, rgba(34, 23, 49, .96), rgba(12, 10, 20, .94));
-                border: 1px solid #ffd27a99; border-left: 3px solid #b73950;
-                border-right: 3px solid #374e95; border-radius: 9px;
-                box-shadow: 0 5px 20px #0005; z-index: 6; pointer-events: none;
+                position: fixed; left: 1rem; bottom: 1rem; isolation: isolate;
+                display: grid; grid-template-columns: 4rem minmax(0, 1fr); align-items: center; gap: 0 0.75rem;
+                width: min(330px, calc(100vw - 2rem)); box-sizing: border-box;
+                padding: 13px 16px 12px 11px; color: #fff8e9;
+                background: linear-gradient(135deg, rgba(45, 19, 39, .98), rgba(19, 13, 28, .97));
+                border: 2px solid #e8b44a; border-radius: 15px 15px 15px 5px;
+                box-shadow: 0 0 0 3px #1d0d29, 0 9px 24px #0008, inset 0 0 0 2px #b13d8333;
+                z-index: 6; pointer-events: none;
             }
+            #tutorial-hud::before { content: ''; position: absolute; inset: 0 0 auto; height: 5px; border-radius: 12px 12px 0 0; background: repeating-linear-gradient(90deg, #d8283c 0 14px, #f6e7c8 14px 28px); }
+            #tutorial-hud [data-tutorial-portrait] { width: 4rem; height: 4rem; object-fit: contain; filter: drop-shadow(0 2px 5px #0008); }
+            #tutorial-hud .tutorial-copy { min-width: 0; }
+            #tutorial-hud .tutorial-kicker { margin: 0 0 5px; color: #ffd27a; font-size: .65rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
             #tutorial-hud[hidden] { display: none; }
-            #tutorial-hud p { margin: 7px 0; font-size: .9rem; line-height: 1.4; }
+            #tutorial-hud p { margin: 5px 0; font-size: .9rem; line-height: 1.4; }
             #tutorial-hud small { color: #c9bed8; font-size: .7rem; }
             @media (max-width: 600px), (max-height: 480px) {
-                #tutorial-hud { bottom: 5.5rem; width: min(235px, calc(100vw - 2rem)); padding: 9px 12px; }
+                #tutorial-hud { bottom: 5.5rem; width: min(300px, calc(100vw - 2rem)); padding: 11px 12px 10px 9px; grid-template-columns: 3.3rem minmax(0, 1fr); gap: 0 .6rem; }
+                #tutorial-hud [data-tutorial-portrait] { width: 3.3rem; height: 3.3rem; }
             }
             #objective-hud.objective-hud--with-minimap { right: calc(180px + 2rem); }
             .objective-label { color: #ffd27a; font-size: .7rem; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
@@ -1421,6 +1756,7 @@
         <div id="scene-fade"></div>
         <div id="level-complete-panel" class="title-panel" hidden>
             <div class="title-panel-box">
+                <img id="level-complete-caine" src="./models/game%20screens/game-over-caine.png" alt="Caine reacting to the game over" hidden />
                 <h2 id="level-complete-title"></h2>
                 <p id="level-complete-subtitle"></p>
                 <p id="caine-retry-caption" class="caine-memory-text" hidden></p>
@@ -1489,6 +1825,7 @@
                 <button id="btn-replay-intro">&#9654; Replay intro</button>
                 <button id="btn-room-previews">Room previews</button>
                 <button id="btn-options-credits">Credits</button>
+                <button id="btn-options-controls">Controls</button>
                 <button id="btn-options-back">Back</button>
             </div>
         </div>
@@ -1497,6 +1834,12 @@
                 <h2 id="save-slots-title">Save Game</h2>
                 <p id="save-slots-note"></p>
                 <div id="save-slot-list"></div>
+                <!-- Save files (saveGame.js): the checkpoint as a .json the player keeps. -->
+                <div id="save-file-actions">
+                    <button id="btn-save-file" type="button">Save to file&hellip;</button>
+                    <button id="btn-load-file" type="button">Load from file&hellip;</button>
+                    <input id="save-file-input" type="file" accept=".json,application/json" hidden />
+                </div>
                 <button id="btn-save-slots-back">Back</button>
             </div>
         </div>
@@ -1529,19 +1872,29 @@
         </aside>
         <button id="cinematic-skip" hidden>Skip intro</button>
         <aside id="tutorial-hud" role="status" aria-live="polite" aria-atomic="true" hidden>
-            <div class="objective-label">First steps</div>
-            <div data-tutorial-lines></div>
-            <small>X &middot; Dismiss tips</small>
+            <img data-tutorial-portrait alt="Caine" />
+            <div class="tutorial-copy">
+                <div class="tutorial-kicker">Caine's crash course</div>
+                <div data-tutorial-lines></div>
+                <small>X &middot; Dismiss tips</small>
+            </div>
         </aside>
         <div id="picture-counter" role="status" hidden>Photos found: 0/5 · Delivered: 0/5</div>
 
+        <button id="title-music-toggle" class="title-music-toggle" type="button"
+                aria-label="Mute title screen music" aria-pressed="false" title="Mute title screen music" hidden>
+            <span aria-hidden="true">♫</span>
+        </button>
         <div id="search-timer" role="status" hidden>Time left: 4:00</div>
         <div id="hint-key" hidden>Press H for a hint</div>
-        <div id="hint"></div>
+        <div id="hint" role="status" aria-live="polite">
+            <img id="hint-portrait" alt="" hidden />
+            <div id="hint-copy">
+                <span id="hint-kicker" hidden>Caine's clue</span>
+                <span id="hint-text"></span>
+            </div>
+        </div>
         <div id="prompt" hidden></div>
-        <button id="controls-btn">Controls</button>
-        <button id="credits-btn">Credits</button>
-
         <div id="controls" hidden>
             <div id="controls-card">
                 <span id="controls-close">&times;</span>

@@ -39,16 +39,18 @@ const HANDS = [new THREE.Vector3(-0.49, -0.57, 0.925), new THREE.Vector3(0.024, 
 const LEG_TOPS = [new THREE.Vector3(-0.23, -1.57, 0.23), new THREE.Vector3(0.24, -1.56, -0.25)];
 const FEET = [new THREE.Vector3(-0.41, -2.56, 0.36), new THREE.Vector3(0.39, -2.57, -0.37)];
 const HIPS = [new THREE.Vector3(0, -1.57, 0.2), new THREE.Vector3(0, -1.57, -0.2)];
-const LEG_LENGTH = 1.15;
 
 // How quickly her pose eases into the next one; lower is floatier.
 const POSE_SHARPNESS = 6;
 const TURN_SHARPNESS = 5;
-const WALK_SPEED = 1.1; // metres per second
+const WALK_SPEED = 1.2; // metres per second
 const STEP_LENGTH = 0.5; // metres per step
-const LEG_SWING = 0.45; // forward reach of a stride (tan of the swing angle)
-const ARM_SWING = 0.35;
+const LEG_SWING = 0.32; // shorter, softer stride so her feet don't drag
+const ARM_SWING = 0.24;
 const WAVE_SECONDS = 2.4; // then the greeting settles into chatting
+const LOOK_LIMIT = 1.1; // the furthest (radians) her head and chest turn from her body
+const _up = new THREE.Vector3(0, 1, 0);
+const _swap = new THREE.Vector3();
 
 /**
  * Loads Ragatha, idling. Callers set position and rotation.y, then drive
@@ -60,12 +62,19 @@ const WAVE_SECONDS = 2.4; // then the greeting settles into chatting
  * - walkTo(point, onArrive): walks there in a straight line, turning to
  *   face where she's going, on whatever pose her upper body is in.
  * - faceTowards(point | null): turns her body to face a point.
+ * - lookTowards(point | null): turns her head (and a little of her chest)
+ *   to a point her body isn't facing, and waves towards it.
+ *
+ * Her feet stay on her origin: as she strides she's lowered by however
+ * far her lower foot has lifted (applyPose), so callers only set her y to
+ * the floor's.
  *
  * @returns {Promise<{ ragatha: THREE.Group, collider: THREE.Mesh,
  *   update: (deltaSeconds: number) => void,
  *   setPose: (name: string) => void, setSpeaking: (speaking: boolean) => void,
  *   walkTo: (point: THREE.Vector3, onArrive?: () => void) => void,
- *   faceTowards: (worldPoint: THREE.Vector3 | null) => void }>}
+ *   faceTowards: (worldPoint: THREE.Vector3 | null) => void,
+ *   lookTowards: (worldPoint: THREE.Vector3 | null) => void }>}
  */
 export function loadRagatha() {
   return new GLTFLoader().loadAsync(RAGATHA_URL).then((gltf) => {
@@ -85,6 +94,7 @@ export function loadRagatha() {
     POSES.idle(pose.target, 0, time);
     pose.current.copy(pose.target);
     applyPose(rig, pose.current, time);
+    rig.footFloor = lowestFoot(rig); // where her feet are, standing
 
     // Scaled so her feet (in the idle stance) sit on the origin. x/z are
     // left alone: the hips are already at the model's origin, and centring
@@ -93,7 +103,9 @@ export function loadRagatha() {
     const box = new THREE.Box3().setFromObject(model);
     const scale = RAGATHA_HEIGHT / (box.max.y - box.min.y);
     model.scale.setScalar(scale);
-    model.position.y = -box.min.y * scale;
+    // Her soles from what's drawn: a split limb's bounds still take in the
+    // other half's (undrawn) vertices, which left her 2 cm off the floor.
+    model.position.y = -lowestDrawn(model) * scale;
     model.rotation.y = -Math.PI / 2; // face +Z like the rest of the cast
 
     const ragatha = new THREE.Group();
@@ -111,6 +123,7 @@ export function loadRagatha() {
     ragatha.add(collider);
 
     let targetYaw = null;
+    let lookPoint = null;
     let walkTarget = null;
     let onArrive = null;
     let walkWeight = 0;
@@ -149,6 +162,28 @@ export function loadRagatha() {
 
       POSES[poseName](pose.target, poseTime, time);
       if (speaking) addSpeaking(pose.target, time);
+      if (lookPoint) {
+        ragatha.getWorldPosition(ownPosition);
+        const yaw = Math.atan2(lookPoint.x - ownPosition.x, lookPoint.z - ownPosition.z);
+        const turn = THREE.MathUtils.clamp(
+          THREE.MathUtils.euclideanModulo(yaw - ragatha.rotation.y + Math.PI, Math.PI * 2) - Math.PI,
+          -LOOK_LIMIT, LOOK_LIMIT);
+        // Only some of the way: turned right round, her face is side-on to
+        // whoever's watching her from in front, and lost behind her curls.
+        pose.target.head.y += turn * 0.25;
+        pose.target.chest.y += turn * 0.1;
+        if (poseName === 'wave' && poseTime <= WAVE_SECONDS) {
+          // She waves with the hand on their side (the pose raises her right),
+          // and it swings the rest of the way round, so she waves at them.
+          const { arms } = pose.target;
+          if (turn > 0) {
+            _swap.copy(arms[0]);
+            arms[0].copy(arms[1]).z *= -1;
+            arms[1].copy(_swap).z *= -1;
+          }
+          arms[turn > 0 ? 1 : 0].applyAxisAngle(_up, turn * 0.8);
+        }
+      }
       if (walkWeight > 0.001) addWalk(pose.target, walkPhase, walkWeight);
       pose.current.dampTowards(pose.target, 1 - Math.exp(-POSE_SHARPNESS * deltaSeconds));
       applyPose(rig, pose.current, time);
@@ -179,7 +214,12 @@ export function loadRagatha() {
       targetYaw = Math.atan2(worldPoint.x - ownPosition.x, worldPoint.z - ownPosition.z);
     }
 
-    return { ragatha, collider, update, setPose, setSpeaking, walkTo, faceTowards };
+    /** Turns her head (smoothly, as poses ease) toward a world point; null looks ahead again. */
+    function lookTowards(worldPoint) {
+      lookPoint = worldPoint ? worldPoint.clone() : null;
+    }
+
+    return { ragatha, collider, update, setPose, setSpeaking, walkTo, faceTowards, lookTowards };
   });
 }
 
@@ -217,6 +257,8 @@ function buildRig(model) {
     else chest.attach(node);
   }
 
+  // Each foot, in its leg's frame (which turns with the leg).
+  const feet = FEET.map((foot, i) => legs[i].worldToLocal(foot.clone()));
   // Each leg is posed about its own top, then moved to sit under her hips.
   legs.forEach((leg, i) => leg.position.copy(root.worldToLocal(HIPS[i].clone())));
 
@@ -228,6 +270,8 @@ function buildRig(model) {
     head,
     arms,
     legs,
+    feet,
+    footFloor: null, // set once she's standing (loadRagatha)
     hair,
     armRest: SHOULDERS.map((shoulder, i) => restDir(shoulder, HANDS[i])),
     legRest: LEG_TOPS.map((top, i) => restDir(top, FEET[i])),
@@ -277,6 +321,22 @@ function splitIntoSides(node, sides) {
     geometry.dispose();
   }
   node.removeFromParent();
+}
+
+/** The lowest point of any triangle drawn under `object`, in world space. */
+function lowestDrawn(object) {
+  const corner = new THREE.Vector3();
+  let lowest = Infinity;
+  object.traverse((child) => {
+    if (!child.isMesh) return;
+    const position = child.geometry.attributes.position;
+    const index = child.geometry.index;
+    const count = index ? index.count : position.count;
+    for (let i = 0; i < count; i++) {
+      lowest = Math.min(lowest, corner.fromBufferAttribute(position, index ? index.getX(i) : i).applyMatrix4(child.matrixWorld).y);
+    }
+  });
+  return lowest;
 }
 
 /** Hangs a hair curl from a pivot at its top so it can sway on its own. */
@@ -354,14 +414,15 @@ const POSES = {
     p.head.set(-0.04 - nod * 0.1, Math.sin(T * 0.3) * 0.05, 0.16);
   },
 
-  // A big friendly wave with her right hand, then on into chatting.
+  // A friendly wave at the person in front of her (hand raised towards
+  // them, swaying side to side across them), then into chatting.
   wave(p, t, T) {
     if (t > WAVE_SECONDS) {
       POSES.chatty(p, t, T);
       return;
     }
     POSES.idle(p, t, T);
-    aim(p.arms[0], 0, 0.2, 0.65, 0.8 + Math.sin(t * 10) * 0.35);
+    aim(p.arms[0], 0, 0.72, 0.68, 0.12 + Math.sin(t * 8) * 0.2);
     aim(p.arms[1], 1, 0.15, -0.8, 0.6);
     p.head.set(0.06, 0, 0.18);
     p.chest.set(0.04, 0, -0.05);
@@ -418,7 +479,7 @@ function addSpeaking(p, T) {
   p.hairEnergy = Math.max(p.hairEnergy, 0.4);
 }
 
-/** Legs stride, arms swing against them, body dips to keep feet planted. */
+/** Legs stride and arms swing against them; the relaxed body stays level. */
 function addWalk(p, phase, weight) {
   const swing = Math.sin(phase) * LEG_SWING * weight;
   for (let side = 0; side < 2; side++) {
@@ -426,10 +487,9 @@ function addWalk(p, phase, weight) {
     p.legs[side].set(sign * swing, -1, p.legs[side].z * (1 - weight) + (side === 0 ? 0.06 : -0.06) * weight);
     p.arms[side].x -= sign * swing * (ARM_SWING / LEG_SWING);
   }
-  // A swung leg reaches less far down, so lower her to keep it on the floor.
-  p.drop += LEG_LENGTH * (1 - Math.cos(Math.atan(Math.abs(swing))));
-  p.chest.y += Math.sin(phase) * 0.08 * weight;
-  p.hips.z += Math.cos(phase) * 0.03 * weight;
+  // Her shoulders turn against her hips, the same each step.
+  p.chest.y += Math.sin(phase) * 0.05 * weight;
+  p.hips.z += Math.cos(phase) * 0.018 * weight;
   p.hairEnergy = Math.max(p.hairEnergy, weight);
 }
 
@@ -441,6 +501,16 @@ function setRotation(object, angles) {
   object.quaternion.setFromEuler(_euler.set(angles.z, angles.y, angles.x));
 }
 
+/** How high her lower foot is in her root's frame, as her legs are posed. */
+function lowestFoot(rig) {
+  let lowest = Infinity;
+  for (let side = 0; side < 2; side++) {
+    const leg = rig.legs[side];
+    lowest = Math.min(lowest, _target.copy(rig.feet[side]).applyQuaternion(leg.quaternion).add(leg.position).y);
+  }
+  return lowest;
+}
+
 function applyPose(rig, p, T) {
   for (let side = 0; side < 2; side++) {
     rig.arms[side].quaternion.setFromUnitVectors(rig.armRest[side], _target.copy(p.arms[side]).normalize());
@@ -449,7 +519,9 @@ function applyPose(rig, p, T) {
   setRotation(rig.head, p.head);
   setRotation(rig.chest, p.chest);
   setRotation(rig.hips, p.hips);
-  rig.root.position.y = -p.drop;
+  // A swung leg reaches less far down: lowered by that, the lower foot stays
+  // on the floor whichever leg it is.
+  rig.root.position.y = -p.drop + (rig.footFloor === null ? 0 : rig.footFloor - lowestFoot(rig));
 
   // Curls sway gently all the time and bounce harder the livelier she is.
   for (const curl of rig.hair) {
