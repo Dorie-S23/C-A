@@ -135,10 +135,11 @@ export async function runLevel1(game, { hall, onComplete, story = false } = {}) 
       async ribbitSitsUp() {
         setDistress(tally.correct >= 2 ? 0 : 1);
         setPose('sitting');
-        stage.frame(shots.seated);
-        // Long enough to watch her stir, roll over and push herself up
-        // (ribbit.js passes through its 'waking' pose on the way).
-        await stage.wait(2.8);
+        stage.frame(shots.sittingUp);
+        // Long enough to watch her come round to the edge of the bed and
+        // sit up on it (ribbit.js stages asleep -> sitting over 2.8 s).
+        await stage.wait(3);
+        if (live()) stage.lookAt(points.RIBBIT_SITTING);
       },
     };
 
