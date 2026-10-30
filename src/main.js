@@ -1732,11 +1732,10 @@ function turnPomniTowards(point, cameraOffset = 0) {
 // One shared instance survives room changes and menu visits; PLAY resets it.
 const itemState = createLevel2Items({
   onCollect: (count) => {
+    if (count === PHOTO_THRESHOLD) return;
     showHint(count >= PHOTO_COUNT
       ? 'All photos found — return to Kaufmo before time runs out!'
-      : count >= PHOTO_THRESHOLD
-        ? `Picked up a photo. (${count}/${PHOTO_COUNT}) That's enough for Kaufmo — find the last one or take them to him.`
-        : `Picked up a photo. (${count}/${PHOTO_COUNT})`, 6000);
+      : `Picked up a photo. (${count}/${PHOTO_COUNT})`, 6000);
   },
 });
 const storyProgress = createStoryProgress({ objectives, isStorySession: () => preLevel1Session });
