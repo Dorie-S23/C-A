@@ -267,5 +267,8 @@ test('wrong answers make his glitching worse: more of it, more often, for the re
   assert.ok(steps[3].bursts >= 6, `three wrong: bursts all the time (${steps[3].bursts} in 10 s)`);
   assert.equal(glitch.severity, 1, 'and it tops out');
   glitch.setSeverity(0);
+  // A burst already under way still runs its course (up to .7 s at full
+  // severity), and catching one here failed this check about one run in six.
+  for (let i = 0; i < 60; i++) glitch.update(1 / 60);
   assert.ok(Math.abs(sample().mean - calm.mean) < .02, 'steadied, it settles back');
 });
