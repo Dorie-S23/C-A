@@ -1,0 +1,53 @@
+#maze-hints-reminder {
+  position: fixed; left: max(16px,env(safe-area-inset-left)); bottom: max(16px,env(safe-area-inset-bottom)); z-index: 5;
+  padding: 7px 10px; border: 1px solid #76519466; border-radius: 6px;
+  color: #c8c2dc; background: #17182dcc; font: .72rem system-ui,sans-serif; pointer-events: none;
+}
+#maze-hints-reminder[hidden], #maze-hints-button[hidden], #maze-hints-panel [hidden] { display: none; }
+/* A purple admission ticket among the pause menu's (index.html styles their shape). */
+#pause-menu #maze-hints-button { --ticket: #7b4fa3; --ink: #fff3d6; }
+#pause-menu #maze-hints-button:hover { --ticket: #9163bb; }
+#maze-hints-panel button:focus-visible { outline: 2px solid #daa94b; outline-offset: 4px; }
+#maze-hints-panel {
+  box-sizing: border-box; width: min(560px,calc(100vw - 32px)); max-height: calc(100dvh - 40px);
+  padding: 28px; border: 1px solid #8965ab; border-top: 3px solid #b13d83; border-radius: 16px;
+  background: linear-gradient(145deg,#22213c,#23152f); color: #eae6e2;
+  box-shadow: 0 24px 90px #0009; font: .95rem/1.6 system-ui,sans-serif; overflow: auto;
+}
+#maze-hints-panel::backdrop { background: #0c0d20b8; }
+#maze-hints-panel.maze-hints--map { width: min(900px,calc(100vw - 32px)); }
+#maze-hints-panel header { display: flex; gap: 20px; align-items: start; justify-content: space-between; }
+#maze-hints-panel .maze-hints-kicker { margin: 0; color: #c79ee1; font-size: .65rem; letter-spacing: .16em; }
+#maze-hints-panel h2 { font-size: 1.5rem; margin: 4px 0 18px; line-height: 1.3; }
+#maze-hints-panel button { color: #eae6e2; background: #30233f; border: 1px solid #765194; border-radius: 7px; padding: 9px 12px; font: 600 .8rem system-ui,sans-serif; cursor: pointer; }
+#maze-hints-panel button:hover:not(:disabled) { background: #493052; border-color: #c79ee1; }
+#maze-hints-panel [data-close-hints] { white-space: nowrap; }
+#maze-hints-panel button:disabled { opacity: .42; cursor: default; }
+#maze-hints-panel [data-hint-text] { margin: 24px 0; padding-left: 16px; border-left: 2px solid #daa94b; font-size: 1.1rem; }
+#maze-hints-panel [data-next-hint] { background: #493052; }
+#maze-hints-panel .maze-map-layout { display: grid; grid-template-columns: minmax(0,520px) 180px; justify-content: center; gap: 24px; align-items: start; }
+#maze-hints-panel [data-map-drawing] { padding: 12px; background: #17182d; border: 1px solid #575078; border-radius: 10px; }
+#maze-hints-panel svg { width: 100%; height: auto; display: block; }
+#maze-hints-panel .maze-map-key { margin: 0; padding: 0; list-style: none; }
+#maze-hints-panel .maze-map-key li { margin-bottom: 20px; font-size: .85rem; }
+#maze-hints-panel .maze-map-key strong { display: block; }
+#maze-hints-panel .maze-map-key span { color: #aaa8c5; font-size: .75rem; }
+#maze-hints-panel .maze-map-key b { display: inline-block; margin-bottom: 5px; border: 1px solid #c79ee1; border-radius: 50%; width: 24px; text-align: center; color: #eae6e2; background: #76409b; }
+#maze-hints-panel .maze-map-key b.entrance { background: #daa94b; color: #17182d; border-color: #eae6e2; }
+@media(max-width:650px) {
+  #maze-hints-panel { padding: 20px; }
+  #maze-hints-panel .maze-map-layout { grid-template-columns: minmax(0,1fr); gap: 16px; }
+  #maze-hints-panel .maze-map-key { display: flex; flex-wrap: wrap; gap: 16px; }
+  #maze-hints-panel .maze-map-key li { flex: 1 1 130px; margin: 0; }
+}
+@media(max-width:420px) {
+  #maze-hints-reminder { font-size: .65rem; padding: 7px 8px; left: 12px; }
+}
+
+/* Keep the normal pause state underneath without competing menu text. */
+body:has(#maze-hints-panel[open]) #overlay { visibility: hidden; }
+
+
+#maze-hints-panel .maze-map-key b.jax { background: #b13d83; border-color: #f0b5e0; }
+
+#maze-hints-panel .maze-hints-count {display:block;color:#c79ee1;font-size:.75rem;margin:-10px 0 18px;}

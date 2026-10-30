@@ -4,6 +4,9 @@ export const OBJECTIVES = Object.freeze({
   'find-kaufmo': Object.freeze({ id: 'find-kaufmo', title: 'Find Kaufmo', detail: 'His room is a few doors down the hall — go find him there.' }),
   'collect-photos': Object.freeze({ id: 'collect-photos', title: 'Find and deliver the photos', detail: 'Find five office photos in the Lobby and give them to Kaufmo before time runs out.' }),
   'check-kaufmo': Object.freeze({ id: 'check-kaufmo', title: 'Hear Kaufmo’s Theory', detail: 'Talk to him again about what the photos reveal.' }),
+  'find-jax': Object.freeze({ id: 'find-jax', title: 'Find Jax', detail: 'Kaufmo’s working out the exit. Head back out into the Dorm Hall and look for Jax.' }),
+  'follow-jax': Object.freeze({ id: 'follow-jax', title: 'Follow Jax', detail: 'He ran out to the Circus Lobby. Go through the Dorm Hall’s curtained arch and find him.' }),
+  'enter-maze': Object.freeze({ id: 'enter-maze', title: 'Find the Door to the Maze', detail: 'Jax slipped through one of the bedroom doors along the Lobby wall. Open them to find the one that leads into the maze.' }),
 });
 
 /** Session state, independent of room loads, rendering and dialogue previews. */

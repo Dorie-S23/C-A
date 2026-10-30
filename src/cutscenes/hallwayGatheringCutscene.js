@@ -11,7 +11,8 @@ import { loadJax } from '../characters/jax.js';
 // (playHallwayGathering) plays the dialogue, feeds each node to onNode
 // and drives update.
 
-const JAX_RUN_SPEED = 5.5;
+// Also Jax's run in level3Hallway.js, which follows the same route.
+export const JAX_RUN_SPEED = 5.5;
 const RUN_HOLD = 0.35; // after he's out of the shot, before the beat's caption
 
 export async function loadHallwayGatheringCast() {

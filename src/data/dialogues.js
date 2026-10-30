@@ -213,6 +213,7 @@ export const level1OpenDialogue = [
     speaker: 'caine',
     side: 'right',
     direction: 'to the audience/camera, grin snapping back too fast',
+    action: 'asideToCamera', // caineApproachCutscene.js: turns to the camera, rolls his eyes
     mood: 'happy',
     text: 'She always says that! She never does!',
     next: null,
@@ -905,43 +906,51 @@ export const level2TimeUpDialogue = [
   { id: 'abstracts', type: 'beat', distress: 3, text: 'His colours drain. He distorts and stretches until there’s nothing left of Kaufmo, just a dark, churning shape where he stood.', next: null },
 ];
 
-// --- Level 3 intro: the Dorm Hall gathering -------------------------------
-// Played once Level 2 is complete (main.js finishKaufmoLevel): Pomni, Ribbit
-// and Kaufmo gather in the Dorm Hall and find Jax there, staged by
-// cutscenes/hallwayGatheringCutscene.js (the ids are its cues), before
-// Pomni follows Jax into the maze.
-export const level3JaxDialogue = [
-  { id: 'gathered', type: 'beat', text: 'The Dorm Hall. Pomni, Ribbit and Kaufmo gather between their doors. Further down the hall, Jax stands alone, back turned, toying with a prop. He keeps stuttering, like a skipping recording.' },
-  { type: 'line', speaker: 'jax', side: 'right', direction: 'without turning around', text: 'Oh look, it’s the circus’s resident problem solver. Let me guess. Ribbit sent you. Or the bowling nerd.' },
-  { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Nobody sent me. I just wanted to talk.' },
-  { type: 'line', speaker: 'jax', side: 'right', text: 'Talk. Great. That’s always so productive.' },
-  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'Everyone’s worried about you, Jax. Ribbit, Kaufmo… you’ve been calling people crazy and snapping at everyone who walks by.' },
-  { type: 'line', speaker: 'jax', side: 'right', text: 'Because it’s true, Pomni. We’re stuck in a circus, there is no exit, and somebody has to say it. Does anybody ever listen to me? No.' },
-  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'That’s not what this is. You’re not okay, and I think you know that.' },
-  { id: 'jaxStiffens', type: 'beat', distress: 2, text: 'Jax stiffens. A glitch tears across him for a split second, and the sound crackles.' },
-  { type: 'line', speaker: 'jax', side: 'right', direction: 'quietly, almost to himself', distress: 1, text: 'I’m fine. I’m fine. Stop looking at me like that.' },
-  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'Jax…' },
-  { type: 'line', speaker: 'jax', side: 'right', distress: 2, text: 'Stop it!' },
-  { id: 'jaxBolts', type: 'beat', text: 'Jax bolts past them, back up the hall toward the Lobby and the maze beyond it.' },
+// --- Level 2 into 3: Jax bolts, Ribbit in the hall ------------------------
+// Dorsa's transition script. Played in the Dorm Hall outside Kaufmo's room
+// once Level 2 is complete (levels/level3Hallway.js acts out its `action`s):
+// Jax bolts past for the hall's exit, and Pomni sends Ribbit for the others
+// instead of letting her follow.
+export const level3HallwayDialogue = [
+  { type: 'beat', action: 'jaxBolts', text: 'Jax bolts past her, toward the exit of the hallway.' },
   { type: 'line', speaker: 'pomni', side: 'left', direction: 'shouting after him', mood: 'shocked', text: 'Jax, wait!' },
-  { id: 'regroup', type: 'beat', text: 'His footsteps fade. Ribbit and Kaufmo turn to Pomni.' },
+  { type: 'beat', action: 'ribbitArrives', text: 'Footsteps. Ribbit walks up and stops when she sees Pomni calling out after Jax.' },
   { type: 'line', speaker: 'ribbit', side: 'right', text: 'Pomni? Was that Jax?' },
-  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'He ran into that maze. He was glitching, Ribbit. Something’s really wrong.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'He ran out to the circus lobby. He was glitching, Ribbit. Something’s really wrong.' },
   { type: 'line', speaker: 'ribbit', side: 'right', direction: 'her voice drops', text: 'Is this because of me? Because of the fight?' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'It’s not your fault. But I think it’s gotten bigger than the fight.' },
   { type: 'line', speaker: 'ribbit', side: 'right', text: 'Then let’s go after him. Now.' },
-  { type: 'beat', text: 'Pomni steps in front of Ribbit, one arm out.' },
+  { type: 'beat', action: 'pomniStopsRibbit', text: 'Ribbit takes a step forward to follow. Pomni stops her, putting her arm out.' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Wait. Not yet.' },
   { type: 'line', speaker: 'ribbit', side: 'right', text: 'Pomni, he’s hurting. We can’t just stand here.' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'I know. But I barely got a few sentences out and he bolted. If we both go charging in, he’ll feel cornered. I don’t think he’s ready to be confronted by us yet.' },
   { type: 'line', speaker: 'ribbit', side: 'right', direction: 'after a pause', text: '…Okay. So what do you need me to do?' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Find the others. Gangle, Zooble, Ragatha, Kinger. Tell them what’s happening with Jax. And tell them about Kaufmo.' },
   { type: 'line', speaker: 'ribbit', side: 'right', text: 'Kaufmo? What about him?' },
-  { type: 'line', speaker: 'pomni', side: 'left', mood: 'happy', text: 'He’s working out the exit. I found the missing pieces he needed, and he thinks he can actually do it this time. Everyone should know it’s real, and that he’s not crazy.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'happy', text: 'He’s in his room right now, working out the exit. I found the missing pieces he needed, and he thinks he can actually do it this time. Everyone should know it’s real, and that he’s not crazy.' },
   { type: 'line', speaker: 'ribbit', side: 'right', direction: 'a small, surprised smile, the first one in a while', text: 'He’s been saying it for so long. I’ll make sure they listen.' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Thank you. I’ll meet you all back soon.' },
   { type: 'line', speaker: 'ribbit', side: 'right', direction: 'already turning to go', text: 'You’d better.' },
-  { type: 'beat', text: 'Kaufmo heads back to his room and his wall. Ribbit hurries off up the hall to find the others. Pomni goes after Jax alone.', next: null },
+  { type: 'beat', action: 'ribbitLeaves', text: 'Ribbit heads back. Pomni turns to follow Jax.', next: null },
+];
+
+// --- Level 3 intro: Jax in the Lobby --------------------------------------
+// Played when Pomni finds him in a corner of the Circus Lobby (levels/
+// level3Lobby.js acts out its `action`s). He runs off through one of the
+// bedroom doors along the wall, the one that leads into the maze.
+export const level3JaxDialogue = [
+  { type: 'beat', text: 'Jax is alone in a corner of the circus lobby, back turned. He moves in jerky little stutters, like a skipping recording.' },
+  { type: 'line', speaker: 'jax', side: 'right', direction: 'without turning around', text: 'Oh look, it’s the circus’s resident problem solver. Let me guess. Ribbit sent you. Or the bowling nerd.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Nobody sent me. I just wanted to talk.' },
+  { type: 'line', action: 'jaxTurns', speaker: 'jax', side: 'right', text: 'Talk. Great. That’s always so productive.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'Everyone’s worried about you, Jax. Ribbit, Kaufmo… you’ve been calling people crazy and snapping at everyone who walks by.' },
+  { type: 'line', speaker: 'jax', side: 'right', text: 'Because it’s true, Pomni. We’re stuck in a circus, there is no exit, and somebody has to say it. Does anybody ever listen to me? No.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'That’s not what this is. You’re not okay, and I think you know that.' },
+  { type: 'beat', action: 'jaxGlitches', distress: 2, text: 'Jax stiffens. A glitch tears across him for a split second, and the sound crackles.' },
+  { type: 'line', speaker: 'jax', side: 'right', direction: 'quietly, almost to himself', distress: 1, text: 'I’m fine. I’m fine. Stop looking at me like that.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'Jax…' },
+  { type: 'line', speaker: 'jax', side: 'right', distress: 2, text: 'Stop it!' },
+  { type: 'beat', action: 'jaxRunsOff', text: 'Jax runs off along the row of doors and slips through one of them, into the maze.', next: null },
 ];
 
 // level2Return and level2Sendoff back to back: one conversation in his room.

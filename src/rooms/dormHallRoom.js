@@ -4,6 +4,9 @@ import { createCurtainPortal, createDoorPortal, createDoorConnection } from './p
 import { makeDoorOpenable, openHingedDoor } from './doors.js';
 import { attachRoomBehindDoor, sill } from './connectRooms.js';
 import { ICONS } from '../ui/portraitIcons.js';
+import { loadJax } from '../characters/jax.js';
+import { loadRibbit } from '../characters/ribbit.js';
+import { hallwayGatheringPlan } from '../cutscenes/hallwayGatheringCutscene.js';
 
 // Exported from "Dorm Hall V7.blend" by tools/blender/export_dorm_hall_v7.py,
 // which converts the materials the glTF exporter can't read — re-run it
@@ -46,9 +49,12 @@ const DIALOGUE_ICON_DOORS = ['Kaufmo', 'Ribbit'];
 // connectRooms.js) instead of reached through a portal and a loading
 // screen: open the door and the room is right there. Each needs a loader
 // with an `embedded` mode that leaves its own door out and reports its
-// doorway. Pomni's door isn't one of these: it opens onto her real room,
-// which main.js swaps in as she walks through (see walkIntoPomniRoom).
+// doorway. The WALK_IN_ROOMS aren't these either.
 const CONNECTED_ROOMS = {};
+// Rooms whose door opens onto the real room, which main.js loads in the
+// background, shows behind the open door and swaps in as Pomni walks
+// through (see walkIntoRoom there): no portal, no loading screen.
+const WALK_IN_ROOMS = new Set(['pomni', 'kaufmo']);
 // How close (metres from the doorway) a connected room keeps its mirrors
 // reflecting and its shadows updating while Pomni's out in the hall with
 // the door open. Each of those re-renders the whole scene, hall and all,
@@ -56,13 +62,25 @@ const CONNECTED_ROOMS = {};
 const VIEW_RANGE = 15;
 const ARRIVAL_DISTANCE = 1.8; // matches portals.js's door arrivals
 
-export function loadDormHallRoom(onProgress, { from, items, travel } = {}) {
+// Level 2 into 3 (levels/level3Hallway.js): Pomni steps out of Kaufmo's
+// room to find Jax down the hall by Ribbit's door, back turned, and he
+// bolts back up it past her, on the route the hall gathering staged
+// (cutscenes/hallwayGatheringCutscene.js hallwayGatheringPlan). Ribbit comes
+// up from her own door's end and stops beside her.
+const RIBBIT_MARK = { x: -0.2, z: -96.5 };
+
+/**
+ * @param {{ from?: string, items?: object, travel?: Function, jaxHallway?: boolean }} [options]
+ *   jaxHallway: load Jax and Ribbit for the hall scene that starts Level 3
+ */
+export function loadDormHallRoom(onProgress, { from, items, travel, jaxHallway } = {}) {
   const connected = Object.entries(CONNECTED_ROOMS).map(([key, load]) =>
     load(null, { items, embedded: true }).then((guest) => [key, guest]));
   return Promise.all([
     loadRoomModel(DORM_HALL_URL, onProgress, { spawnAt: SPAWN }),
     Promise.all(connected),
-  ]).then(([room, guests]) => {
+    jaxHallway ? Promise.all([loadJax(), loadRibbit()]) : null,
+  ]).then(([room, guests, cast]) => {
     const guestRooms = Object.fromEntries(guests);
     // The door handles and light fittings are real metals.
     room.environment = true;
@@ -78,9 +96,11 @@ export function loadDormHallRoom(onProgress, { from, items, travel } = {}) {
     });
 
     room.hallDoors = {};
+    room.walkInDoorways = {};
     room.mapMarkers = [];
     const joins = [];
     let arrival = null;
+    let outsideKaufmo = null; // where she steps out of his room, for the Jax hall scene
     for (const { frame, slab, icon, to } of ROOM_DOORS) {
       const frameObject = room.group.getObjectByName(frame);
       if (!frameObject) continue;
@@ -95,20 +115,28 @@ export function loadDormHallRoom(onProgress, { from, items, travel } = {}) {
       if (!door) continue;
       const guest = guestRooms[to];
       const doorway = guest?.doorway;
-      // Pomni's own door opens onto her room itself (main.js walks her in
-      // through it), and a connected room's doorway just leads into it:
-      // neither needs a portal.
-      const walkIn = to === 'pomni';
+      // A walk-in door opens onto the room itself, and a connected room's
+      // doorway just leads into it: neither needs a portal.
+      const walkIn = WALK_IN_ROOMS.has(to);
       const portal = doorway || walkIn ? null : createDoorPortal(room.group, door.frameBox, inFront, to);
       if (portal) portals.push(portal);
       // Shut until Pomni walks up and opens it; the character's icon swings with it.
       const control = makeDoorOpenable(room, door, { portal, attach: [room.group.getObjectByName(icon)] });
       room.hallDoors[to] = { portal, control, shut: () => control.lock(), open: () => control.open() };
-      if (walkIn) room.pomniDoorway = walkInDoorway(door.frameBox, inFront, control);
+      if (walkIn) {
+        // Hidden while the room behind is shown from inside it: the room's
+        // own door is the one in this doorway then.
+        const parts = [frameObject, door.slab.parent];
+        room.walkInDoorways[to] = walkInDoorway(door.frameBox, inFront, control, parts);
+      }
 
-      if (doorway) {
+      // Pomni's has its marker and arrival below (createDoorConnection).
+      if (doorway || (walkIn && to !== 'pomni')) {
         const intoHall = new THREE.Vector3(Math.sign(HALL_CENTRE_X - centre.x), 0, 0);
-        joins.push({ guest, control, hostDoor: { frameBox: door.frameBox, intoRoom: intoHall }, doorway });
+        // Where she stands on stepping out of Kaufmo's room: Level 3's hall
+        // scene starts there (addJaxHallway).
+        if (to === 'kaufmo') outsideKaufmo = sill(door.frameBox).addScaledVector(intoHall, ARRIVAL_DISTANCE);
+        if (doorway) joins.push({ guest, control, hostDoor: { frameBox: door.frameBox, intoRoom: intoHall }, doorway });
         room.mapMarkers.push({ to, box: door.frameBox });
         // Back from the room played on its own (the room picker / a
         // dialogue preview): out in the hall by its door, which is open.
@@ -146,6 +174,7 @@ export function loadDormHallRoom(onProgress, { from, items, travel } = {}) {
 
     // No Caine waiting here: in the story he swoops in once Pomni's had a
     // look around (main.js's triggerCaineArrival).
+    room.pomniDoorway = room.walkInDoorways.pomni;
     // No portal or hallDoors entry for this one, so mark it for the minimap.
     const bedroomFrame = room.group.getObjectByName('Door_Frame068');
     if (bedroomFrame) room.mapMarkers.push({ to: 'pomni', box: new THREE.Box3().setFromObject(bedroomFrame) });
@@ -153,8 +182,54 @@ export function loadDormHallRoom(onProgress, { from, items, travel } = {}) {
       room.spawn = bedroom.arrival.spawn;
       room.spawnFacing = bedroom.arrival.facing;
     }
+    // His room's a walk-in now (no portal), so its doorway gives her mark.
+    outsideKaufmo ??= portals.find((portal) => portal.to === 'kaufmo')?.arrival.spawn ?? null;
+    if (cast && outsideKaufmo) addJaxHallway(room, cast, outsideKaufmo);
     return room;
   });
+}
+
+/**
+ * Jax and Ribbit for the hall scene: Jax on his mark, glitching, his back
+ * to Kaufmo's door (once he's run, he's hidden with his light kept in the
+ * scene, dimmed, so it never changes the light count), Ribbit hidden at
+ * hers until her beat. Both build their shaders with the room's (warmUp).
+ * The scene hooks in through room.storyUpdate.
+ */
+function addJaxHallway(room, [jaxApi, ribbitApi], outsideKaufmo) {
+  const { jax, jaxRun } = hallwayGatheringPlan(room);
+  const marks = {
+    pomni: outsideKaufmo.clone(),
+    jax,
+    // From his mark, straight out into the middle of the hall and up it.
+    // The gathering's route hugs the left wall, brushing past every door,
+    // and the middle also keeps him clear of Pomni, who's by Kaufmo's door.
+    jaxRun: jaxRun.map((point, i) => (i ? point.clone().setX(HALL_CENTRE_X) : point)),
+    ribbit: new THREE.Vector3(RIBBIT_MARK.x, outsideKaufmo.y, RIBBIT_MARK.z),
+  };
+  jaxApi.jax.position.copy(jax);
+  jaxApi.jax.rotation.y = Math.atan2(jax.x - marks.pomni.x, jax.z - marks.pomni.z); // back turned
+  jaxApi.setShown(true);
+  jaxApi.setGlitching(true);
+  ribbitApi.ribbit.position.copy(marks.ribbit);
+  ribbitApi.ribbit.visible = false;
+  room.group.add(jaxApi.jax, ribbitApi.ribbit);
+  room.jaxHallway = { jaxApi, ribbitApi, marks };
+
+  const warmUp = room.warmUp;
+  room.warmUp = (renderer, scene, camera) => {
+    warmUp?.(renderer, scene, camera);
+    ribbitApi.ribbit.visible = true;
+    renderer.compile(scene, camera);
+    ribbitApi.ribbit.visible = false;
+  };
+  const update = room.update;
+  room.update = (deltaSeconds, playerPosition) => {
+    update?.(deltaSeconds, playerPosition);
+    jaxApi.update(deltaSeconds);
+    ribbitApi.update(deltaSeconds);
+    room.storyUpdate?.(deltaSeconds, playerPosition);
+  };
 }
 
 /**
@@ -241,11 +316,6 @@ function onlyRenderWhenSeen(room, guest, control, roomBounds, doorway) {
   };
 }
 
-/**
- * Pomni's door, opened with E like the others, as main.js needs it to walk
- * her through into her room: whether it's open, and when she's stepped
- * past it. `hallSide` is any point out in the hall.
- */
 /** Flips a door leaf end for end across its own width, knob and all. */
 function mirrorLeaf(slab) {
   if (!slab) return;
@@ -262,24 +332,35 @@ function mirrorLeaf(slab) {
   slab.updateMatrixWorld(true);
 }
 
-function walkInDoorway(frameBox, hallSide, control) {
+/**
+ * A walk-in door (WALK_IN_ROOMS), opened with E like the others, as main.js
+ * needs it to walk Pomni through into the room: whether it's open, where
+ * it is, and when she's stepped past it. `hallSide` is any point out in the
+ * hall; `parts` are the door's frame and leaf.
+ */
+function walkInDoorway(frameBox, hallSide, control, parts) {
   const size = frameBox.getSize(new THREE.Vector3());
   const centre = frameBox.getCenter(new THREE.Vector3());
   const axis = size.x < size.z ? 'x' : 'z';
   const wide = axis === 'x' ? 'z' : 'x';
-  const inward = hallSide[axis] < centre[axis] ? 1 : -1; // into her room
+  const inward = hallSide[axis] < centre[axis] ? 1 : -1; // into the room
   const into = new THREE.Vector3();
   into[axis] = inward;
   return {
     control,
     into,
+    parts,
+    /** The doorway's floor, centre. */
+    sill: sill(frameBox),
+    centre,
     /**
      * The hall's wall line here; her room, shown behind it, is clipped to
      * its far side. Set a little into the room: her walls sit right on the
      * line and would otherwise flicker through the hall's as thin dashes.
+     * (Kaufmo's room sits wholly behind the wall as it is.)
      */
     wallPlane: new THREE.Plane(into.clone(), -centre[axis] * inward - 0.15),
-    /** How far a point is past the doorway, into her room. */
+    /** How far a point is past the doorway, into the room. */
     depthPast: (point) => (point[axis] - centre[axis]) * inward,
     crossed: (point) => (point[axis] - centre[axis]) * inward > 0
       && Math.abs(point[wide] - centre[wide]) < size[wide] / 2,

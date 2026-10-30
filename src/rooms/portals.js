@@ -127,7 +127,8 @@ export function createCurtainPortal(group, curtainName, facing, to) {
  * @param {THREE.Vector3} spawn a point inside the room (the doorway's trigger
  *   and arrival direction are both worked out relative to this)
  * @param {string} to the ROOM_LOADERS key it leads to
- * @returns {{ box: THREE.Box3, to: string, arrival: { spawn: THREE.Vector3, facing: number } }}
+ * @returns {{ box: THREE.Box3, to: string, arrival: { spawn: THREE.Vector3, facing: number },
+ *   glimpse: THREE.Mesh }} glimpse is the glowing panel past the doorway
  */
 export function createDoorPortal(group, frameBox, spawn, to) {
   const size = frameBox.getSize(new THREE.Vector3());
@@ -160,9 +161,9 @@ export function createDoorPortal(group, frameBox, spawn, to) {
   arrivalSpawn.y = floorBelow(group, arrivalSpawn.x, frameBox.max.y + 5, arrivalSpawn.z) ?? frameBox.min.y;
   const arrivalFacing = Math.atan2(intoRoom.x, intoRoom.z);
 
-  addDoorwayGlimpse(group, frameBox, center, intoRoom, wideAxis);
+  const glimpse = addDoorwayGlimpse(group, frameBox, center, intoRoom, wideAxis);
 
-  return { box, to, arrival: { spawn: arrivalSpawn, facing: arrivalFacing } };
+  return { box, to, arrival: { spawn: arrivalSpawn, facing: arrivalFacing }, glimpse };
 }
 
 /**
@@ -186,6 +187,7 @@ function addDoorwayGlimpse(group, frameBox, center, intoRoom, wideAxis) {
   const glow = new THREE.PointLight(GLIMPSE_LIGHT_COLOR, GLIMPSE_LIGHT_INTENSITY, GLIMPSE_LIGHT_RANGE, 2);
   glow.position.copy(center).addScaledVector(intoRoom, -0.4);
   group.add(glow);
+  return panel;
 }
 
 function floorBelow(group, x, fromY, z) {

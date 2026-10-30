@@ -132,8 +132,9 @@ function createHallLink(room, preview) {
   out[axis] = outward;
   return {
     toHall,
-    // Out through the doorway, in the hall's coordinates.
-    outward: out.transformDirection(toHall),
+    // Out through the doorway, in the hall's coordinates and the room's.
+    outward: out.clone().transformDirection(toHall),
+    outwardInRoom: out,
     /** How far a point is past the doorway, outward. */
     depthPast: (point) => (point[axis] - centre[axis]) * outward,
     // Rotating the world by the preview's turn adds it to every facing.

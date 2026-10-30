@@ -273,31 +273,31 @@ function createGloinkInstance(sourceModel, type = 'pin') {
   return { group, modelWrapper, light, setFacing, update };
 }
 
-let cachedPromise = null;
-
 /**
  * Loads the gloinks asset and returns an API to create gloink enemy instances.
+ *
+ * A fresh load per call (per maze), never a cached one: instances share
+ * the loaded materials and textures, and leaving a room frees them for
+ * good (releaseTextures closes the decoded images). A copy kept between
+ * mazes came back from a retry with closed images and rendered pitch
+ * black. The browser's HTTP cache still saves the download.
  * @returns {Promise<{ createInstance: (type?: string) => object }>}
  */
 export function loadGloinks() {
-  if (!cachedPromise) {
-    const loader = new GLTFLoader();
-    cachedPromise = loader.loadAsync(GLOINKS_URL).then((gltf) => {
-      const sourceModel = gltf.scene;
-      sourceModel.updateMatrixWorld(true);
-      return {
-        createInstance(type = 'pin') {
-          return createGloinkInstance(sourceModel, type);
-        },
-      };
-    }).catch((err) => {
-      console.warn('Could not load gloinks glb, using procedural fallback:', err);
-      return {
-        createInstance(type = 'pin') {
-          return createFallbackGloink(type);
-        },
-      };
-    });
-  }
-  return cachedPromise;
+  return new GLTFLoader().loadAsync(GLOINKS_URL).then((gltf) => {
+    const sourceModel = gltf.scene;
+    sourceModel.updateMatrixWorld(true);
+    return {
+      createInstance(type = 'pin') {
+        return createGloinkInstance(sourceModel, type);
+      },
+    };
+  }).catch((err) => {
+    console.warn('Could not load gloinks glb, using procedural fallback:', err);
+    return {
+      createInstance(type = 'pin') {
+        return createFallbackGloink(type);
+      },
+    };
+  });
 }
