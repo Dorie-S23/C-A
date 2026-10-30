@@ -2,9 +2,11 @@ import { MAZE_HINT_OBJECTS, createMazeHintProgress } from '../state/mazeHints.js
 import { renderMazeHintMap, renderMazeHintLegend } from './mazeHintMap.js';
 
 /**
- * The maze's hints panel. Map hints draw the maze; any map she's unlocked
- * she can look at again (View map). Trail hints (the last two) draw nothing
- * here: onTrail is told, and the trail runs once she's back in the maze.
+ * The maze's hints. Each use (H) takes the next one straight away, no
+ * screen in between: the first, the map, opens this panel showing it and
+ * how many hints are left; the others, beams, don't open it at all
+ * (useBeam, from main.js, which fires the beam). Once they're all used, H
+ * shows the map again.
  */
 export function createMazeHints({button,reminder,panel,onOpen,onClose,onChange,onTrail=()=>{},nextPortrait=()=>null,hasCollected=()=>false,getPlayerPosition=()=>null,getPlayerFacing=()=>0,getJaxPosition=()=>null}) {
   const progress=createMazeHintProgress();
@@ -13,9 +15,7 @@ export function createMazeHints({button,reminder,panel,onOpen,onClose,onChange,o
   const map=panel.querySelector('[data-maze-map]'),drawing=panel.querySelector('[data-map-drawing]'),legend=panel.querySelector('[data-map-legend]');
   const count=panel.querySelector('[data-hints-count]'),back=panel.querySelector('[data-close-hints]'),tutorial=document.getElementById('tutorial-hud');
   let room=null,previewMap=false,currentHint=null,viewing=null;
-  const view=document.createElement('button');
-  view.type='button';view.dataset.viewMap='';view.className=next.className;view.textContent='View map';
-  next.after(view);
+  next.hidden=true; // nothing to choose: opening it is using it
   const missing=()=>MAZE_HINT_OBJECTS.filter(item=>!hasCollected(item.id)).map(item=>item.id);
   function renderMap(kind) {
     const data=renderMazeHintMap(drawing,room,{mode:kind==='jax'?'jax':kind==='map'?'map':'objects',missingItems:missing(),playerPosition:getPlayerPosition(),playerFacing:getPlayerFacing(),jaxPosition:getJaxPosition()});
@@ -24,11 +24,7 @@ export function createMazeHints({button,reminder,panel,onOpen,onClose,onChange,o
   function render() {
     const planned=progress.next,showMap=previewMap||Boolean(viewing)||(Boolean(currentHint)&&currentHint.kind!=='trail');
     count.textContent=progress.remaining+(progress.remaining===1?' hint left':' hints left');
-    next.hidden=Boolean(currentHint)||previewMap||Boolean(viewing)||!planned;
-    next.disabled=!planned;
-    next.textContent=planned?'Reveal Hint '+planned.number:'Reveal Hint';
-    // A map she's already unlocked, to look at again.
-    view.hidden=Boolean(currentHint)||previewMap||Boolean(viewing)||!progress.map;
+    next.hidden=true;
     text.hidden=!currentHint&&!previewMap&&!viewing&&Boolean(planned);
     text.textContent=currentHint?.text ?? (viewing?progress.mapText
       :previewMap?'P marks where you are. The other markers show the objects you still need.':'You have used all the hints for this search.');
@@ -36,9 +32,6 @@ export function createMazeHints({button,reminder,panel,onOpen,onClose,onChange,o
     map.hidden=!showMap;panel.classList.toggle('maze-hints--map',Boolean(showMap));
     panel.classList.toggle('maze-hints--revealed',Boolean(currentHint));
     if(!showMap){drawing.replaceChildren();legend.replaceChildren();}
-  }
-  function requestNext() {
-    currentHint=null;previewMap=false;viewing=null;render();(next.hidden?back:next).focus();
   }
   function close(notify=true) {
     if(!panel.open)return;
@@ -48,33 +41,35 @@ export function createMazeHints({button,reminder,panel,onOpen,onClose,onChange,o
   button.addEventListener('click',event=>{event.stopPropagation();onOpen();});
   back.addEventListener('click',()=>close());
   panel.addEventListener('cancel',event=>{event.preventDefault();close();});
-  next.addEventListener('click',()=>{
-    if(!room||currentHint||previewMap||viewing)return;
-    const hint=progress.reveal();if(!hint)return;
-    currentHint=hint;
-    portrait.src=nextPortrait() ?? '';
-    portrait.alt='Caine';
-    render();
-    if(hint.kind==='trail')onTrail();else renderMap(hint.kind);
-    onChange();back.focus();
-  });
-  view.addEventListener('click',()=>{
-    if(!room||currentHint||previewMap||!progress.map)return;
-    viewing=progress.map;render();renderMap(viewing);back.focus();
-  });
   window.addEventListener('keydown',event=>{
     if(!panel.open)return;
     if(event.code==='Escape'){event.preventDefault();close();}
-    else if(event.code==='KeyH'&&!event.repeat&&!event.ctrlKey&&!event.altKey&&!event.metaKey){event.preventDefault();requestNext();}
+    else if(event.code==='KeyH'&&!event.repeat&&!event.ctrlKey&&!event.altKey&&!event.metaKey){event.preventDefault();close();}
     if(event.code!=='Tab')event.stopImmediatePropagation();
   },true);
   window.addEventListener('keyup',event=>{if(panel.open&&event.code!=='Tab')event.stopImmediatePropagation();},true);
   return {
     get isOpen(){return panel.open;},
+    /** The next hint is a beam (so main.js fires it rather than opening this). */
+    get nextIsBeam(){return progress.next?.kind==='trail';},
+    get remaining(){return progress.remaining;},
+    /** Uses up the next hint, a beam; onTrail fires it. */
+    useBeam(){
+      if(progress.next?.kind!=='trail')return false;
+      progress.reveal();onTrail();onChange();return true;
+    },
+    /** Opens on the map: using up the map hint the first time, after that just looking again. */
     open(value,{previewMap:preview=false}={}) {
       if(panel.open)return false;
-      room=value;previewMap=preview;currentHint=null;viewing=null;render();if(previewMap)renderMap('objects');
-      button.setAttribute('aria-expanded','true');panel.showModal();(next.hidden?(view.hidden?back:view):next).focus();return true;
+      room=value;previewMap=preview;currentHint=null;viewing=null;
+      if(!preview&&progress.next?.kind==='map'){
+        currentHint=progress.reveal();
+        portrait.src=nextPortrait() ?? '';portrait.alt='Caine';
+        onChange();
+      } else if(!preview&&progress.map) viewing=progress.map;
+      render();
+      if(previewMap)renderMap('objects');else if(currentHint||viewing)renderMap('map');
+      button.setAttribute('aria-expanded','true');panel.showModal();back.focus();return true;
     },
     update(available,playable){
       button.hidden=!available||playable||panel.open;reminder.hidden=!playable||panel.open;

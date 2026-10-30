@@ -173,6 +173,14 @@ function loadRecordedOpening(context, buffers) {
   loadSound(context, 'knock', { peak: KNOCK_PEAK, trimStart: true }).then(buffer => { if (buffer) buffers.knock = buffer; });
 }
 
+// The intro story's music (playStoryMusic): this file, from 0:12 to 1:26.5.
+const STORY_MUSIC_FILE = 'Your New Home (Finale Ver.).mp3';
+const STORY_MUSIC_FROM = 12;
+const STORY_MUSIC_TO = 86.5;
+const STORY_MUSIC_LEVEL = 0.5;      // the main theme's level
+const STORY_MUSIC_FADE_IN = 1;
+const STORY_MUSIC_FADE_OUT = 1.5;
+
 /** A persistent listener; short-lived, room-owned sources stop on every exit. */
 export function createOpeningAudio(camera) {
   let listener = null, buffers = null, feedbackBuffers = null;
@@ -182,6 +190,9 @@ export function createOpeningAudio(camera) {
   let mainThemePaused = false; // silent under the pause menu, apart from the player's own mute
   const mainThemeLevel = () => (mainThemeMuted || mainThemePaused ? 0 : mainThemeVolume);
   let intermissionBufferLoading = null;
+  // The intro story's music: one pass of STORY_MUSIC_FILE from
+  // STORY_MUSIC_FROM to STORY_MUSIC_TO seconds, no loop.
+  let storyMusicLoading = null, storyMusic = null, storyMusicRequest = 0;
   function unlock() {
     try {
       if (!listener) {
@@ -189,6 +200,8 @@ export function createOpeningAudio(camera) {
         buffers = makeOpeningBuffers(listener.context);
         loadRecordedOpening(listener.context, buffers);
         intermissionBufferLoading = loadSoundFile(listener.context, 'Amazing Digital Circus - Intermission.mp3', { rms: 0.03 });
+        // Fetched now, so it's ready the moment PLAY starts the story.
+        storyMusicLoading = loadSoundFile(listener.context, STORY_MUSIC_FILE, { rms: 0.03 });
       }
       return listener.context.resume().catch(() => {});
     } catch { return Promise.resolve(); } // silent fallback never blocks gameplay
@@ -243,6 +256,47 @@ export function createOpeningAudio(camera) {
     if (!mainTheme || !listener) return;
     mainTheme.gain.gain.setTargetAtTime(mainThemeLevel(), listener.context.currentTime, 0.05);
   }
+  async function playStoryMusic() {
+    if (!listener || storyMusic) return;
+    const request = ++storyMusicRequest;
+    storyMusicLoading ??= loadSoundFile(listener.context, STORY_MUSIC_FILE, { rms: 0.03 });
+    const buffer = await storyMusicLoading;
+    if (!buffer || request !== storyMusicRequest || !listener) return;
+    const context = listener.context;
+    const from = Math.min(STORY_MUSIC_FROM, buffer.duration);
+    const length = Math.min(STORY_MUSIC_TO, buffer.duration) - from;
+    if (length <= 0) return;
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    const gain = context.createGain();
+    const now = context.currentTime, end = now + length;
+    const level = mainThemeMuted ? 0 : STORY_MUSIC_LEVEL;
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(level, now + STORY_MUSIC_FADE_IN);
+    // Out over its last seconds, so it's silent right at STORY_MUSIC_TO.
+    gain.gain.setValueAtTime(level, Math.max(now + STORY_MUSIC_FADE_IN, end - STORY_MUSIC_FADE_OUT));
+    gain.gain.linearRampToValueAtTime(0, end);
+    source.connect(gain).connect(context.destination);
+    source.start(now, from, length);
+    const active = { source, gain };
+    source.onended = () => {
+      source.disconnect(); gain.disconnect();
+      if (storyMusic === active) storyMusic = null;
+    };
+    storyMusic = active;
+  }
+  /** Fades the story music out early, when the story ends or is skipped. */
+  function stopStoryMusic() {
+    storyMusicRequest++;
+    if (!storyMusic || !listener) return;
+    const { source, gain } = storyMusic;
+    storyMusic = null;
+    const now = listener.context.currentTime;
+    gain.gain.cancelScheduledValues(now);
+    gain.gain.setValueAtTime(gain.gain.value, now);
+    gain.gain.linearRampToValueAtTime(0, now + 0.8);
+    source.stop(now + 0.85);
+  }
   async function playIntermissionCue() {
     if (!listener) return;
     intermissionBufferLoading ??= loadSoundFile(listener.context, 'Amazing Digital Circus - Intermission.mp3', { rms: 0.03 });
@@ -279,6 +333,8 @@ export function createOpeningAudio(camera) {
     setMainThemeVolume,
     setMainThemeMuted,
     setMainThemePaused,
+    playStoryMusic,
+    stopStoryMusic,
     playIntermissionCue,
     createEntranceSession(room, options) {
       return listener ? createEntranceAudioSession(listener, room, undefined, options) : null;
