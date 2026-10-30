@@ -682,6 +682,7 @@ const SENSITIVITY_KEY = 'tadc.mouseSensitivity';
 const voiceVolumeInput = document.getElementById('voice-volume');
 const voiceVolumeValue = document.getElementById('voice-volume-value');
 const VOICE_VOLUME_KEY = 'tadc.voiceVolume';
+const DEFAULT_VOICE_VOLUME = 0.5;
 const ambienceVolumeInput = document.getElementById('ambience-volume');
 const ambienceVolumeValue = document.getElementById('ambience-volume-value');
 const AMBIENCE_VOLUME_KEY = 'tadc.ambienceVolume';
@@ -769,18 +770,19 @@ sensitivityInput.addEventListener('input', () => {
   }
 });
 
-// Dialogue voice volume, 0 (off) to 1. Off by default — players opt in here.
-// Same persistence as the sensitivity.
+// Dialogue voice volume, 0 (off) to 1. On by default, so players find out the
+// game has voices; turning them off here is remembered. Same persistence as
+// the sensitivity.
 function setVoiceVolume(value) {
   dialogueVoice.setVolume(value);
   voiceVolumeInput.value = value;
   voiceVolumeValue.textContent = value === 0 ? 'off' : `${Math.round(value * 100)}%`;
 }
 try {
-  const stored = Number(localStorage.getItem(VOICE_VOLUME_KEY) ?? 0);
-  setVoiceVolume(Number.isFinite(stored) ? Math.max(0, Math.min(1, stored)) : 0);
+  const stored = Number(localStorage.getItem(VOICE_VOLUME_KEY) ?? DEFAULT_VOICE_VOLUME);
+  setVoiceVolume(Number.isFinite(stored) ? Math.max(0, Math.min(1, stored)) : DEFAULT_VOICE_VOLUME);
 } catch {
-  setVoiceVolume(0);
+  setVoiceVolume(DEFAULT_VOICE_VOLUME);
 }
 voiceVolumeInput.addEventListener('input', () => {
   setVoiceVolume(Number(voiceVolumeInput.value));
