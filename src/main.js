@@ -43,7 +43,7 @@ import { createGlitchCaption } from './ui/glitchCaption.js';
 import {createMazeObjectiveHUD} from './ui/mazeObjectiveHUD.js';
 import { createMazeHints } from './ui/mazeHints.js';
 import './ui/mazeHints.css';
-import { createMazeItems, createMazeSearch, MAZE_FINDABLES } from './state/mazeItems.js';
+import { createMazeItems, createMazeSearch, mazeObjective, MAZE_FINDABLES } from './state/mazeItems.js';
 import { runLevel1 } from './levels/level1.js';
 import { runHallwayScene } from './levels/level3Hallway.js';
 import { runLobbyScene } from './levels/level3Lobby.js';
@@ -1926,7 +1926,7 @@ const storyProgress = createStoryProgress({ objectives, isStorySession: () => pr
 // something as she picks each up. Same shared-instance-survives-room-
 // changes lifecycle as itemState above.
 const MAZE_PICKUP_LINES = { 'bowling-ball': 'mazePickupBowling', 'hot-chocolate-mug': 'mazePickupMug' };
-let mazeEncounter=null,lastMazeExitHint=0;
+let mazeEncounter=null;
 // This maze visit's keepsake sounds and Jax chase (fragments' caption), stopped on leaving it.
 let mazeSounds=null,mazeChase=null;
 const glitchCaption=createGlitchCaption();
@@ -1940,7 +1940,7 @@ let mazeAttemptSeed = null;
 let mazeClockWasPlayable = false;
 document.addEventListener('visibilitychange', () => { mazeClockWasPlayable = false; });
 
-const mazeHUD=createMazeObjectiveHUD({root:document.getElementById('maze-objective-hud'),items:mazeItems});
+const mazeHUD=createMazeObjectiveHUD({root:document.getElementById('maze-objective-hud'),items:mazeItems,jaxFled:()=>Boolean(mazeChase?.fled)});
 
 const mazeHints = createMazeHints({
   button: document.getElementById('maze-hints-button'), reminder: document.getElementById('maze-hints-reminder'), panel: document.getElementById('maze-hints-panel'),
@@ -2222,8 +2222,8 @@ function canReachMazeJax() {
 }
 
 function mazeSearchInstructions() {
-  return {title:mazeItems.jaxComplete?'Reach the exit':'Follow Jax',
-    detail:mazeItems.jaxComplete?'The conversation is complete. Leave the maze.':'Find Jax before time runs out. He runs when you get close, so follow him until he stops running, then call out to him (E).'};
+  return {title:mazeObjective(mazeItems,{jaxFled:Boolean(mazeChase?.fled)}).title,
+    detail:'Find Jax before time runs out. He runs when you get close, so follow him until he stops running, then call out to him (E).'};
 }
 
 function updateMazeSearch(deltaSeconds) {
@@ -2317,6 +2317,20 @@ function jaxFinalScene(room, handlers) {
       return actions[node.action]?.();
     },
   };
+}
+
+// After the talk with Jax, this long (to see him settle, or come apart)
+// before the maze fades out into the ending. There's no exit to walk to.
+const LEAVE_AFTER_TALK_SECONDS = 1.6;
+function leaveMazeAfterTalk() {
+  if (reachedExit) return;
+  reachedExit = true; // no Gloink catches her in the meantime
+  foundJax = true;
+  const token = loadToken;
+  setTimeout(() => {
+    if (token !== loadToken || currentRoomKey !== 'maze') return;
+    void leaveMaze(jaxOutcome());
+  }, LEAVE_AFTER_TALK_SECONDS * 1000);
 }
 
 /** Fades the screen to black (true) or back (false); resolves once it's there. */
@@ -2911,7 +2925,7 @@ function applyLoadedRoom({
   currentRoom = group;
   currentRoomKey = roomKey;
   if(roomKey==='maze'){
-    // Finding him (mazeJaxChase.js): he turns up a minute in, mumbles and
+    // Finding him (mazeJaxChase.js): he's there from the start, mumbles and
     // bolts twice, then in his nook she calls out (E) and they talk here.
     const mazeRoom=currentRoomInfo;
     const listener=openingAudio.listener;
@@ -2930,7 +2944,10 @@ function applyLoadedRoom({
       outcome:()=>passesJaxGate()?'stays':'abstracts',
       // Talked through, he stays turned to her (how he is depends on the
       // outcome); left, he's back to his wall.
-      onRelease:()=>chase.talkEnded(mazeItems.jaxComplete,mazeItems.jaxOutcome),
+      onRelease:()=>{
+        chase.talkEnded(mazeItems.jaxComplete,mazeItems.jaxOutcome);
+        if(mazeItems.jaxComplete)leaveMazeAfterTalk();
+      },
     });
     foundJax=mazeItems.jaxComplete;
     mazeRoom.interactables.push({
@@ -3025,7 +3042,7 @@ function applyLoadedRoom({
       mazeAttemptSeed = currentRoomInfo.mazeSeed;
       mazeSearch.start();
     }
-    if(mazeItems.jaxComplete)mazeSearch.tick(0,{playable:true,atJax:true});
+    if(mazeItems.jaxComplete){mazeSearch.tick(0,{playable:true,atJax:true});leaveMazeAfterTalk();} // a save taken just after the talk
     if(mazeItems.jaxOutcome==='abstracts')currentRoomInfo.jaxApi?.setShown(false); // gone since Ending B
     foundJax = mazeSearch.status === 'reached';
   }
@@ -3170,6 +3187,19 @@ window.addEventListener('keydown', (e) => {
   }
 });
 window.addEventListener('keyup', (e) => setMove(e.code, false));
+
+window.addEventListener('wheel', (e) => {
+  if (!isLocked || !readyToPlay || paused || dialogueUI.isActive || activeCutscene || stageBusy() || stageCamera) return;
+  const zoomingIn = e.deltaY < 0;
+  if (firstPerson) {
+    // Out of her eyes, back to the nearest stop behind her.
+    if (!zoomingIn) { firstPerson = false; zoomTarget = cameraZoom = currentCameraDistance = ZOOM_MIN; }
+    return;
+  }
+  if (zoomingIn && zoomTarget <= ZOOM_MIN + 1e-3) { firstPerson = true; return; }
+  const notches = THREE.MathUtils.clamp(Math.abs(e.deltaY) / 100, 0.25, 3);
+  zoomTarget = THREE.MathUtils.clamp(zoomTarget * ZOOM_STEP ** (zoomingIn ? -notches : notches), ZOOM_MIN, ZOOM_MAX);
+}, { passive: true });
 
 // --- Controller ---
 // Right stick look speed at full tilt, radians per second (scaled by the
@@ -3371,6 +3401,14 @@ const cameraOffset = new THREE.Vector3();
 const cameraHitPoint = new THREE.Vector3();
 const cameraRaycaster = new THREE.Raycaster();
 let currentCameraDistance = CAMERA_DISTANCE;
+// Mouse-wheel zoom: the wheel sets zoomTarget, and the camera's distance
+// (cameraZoom) glides after it. Scrolling in past the nearest stop goes to
+// first person; scrolling out of first person comes back to the nearest stop.
+const ZOOM_MIN = 1.4, ZOOM_MAX = 7;
+const ZOOM_STEP = 1.15;       // each wheel notch moves the camera this many times nearer/farther
+const ZOOM_SHARPNESS = 10;    // how fast the camera glides to the new distance
+let zoomTarget = CAMERA_DISTANCE;
+let cameraZoom = CAMERA_DISTANCE;
 
 // Pomni turning and her walk animation (see updatePomniWalk).
 const TURN_SHARPNESS = 14;     // higher = snappier turning
@@ -4678,21 +4716,9 @@ function checkTriggers(player) {
     }
   }
 
+  // No exit to walk to: she leaves once she's talked to Jax (leaveMazeAfterTalk).
   if (!triggers) return;
-  triggerProbe.set(player.position.x, floorY + 0.5, player.position.z);
-
-
   updateMazeSearch(0);
-  if (triggers.exit.containsPoint(triggerProbe)) {
-    if(!mazeItems.jaxComplete){
-      const now=performance.now();
-      if(!lastMazeExitHint||now-lastMazeExitHint>3000){showHint("Find Jax and talk to him before leaving.");lastMazeExitHint=now;}
-      return;
-    }
-    foundJax=true;
-    reachedExit = true;
-    void leaveMaze(jaxOutcome());
-  }
 }
 
 function updateMovement(deltaSeconds) {
@@ -5141,7 +5167,8 @@ function updateCamera(dt) {
 
   // Snap in instantly when a wall gets in the way (so it never clips through),
   // but ease back out smoothly once it's clear.
-  const allowed = cameraCollisionDistance(cameraTarget, cameraOffset, CAMERA_DISTANCE);
+  cameraZoom = THREE.MathUtils.damp(cameraZoom, zoomTarget, ZOOM_SHARPNESS, dt);
+  const allowed = cameraCollisionDistance(cameraTarget, cameraOffset, cameraZoom);
   currentCameraDistance = allowed < currentCameraDistance
     ? allowed
     : THREE.MathUtils.damp(currentCameraDistance, allowed, CAMERA_RETURN_SHARPNESS, dt);

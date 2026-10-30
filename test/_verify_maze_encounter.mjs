@@ -7,13 +7,13 @@ import {createJaxStageBoundary} from '../src/rooms/jaxStageBoundary.js';
 import {level3JaxFinalDialogue} from '../src/data/dialogues.js';
 import {createDialogueEngine} from '../src/dialogue/dialogueEngine.js';
 const collectBoth=items=>{items.collect('bowling-ball');items.collect('hot-chocolate-mug');};
-test('keepsakes are optional points, in either order; on screen it only ever says Follow Jax',()=>{
+test('keepsakes are optional points, in either order; on screen it says Find Jax, then Follow Jax once he runs',()=>{
  for(const order of [['bowling-ball','hot-chocolate-mug'],['hot-chocolate-mug','bowling-ball']]){
-  const items=createMazeItems();assert.deepEqual(mazeObjective(items),{title:'Follow Jax',complete:false});assert.equal(items.collect('unrelated'),false);
+  const items=createMazeItems();assert.deepEqual(mazeObjective(items),{title:'Find Jax',complete:false});assert.equal(mazeObjective(items,{jaxFled:true}).title,'Follow Jax');assert.equal(items.collect('unrelated'),false);
   assert.equal(items.score,0);items.collect(order[0]);items.collect(order[0]);assert.equal(items.totalFound(),1);assert.equal(items.score,1,'one point each, whichever');
-  assert.equal(mazeObjective(items).title,'Follow Jax');items.collect(order[1]);assert.equal(items.score,2);
+  assert.equal(mazeObjective(items).title,'Find Jax','the keepsakes never change it');items.collect(order[1]);assert.equal(items.score,2);
   items.setChoicePoints(3);assert.equal(items.score,5,'with the conversation’s choices');
-  assert.equal(items.completeJax('stays'),true);assert.equal(items.completeJax('abstracts'),false);assert.equal(items.jaxOutcome,'stays');assert.equal(mazeObjective(items).title,'Reach the exit');
+  assert.equal(items.completeJax('stays'),true);assert.equal(items.completeJax('abstracts'),false);assert.equal(items.jaxOutcome,'stays');assert.equal(mazeObjective(items).complete,true);
  }
  const none=createMazeItems();assert.equal(none.completeJax('abstracts'),true,'he can be talked to with no keepsakes');assert.equal(none.jaxOutcome,'abstracts');
 });

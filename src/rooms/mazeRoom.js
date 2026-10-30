@@ -16,9 +16,6 @@ import { createGloinkChase } from '../characters/gloinkChase.js';
 import { createBowlingBall, createHotChocolateMug, placeMazeFindable, pulseGlow } from '../props/mazeFindables.js';
 import { applyJaxGlitch } from '../shaders/jaxGlitch.js';
 
-// Jax isn't there when she arrives: he turns up in his hideout after this
-// long of her actually being in play in the maze.
-export const JAX_SPAWN_SECONDS = 60;
 // How far in front of his nook's back wall he paces.
 const JAX_FROM_WALL = 1.1;
 
@@ -207,9 +204,6 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
   // (x, z), so solving for the desired (dx, dz) gives this atan2.
   const spawnFacing = Math.atan2(-openDir.dx, -openDir.dz);
 
-  // The exit still gets a placeholder marker — real dressing (a doorway,
-  // light, etc.) is still for the team to add — but Jax himself is the
-  // real model now, not a stand-in.
   // Each of his hiding places is a dead end. He stands near its back wall
   // facing it, his back to the way in. The last (maze.jax, see
   // shapeMazeEnvironment) is his nook, with its scenery; he runs there
@@ -228,8 +222,10 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
   jaxApi.setGlitching(true);
   const jaxGlitch = applyJaxGlitch(jax);
   jaxApi.onStutter = () => jaxGlitch.burst();
-  // Until he's turned up he isn't there at all: no model, no barrier.
-  let jaxSpawned = false, jaxWait = 0;
+  // He's in his first hideout from the moment she arrives (spawnJax below,
+  // once the hideouts are chosen). Hidden only while he's out of sight
+  // between hideouts (levels/mazeJaxChase.js).
+  let jaxSpawned = false;
   jax.visible = false;
   function spawnJax() {
     if (jaxSpawned) return;
@@ -252,13 +248,6 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
   group.add(jaxBoundary.group);
 
   const exitCenter = cellCenter(maze.exit.r, maze.exit.c);
-  const exitMarker = new THREE.Mesh(
-    new THREE.CylinderGeometry(cellSize * 0.35, cellSize * 0.35, 0.05, 24),
-    new THREE.MeshStandardMaterial({ color: 0xd8a14a, emissive: 0x4d3211, emissiveIntensity: 0.3 }),
-  );
-  exitMarker.position.set(exitCenter.x, 0.03, exitCenter.z);
-  exitMarker.name = 'ExitMarker';
-  group.add(exitMarker);
 
   // His found-trigger still covers both his own cell and the approach
   // neighbor's — generous on purpose, same cushion the old patrol-covering
@@ -331,7 +320,7 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
 
   hideouts = [...chooseJaxStops(maze, environmentLayout, gloinkPatrolCells).map(hideoutAt), hideouts[0]];
   placeJax(mazeItems?.jaxComplete ? hideouts.length - 1 : 0);
-  if (mazeItems?.jaxComplete) spawnJax(); // already talked: he's in his nook on a revisit
+  spawnJax(); // at his first hideout, or in his nook if they've already talked
 
   const shaderEffects = createMazeShaderEffects({
     patrolCells: gloinkPatrolCells, cellCenter, cellSize, jaxPosition: jaxSpot,
@@ -406,7 +395,6 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
    *   in play (not in a menu or a conversation); only then can a Gloink see her
    */
   function update(deltaSeconds, playerPosition, { playerActive = true } = {}) {
-    if (!jaxSpawned && playerActive && (jaxWait += deltaSeconds) >= JAX_SPAWN_SECONDS) spawnJax();
     jaxBoundary.sync();
     shaderEffects.update(deltaSeconds, playerPosition);
     // (Seen before he's turned up only as a glitch fragment's flicker.)
@@ -434,6 +422,8 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
   const jaxTrigger = new THREE.Box3().setFromPoints(jaxWaypoints).expandByScalar(triggerRadius);
   const triggers = {
     jax: jaxTrigger,
+    // Nothing marks it or acts on it any more (she leaves the maze once
+    // she's talked to Jax); kept for the dev verification tools' layout checks.
     exit: makeTrigger(exitCenter),
   };
 
@@ -481,7 +471,6 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
     /** Where he is now (he moves between hiding places). */
     get jaxAnchor() { return jax.position; },
     get jaxSpawned() { return jaxSpawned; },
-    get jaxWait() { return jaxWait; },
     get jaxStop() { return jaxStop; },
     get jaxAtNook() { return atNook(); },
     /** The way (cell centres) from hiding place `from` to the next one. */

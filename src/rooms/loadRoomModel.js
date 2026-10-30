@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { bulgePaintingEyes, fluffRugs } from '../effects/heightMaps.js';
 
 /**
  * Loads a pre-built room/level model (.glb). These source files ship with
@@ -35,6 +36,10 @@ export function loadRoomModel(url, onProgress, { spawnAt } = {}) {
             child.receiveShadow = true;
           }
         });
+        // Height maps (effects/heightMaps.js): a pile on every flat rug,
+        // and googly eyes that bulge out of their paintings.
+        fluffRugs(group);
+        bulgePaintingEyes(group);
 
         const bounds = new THREE.Box3().setFromObject(group);
         const spawn = spawnAt ? spawnPointAt(group, bounds, spawnAt.x, spawnAt.z) : findSpawnPoint(group, bounds);

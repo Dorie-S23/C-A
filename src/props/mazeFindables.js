@@ -12,10 +12,11 @@ const GLOW_COLOR = 0xfff2c0;
 const GLOW_PULSE_HZ = 0.6;
 const GLOW_EMISSIVE_BASE = 0.4;
 const GLOW_EMISSIVE_SWING = 0.5;
-// Metres from a keepsake that "close enough to pick up" means. Pickup also
-// needs the crosshair on the prop itself (aimOnly), so she has to walk up
-// to it and look at it rather than just pass the pocket.
-const PICKUP_RADIUS = 1.6;
+// Metres from a keepsake that "close enough to pick up" means: within it
+// (and in sight) the prompt comes up without aiming at it, like the
+// Level 2 photos. Its line of sight is checked to this height, as it's low.
+const PICKUP_RADIUS = 2;
+const PICKUP_SIGHT_HEIGHT = 0.3;
 
 function glowMaterial(color, { roughness = 0.5, metalness = 0.1 } = {}) {
   return new THREE.MeshStandardMaterial({
@@ -484,7 +485,8 @@ export function placeMazeFindable(room, items, itemId, label, createMesh, positi
     objects,
     anchor: mesh,
     radius: PICKUP_RADIUS,
-    aimOnly: true,
+    sightHeight: PICKUP_SIGHT_HEIGHT,
+    seeThrough: collider ? [collider] : [], // its own collision box doesn't hide it
     enabled: () => Boolean(mesh.parent) && !items.hasCollected(itemId),
     prompt: () => `Pick up ${label}`,
     interact: () => {
