@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { LoadingManager } from 'three';
-import { installGltfBlobCleanup, releaseTextures } from '../src/rooms/assetLifecycle.js';
+import { LoadingManager, Group, Mesh, BoxGeometry, MeshStandardMaterial, Texture } from 'three';
+import { installGltfBlobCleanup, releaseTextures, disposeObjectResources } from '../src/rooms/assetLifecycle.js';
 
 test('decoded embedded images revoke their resolved blob URL while preserving load progress', () => {
   const progress = [], revoked = [];
@@ -28,4 +28,25 @@ test('room disposal closes shared bitmap sources once and disposes every unique 
   releaseTextures(textures);
   assert.equal(closed, 2);
   assert.equal(disposed, 4);
+});
+
+test('character teardown releases unique resources, skeletons, and attached temporary props once', () => {
+  const root = new Group();
+  const geometry = new BoxGeometry(0.4, 0.3, 0.15);
+  const texture = new Texture();
+  const material = new MeshStandardMaterial({ map: texture });
+  const body = new Mesh(geometry, material);
+  const pillow = new Mesh(geometry, material);
+  pillow.name = 'TemporaryClutchedProp';
+  body.add(pillow);
+  root.add(body);
+  let skeletonDisposals = 0;
+  body.skeleton = { dispose() { skeletonDisposals++; } };
+  const counts = { geometry: 0, material: 0, texture: 0 };
+  geometry.addEventListener('dispose', () => { counts.geometry++; });
+  material.addEventListener('dispose', () => { counts.material++; });
+  texture.addEventListener('dispose', () => { counts.texture++; });
+  disposeObjectResources(root);
+  assert.deepEqual(counts, { geometry: 1, material: 1, texture: 1 });
+  assert.equal(skeletonDisposals, 1);
 });

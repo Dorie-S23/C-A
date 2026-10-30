@@ -12,6 +12,9 @@ export const SPEAKERS = {
   kaufmo: { name: 'Kaufmo', initials: 'K', color: '#e0a868' },
   ribbit: { name: 'Ribbit', initials: 'R', color: '#5d9b3c' },
   jax: { name: 'Jax', initials: 'J', color: '#9b7fd4' },
+  kinger: { name: 'Kinger', initials: 'K', color: '#e5d7b5' },
+  gangle: { name: 'Gangle', initials: 'G', color: '#b92f50' },
+  zooble: { name: 'Zooble', initials: 'Z', color: '#8b4f91' },
 };
 
 // --- Pre-Level 1: "Business as Usual" ---------------------------------

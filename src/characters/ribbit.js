@@ -236,7 +236,15 @@ export function loadRibbit() {
       }
     }
 
-    return { ribbit, collider, update, faceTowards, setDistress, setPose };
+    function dispose() {
+      mixer.stopAllAction();
+      mixer.uncacheRoot(model);
+    }
+
+    return {
+      ribbit, collider, update, faceTowards, setDistress, setPose, dispose,
+      rig: { body, head, arms: arms.filter(Boolean), legs: legs?.thighs ?? [] },
+    };
   });
 }
 

@@ -1,4 +1,5 @@
 import { DefaultLoadingManager } from 'three';
+import { disposeBoundsTree } from 'three-mesh-bvh';
 
 const installed = new WeakSet();
 
@@ -27,4 +28,24 @@ export function releaseTextures(textures) {
       if (!closed.has(image)) { image?.close?.(); closed.add(image); }
     }
   }
+}
+
+/** Releases every uniquely owned GPU resource below a room or character root. */
+export function disposeObjectResources(root) {
+  const geometries = new Set(), materials = new Set(), textures = new Set(), skeletons = new Set();
+  root.traverse((child) => {
+    child.shadow?.dispose();
+    if (!child.isMesh) return;
+    child.dispose?.();
+    if (child.skeleton) skeletons.add(child.skeleton);
+    if (child.geometry) geometries.add(child.geometry);
+    for (const material of Array.isArray(child.material) ? child.material : [child.material]) materials.add(material);
+  });
+  for (const material of materials) {
+    for (const value of Object.values(material)) if (value?.isTexture) textures.add(value);
+    material.dispose();
+  }
+  for (const geometry of geometries) { disposeBoundsTree.call(geometry); geometry.dispose(); }
+  for (const skeleton of skeletons) skeleton.dispose();
+  releaseTextures(textures);
 }
