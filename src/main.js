@@ -3362,13 +3362,25 @@ function updateDoorToHall() {
   const room = currentRoomInfo;
   if (!room?.hallDoor) return;
   if (!roomPreload) preloadRoom('dorm', currentRoomKey);
+  // Level 3 opens with Jax bolting through the hall, but the hall behind
+  // this door was loaded (or parked, walking in) before Kaufmo sent her to
+  // find him, so it has no Jax in it. Swapped for one that does as soon as
+  // he has, under the Level 2 card. The link to it stays: it's only where
+  // the two doorways sit, the same for every copy of the hall.
+  if (storyProgress.findingJax && roomPreload.key === 'dorm' && roomPreload.result && !roomPreload.result.jaxHallway) {
+    if (roomPreload.peeking) showHallBehindDoor(roomPreload, false);
+    dropRoomPreload();
+    preloadRoom('dorm', currentRoomKey);
+  }
   prepareRoom(roomPreload);
   const entry = roomPreload;
   if (entry.key !== 'dorm') return;
   if (!room.hallLink && roomReady(entry)) linkRoom(room, currentRoomKey, entry.result);
   const link = room.hallLink;
   if (!link) return;
-  const showing = link.isOpen();
+  // A swapped-in hall still loading isn't shown yet: walkIntoHall holds her
+  // at the threshold until it's ready.
+  const showing = link.isOpen() && roomReady(entry);
   if (showing !== entry.peeking) showHallBehindDoor(entry, showing);
   if (link.crossed(player.position)) walkIntoHall(link);
 }
@@ -4746,6 +4758,10 @@ export function getOpeningDiagnostics() {
     ribbitComplete: storyProgress.ribbitComplete, ribbitPoints: storyProgress.ribbitPoints,
     hallwayPending: storyProgress.hallwayPending, kaufmoIntroduced: storyProgress.kaufmoIntroduced,
     picturesHeld: itemState.heldCount(), picturesPresented: itemState.totalPresented(),
+    // The room waiting behind a doorway, and whether it's the Dorm Hall with
+    // Level 3's Jax (and Ribbit) in it.
+    preloadedRoom: roomPreload?.key ?? null,
+    preloadedHallHasJax: roomPreload?.key === 'dorm' && roomPreload.result ? Boolean(roomPreload.result.jaxHallway) : null,
     objective: objectives.active, objectiveVisible: !document.getElementById('objective-hud').hidden,
     tutorial: controlsTutorial.state, tutorialVisible: !document.getElementById('tutorial-hud').hidden,
     morningDialoguePending, preLevel1Session,
