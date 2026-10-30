@@ -28,6 +28,8 @@ import { createMusic, DEFAULT_MUSIC_VOLUME } from './audio/music.js';
 import { createTitleScreen } from './ui/titleScreen.js';
 import { createGamepadInput } from './input/gamepad.js';
 import { createIntroStory } from './ui/introStory.js';
+import { createEndingSlides } from './ui/endingSlides.js';
+import { ENDING_SLIDES } from './data/endingSlides.js';
 import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold, setLevelPoints, passesJaxGate } from './state/escapeThreshold.js';
 import { createChoiceTally } from './dialogue/choiceTally.js';
 import { createStoryProgress, ENDING_VARIANTS } from './game/storyProgress.js';
@@ -48,7 +50,6 @@ import { createMazeItems, createMazeSearch, mazeObjective, MAZE_FINDABLES } from
 import { runLevel1 } from './levels/level1.js';
 import { runHallwayScene } from './levels/level3Hallway.js';
 import { runLobbyScene } from './levels/level3Lobby.js';
-import { loadEndingCast, lobbyEndingPlan, stageLobbyEnding, createExitDoorScene } from './cutscenes/endingCutscene.js';
 import { kaufmoHallwayPlan, preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
 import { createMinimap } from './ui/minimap.js';
 import { nearestLandmark } from './rooms/lobbyLandmarks.js';
@@ -321,6 +322,11 @@ const dialogueUI = createDialogueUI({
     continue: `press ${gamepad.label('Space')} to continue ▾`,
     choice: `↑/↓ to pick · ${gamepad.label('Space')} to choose`,
   } : null),
+});
+const endingSlides = createEndingSlides({
+  root: document.getElementById('ending-slides'),
+  onAdvance: () => dialogueUI.advance(),
+  onSkip: () => dialogueUI.cancel(),
 });
 const actionCaptions = createActionCaptions();
 const minimap = createMinimap();
@@ -891,6 +897,7 @@ function showRoomPicker() {
  */
 function returnToHome({ toRoomPicker = false } = {}) {
   sceneFade.classList.remove('on', 'white');
+  endingSlides.close();
   // Only restart the theme after the story faded it out; backing out of the
   // menus (Options -> Room previews -> Title screen) keeps it playing.
   if (openingAudio.mainThemeVolume < 0.5) openingAudio.stopMainTheme();
@@ -2383,7 +2390,7 @@ async function leaveMaze(variant) {
   await playEnding(variant);
 }
 
-// The card the ending closes on, after its two scenes.
+// The card the ending closes on, after its slides.
 const ENDING_CARDS = {
   saved: 'Pomni and Jax step out of the maze together.',
   abstracted: 'Pomni steps out of the maze alone.',
@@ -2395,51 +2402,15 @@ const ENDING_PARTS = {
 };
 
 /**
- * The end of the game for `variant` ('saved' or 'abstracted'), in two
- * scenes (cutscenes/endingCutscene.js): the Circus Lobby just outside the
- * maze door, where Pomni comes out to the others and they talk until
- * Kaufmo says he's found the exit; then the exit door, a set of its own,
- * where they leave one by one. Then the card, then the title screen.
- * Escape skips what's left; developer cutscene skipping skips it all.
+ * The end of the game for `variant` ('saved' or 'abstracted'): Dorsa's script
+ * as a conversation over its slides (playEndingSlides), then the card, then
+ * the title screen. Escape or the Skip button skips what's left of the
+ * slides; developer cutscene skipping skips them all.
  */
 async function playEnding(variant) {
-  const loadingToken = loadToken;
   sceneFade.classList.add('on');
   overlay.classList.add('hidden'); // the dev menu, when it's jumped here from there
-  if (!skippingCutscenes()) {
-    let cast = null;
-    try {
-      cast = await loadEndingCast(variant);
-    } catch (error) {
-      if (loadingToken === loadToken) console.warn('Ending cast unavailable; showing its card.', error);
-    }
-    if (loadingToken !== loadToken) {
-      if (cast) disposeEndingCast(cast);
-      return;
-    }
-    if (cast) {
-      const finished = await playEndingLobby(variant, cast);
-      if (finished === null) return; // Home or a newer room superseded it
-      if (finished) {
-        const token = loadToken;
-        let door = null;
-        try {
-          door = createExitDoorScene(renderer, variant, cast);
-        } catch (error) {
-          console.warn('Exit door scene unavailable; showing its card.', error);
-        }
-        if (door) {
-          await playEndingScene(door, ENDING_PARTS[variant].door);
-          door.dispose();
-        }
-        if (token !== loadToken) return;
-      } else {
-        // Escape or a missing Lobby ends this ending before the exit-door
-        // scene can take ownership of the separately loaded Pomni and Caine.
-        disposeEndingCast(cast);
-      }
-    }
-  }
+  if (!skippingCutscenes() && !await playEndingSlides(variant)) return;
   const token = loadToken;
   sceneFade.classList.add('on');
   const done = await showLevelComplete('Level 3 Complete', ENDING_CARDS[variant], { resume: false, buttonLabel: 'Back to title' });
@@ -2447,102 +2418,53 @@ async function playEnding(variant) {
   returnToHome();
 }
 
-/** Releases a cast whose assets finished loading after its ending was cancelled. */
-function disposeEndingCast(cast) {
-  const roots = [
-    cast.pomni?.pomni, cast.jaxApi?.jax, cast.ribbitApi?.ribbit,
-    cast.ragathaApi?.ragatha, cast.kaufmoApi?.kaufmo, cast.caineApi?.caine,
-    ...(cast.extras ?? []).map(extra => extra.root),
-  ];
-  for (const root of roots) if (root) disposeObject3D(root);
+/**
+ * The script's two parts over their slides: the maze entrance, black, then
+ * the red door, closing on the script's last direction, cut to white. Leaves
+ * the screen covered for the card. Resolves false if Home or a load moved on.
+ */
+async function playEndingSlides(variant) {
+  // Nothing plays behind the slides, so the maze and its sounds can go now.
+  const token = leaveCurrentRoom();
+  ambience.setRoom(null);
+  minimap.hide();
+  // No room to pause: the cursor is free, and Escape skips, as in the intro story.
+  if (isLocked) document.exitPointerLock();
+  const { lobby, door, music: track } = ENDING_PARTS[variant];
+  music.setRoom(track);
+  const slides = ENDING_SLIDES[variant];
+  await endingSlides.preload(Object.values(slides));
+  if (token !== loadToken) return false;
+  endingSlides.open();
+  const reachedDoor = await playEndingPart(lobby, slides);
+  if (token !== loadToken) return false;
+  if (reachedDoor) {
+    await fadeScreen(true, 1.2);
+    if (token !== loadToken) return false;
+    await playEndingPart(door, slides);
+    if (token !== loadToken) return false;
+    sceneFade.classList.add('white');
+    await fadeScreen(true, 2);
+  } else {
+    await fadeScreen(true, 1.2);
+  }
+  if (token !== loadToken) return false;
+  endingSlides.close();
+  return true;
 }
 
-/**
- * The ending's first part, in the loaded Lobby outside the maze door.
- * Resolves true once Kaufmo's led them off (the screen black again),
- * false if it was skipped or unavailable, or null if the game moved on.
- */
-async function playEndingLobby(variant, cast) {
-  const loading = selectRoom('tadc', {
-    from: 'maze',
-    onReady() { overlay.classList.add('hidden'); btnTitle.hidden = true; },
-  });
-  // selectRoom invalidates the maze synchronously; this is the Lobby's token.
-  const token = loadToken;
-  const room = await loading;
-  if (token !== loadToken) {
-    // The load was superseded before any cast member entered the room.
-    disposeEndingCast(cast);
-    return null;
-  }
-  if (!room || room !== currentRoomInfo) return false;
-  resetMoveState();
-  stage.hold(true);
-  music.setRoom(ENDING_PARTS[variant].music);
-  minimap.hide();
-  let lobby;
-  try {
-    lobby = stageLobbyEnding(room, stage, variant, cast, lobbyEndingPlan(room.mazeDoor.portal.arrival));
-  } catch (error) {
-    console.warn('Lobby ending unavailable; on to the exit door.', error);
-    return token === loadToken;
-  }
-  void fadeScreen(false, 1.6);
-  const finished = await new Promise((resolve) => {
-    const started = playRoomDialogue(ENDING_PARTS[variant].lobby, {
-      onNode: lobby.onNode,
+/** Fades up on one part of the script. Resolves true if it played out, false if it was skipped. */
+function playEndingPart(dialogueKey, slides) {
+  return new Promise((resolve) => {
+    dialogueUI.play(DIALOGUE_SCRIPTS[dialogueKey].script, {
+      onNode: (node) => {
+        const slide = slides[node.action];
+        if (slide) endingSlides.show(slide);
+      },
       onComplete: () => resolve(true),
       onCancel: () => resolve(false),
     });
-    if (!started) resolve(false);
-  });
-  if (token !== loadToken) {
-    // Room teardown owns everyone staged in the Lobby; these two roots were
-    // never parented there and need their own cleanup after detaching actors.
-    lobby.detach();
-    disposeObject3D(cast.pomni.pomni);
-    disposeObject3D(cast.caineApi.caine);
-    return null;
-  }
-  await fadeScreen(true, 1.2);
-  if (token !== loadToken) {
-    lobby.detach();
-    disposeObject3D(cast.pomni.pomni);
-    disposeObject3D(cast.caineApi.caine);
-    return null;
-  }
-  lobby.detach();
-  stage.releaseCamera();
-  stage.lookWithHead(null);
-  return finished;
-}
-
-/** Renders a scene of its own (the red door), fades it in from black, plays its conversation and fades out to white. */
-function playEndingScene(ending, dialogueKey) {
-  const token = loadToken;
-  return new Promise((resolve) => {
-    let finished = false;
-    const stop = () => { if (!finished) { finished = true; resolve(); } };
-    runCutscene({ update: (delta) => { ending.update(delta); return finished; }, cancel: stop }, stop);
-    // A frame of the scene under the black before it fades up.
-    requestAnimationFrame(() => {
-      if (finished || token !== loadToken) return;
-      void fadeScreen(false, 1.6);
-      // The script's last direction: cut to white.
-      const close = async () => {
-        // Home cancels the cutscene before it cancels this dialogue. In that
-        // case the old conversation must not fade the new title back to black.
-        if (finished || token !== loadToken) { stop(); return; }
-        sceneFade.classList.add('white');
-        await fadeScreen(true, 2);
-        stop();
-      };
-      dialogueUI.play(DIALOGUE_SCRIPTS[dialogueKey].script, {
-        onNode: ending.onNode,
-        onComplete: close,
-        onCancel: close,
-      });
-    });
+    void fadeScreen(false, 1.6);
   });
 }
 
@@ -2768,6 +2690,7 @@ function updatePictureCounter() {
 }
 
 function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
+  endingSlides.close();
   mazeGloinkWarningPending = false;
   if (hint.textContent === 'Be careful of the Gloinks!') {
     clearTimeout(hintTimeout);

@@ -1074,13 +1074,13 @@ export const level3JaxMumble2Dialogue = [
 ];
 
 // --- Ending (Dorsa's "End of game script") ---------------------------------
-// After the maze exit (main.js leaveMaze/playEnding), acted out by
-// cutscenes/endingCutscene.js (each node's `action`). First the maze
-// entrance, in the Circus Lobby just outside the maze door: Pomni comes
-// out (with Jax, if he was won over), they talk, and Kaufmo leads them off
-// at a run. Then a quiet corridor at the far edge of the circus, a single
-// red door at its end, where they leave one by one and Pomni says goodbye
-// to Caine. One of each per ENDING_VARIANTS entry.
+// After the maze exit (main.js leaveMaze/playEnding), played over its slides:
+// data/endingSlides.js says which image goes up at which node's `action`.
+// First the maze entrance, in the Circus Lobby just outside the maze door:
+// Pomni comes out (with Jax, if he was won over), they talk, and Kaufmo leads
+// them off at a run. Then a quiet corridor at the far edge of the circus, a
+// single red door at its end, where they leave one by one and Pomni says
+// goodbye to Caine. One of each per ENDING_VARIANTS entry.
 export const endingLobbySavedDialogue = [
   { type: 'beat', action: 'walkOut', text: 'Pomni and Jax step out of the maze together. Everyone is gathered outside. Caine hovers a little apart, hands wringing.' },
   // Ending A's arrival: Ribbit and Kaufmo are waiting at the entrance.

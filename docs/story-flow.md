@@ -220,30 +220,32 @@ in `main.js` uses the result of `level3JaxFinalDialogue`: five rounds score
 into Level 3 with the keepsakes, and the Jax gate (`passesJaxGate`) selects
 whether he stays or abstracts. `jaxFinalScene` acts out that resolution.
 
-`playEnding(variant)` plays Dorsa's ending (`src/cutscenes/endingCutscene.js`)
-in two parts. First the maze entrance: the real Circus Lobby, loaded with the
-maze door open. Pomni walks out of the portal, with Jax if he was won over,
-to Ribbit, Kaufmo, Ragatha, Gangle, Zooble and Kinger, with Caine a little
-apart (`endingLobby*Dialogue`). The last three use procedural rigs and the
-shared character-performance actions. In the abstracted route, the group
-grieves before Kaufmo leads them onward; in the saved route they share a short
-running montage. Then a set of its own: a quiet corridor at the far edge of
-the circus with a single red door at its end (`exitDoor*Dialogue`). They go
-through one by one, Jax last before Pomni if he's there; then Pomni and Caine
-say goodbye, Caine bows, Pomni steps through, the door shuts behind her, and
-it cuts to white. Caine's hat is part of his head mesh, so the current model
-does not support removing it. Escape skips the rest; developer cutscene
-skipping skips it all. Then the **Level 3 Complete** card, then the title
-screen. The dev menu's two **Ending** buttons jump straight to it.
+`playEnding(variant)` plays Dorsa's ending as a conversation over 9 slides
+(`src/ui/endingSlides.js`, `#ending-slides` in `index.html`), in two parts. The
+maze is unloaded first; nothing 3D plays behind them. `src/data/endingSlides.js`
+says which image goes up at which node `action`, and the script's text and voice
+clips stay as they are. First the maze entrance (`endingLobby*Dialogue`): Pomni
+walks out of the portal, with Jax if he was won over, to Ribbit, Kaufmo, Ragatha,
+Gangle, Zooble and Kinger, with Caine a little apart. In the abstracted route the
+group grieves before Kaufmo leads them onward; in the saved route they share a
+short running montage. Then, after a fade through black, a quiet corridor at the
+far edge of the circus with a single red door at its end (`exitDoor*Dialogue`).
+They go through one by one, Jax last before Pomni if he's there; then Pomni and
+Caine say goodbye, Caine takes off his hat and bows, Pomni steps through, the door
+shuts behind her, and it cuts to white. A click anywhere continues; Escape or the
+Skip button skips the rest; developer cutscene skipping skips it all. Then the
+**Level 3 Complete** card, then the title screen. The dev menu's two **Ending**
+buttons jump straight to it. The full-size images are in `docs/ending-panels/`.
 
-With Vite on port 5174, `node tools/verify_ending_browser.mjs` checks the
-ordinary maze exit and both developer-launched variants through the live Lobby
-and exit-door controllers. It verifies story state, cast membership, Jax's
-saved-only presence, dialogue action order, checkpoint restoration, Escape,
-Home during loading and both scenes, and browser/WebGL errors. Review
-instrumentation advances dialogue and suppresses continuous drawing while
-rendering representative frames; it does not replace the scene controllers.
-Reports and screenshots go to ignored `artifacts/live-ending/`.
+The 3D staging this replaced is still in `src/cutscenes/endingCutscene.js`, with
+`test/_verify_ending_cast.mjs` keeping it working, but nothing in the game plays it.
+
+With Vite on port 5174, `node tools/verify_ending_browser.mjs` checks the ordinary
+maze exit and both developer-launched variants. It verifies story state, the order
+of the slides and dialogue actions, Jax's saved-only slides, checkpoint restoration,
+Escape, the Skip button, click-to-continue, Home during loading and both parts, and
+browser errors. Review instrumentation advances dialogue. Reports and screenshots go
+to ignored `artifacts/live-ending/`.
 
 Developer cutscene skipping honours awaited actions and scores each choice once.
 Returning home or changing rooms cancels a pending completion card.

@@ -1,5 +1,5 @@
 // With Vite running: node tools/verify_ending_browser.mjs
-// Real rooms, assets, dialogue and ending controllers. The review bridge only
+// The real maze exit, slides, dialogue and story state. The review bridge only
 // suppresses continuous drawing, advances dialogue and exposes current state.
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
@@ -8,7 +8,7 @@ import path from 'node:path';
 
 const output = path.resolve('artifacts/live-ending');
 await fs.mkdir(output, { recursive: true });
-const report = { pass: false, checks: [], errors: [], webgl: [] };
+const report = { pass: false, checks: [], errors: [] };
 const browser = await chromium.launch({
   channel: 'msedge', headless: true,
   args: ['--no-first-run', '--disable-background-networking',
@@ -24,10 +24,7 @@ await page.route('**/src/main.js*', async route => {
   const response = await route.fetch();
   await route.fulfill({ response, body: await response.text() + `
     renderer.setPixelRatio(0.25);
-    const { exitDoorPlan } = await import('/src/cutscenes/endingCutscene.js');
-    const reviewRender = renderer.render.bind(renderer);
-    let lastFrame = null;
-    renderer.render = (scene, camera) => { lastFrame = { scene, camera }; };
+    renderer.render = () => {};
     const lock = () => {
       Object.defineProperty(document, 'pointerLockElement', { value: renderer.domElement, configurable: true });
       document.dispatchEvent(new Event('pointerlockchange'));
@@ -41,6 +38,7 @@ await page.route('**/src/main.js*', async route => {
     const review = window.__endingReview = {
       starts: [], nodes: [], completions: [], cancellations: [], currentDialogue: null,
       start(variant) {
+        this.slides.length = 0;
         this.starts = []; this.nodes = []; this.completions = []; this.cancellations = [];
         this.currentDialogue = null;
         document.getElementById('btn-ending-' + variant).click();
@@ -54,36 +52,14 @@ await page.route('**/src/main.js*', async route => {
       },
       home: () => returnToHome(),
       advance: () => dialogueUI.skipToEnd(),
-      rememberScene() { window.__staleEndingScene = lastFrame?.scene ?? null; },
-      staleSceneChildren: () => window.__staleEndingScene?.children.length ?? null,
       completeMaze() {
+        // What the end of the talk with Jax does: there's no exit to walk to.
         mazeItems.completeJax();
-        const exit = triggers.exit.getCenter(new THREE.Vector3());
-        stage.place({ x: exit.x, z: exit.z });
-        checkTriggers(player);
-      },
-      renderNow() {
-        if (!lastFrame) return null;
-        reviewRender(lastFrame.scene, lastFrame.camera);
-        const gl = renderer.getContext();
-        return { error: gl.getError(), contextLost: gl.isContextLost() };
+        leaveMazeAfterTalk();
       },
       state() {
-        const exit = activeCutscene && lastFrame?.scene?.getObjectByName('ExitCorridor') ? lastFrame.scene : null;
-        const castRoot = exit ?? currentRoom;
-        const plan = exit ? exitDoorPlan() : currentRoomInfo?.mazeDoor
-          ? lobbyEndingPlan(currentRoomInfo.mazeDoor.portal.arrival) : null;
-        const cast = {};
-        for (const name of ['Pomni', 'Jax', 'Ribbit', 'Ragatha', 'Kaufmo', 'Caine', 'Kinger', 'Gangle', 'Zooble']) {
-          let count = 0;
-          const mark = name === 'Caine' ? null : plan?.[name.toLowerCase()];
-          // Ending actors are direct children on their measured marks. This
-          // ignores lookalike meshes inside the Lobby's environment model.
-          for (const object of castRoot?.children ?? []) {
-            if (mark?.isVector3 ? object.position.distanceTo(mark) < 0.001 : object.name === name) count++;
-          }
-          cast[name] = count;
-        }
+        const root = document.getElementById('ending-slides');
+        const shown = root.querySelector('.ending-image.ending-shown');
         return {
           ...getOpeningDiagnostics(),
           token: loadToken, roomLoaded: Boolean(currentRoom), ready: readyToPlay,
@@ -91,13 +67,19 @@ await page.route('**/src/main.js*', async route => {
           currentDialogue: this.currentDialogue, starts: [...this.starts],
           actions: this.nodes.filter(node => node.action).map(node => node.action),
           completions: [...this.completions], cancellations: [...this.cancellations],
-          doorScene: Boolean(exit), cast,
+          slidesOpen: !root.hidden,
+          slide: shown?.getAttribute('src')?.match(/([^/]+)\.jpg$/)?.[1] ?? null,
+          slideLoaded: Boolean(shown?.complete && shown.naturalWidth > 0),
+          doorPart: this.currentDialogue?.startsWith('exitDoor') ?? false,
           fade: sceneFade.classList.contains('on'),
           completionCard: !levelCompletePanel.hidden,
           contextLost: renderer.getContext().isContextLost(),
         };
       },
     };
+    const slideLog = review.slides = [];
+    const showSlide = endingSlides.show;
+    endingSlides.show = (url) => { slideLog.push(url.match(/([^/]+)\.jpg$/)[1]); showSlide(url); };
     const endingScripts = new Map([
       [endingLobbySavedDialogue, 'endingLobbySaved'],
       [endingLobbyAbstractedDialogue, 'endingLobbyAbstracted'],
@@ -165,11 +147,10 @@ async function start(variant) {
 }
 
 async function visual(name) {
-  const result = await call('renderNow');
-  assert.ok(result, `${name}: a real scene frame is available`);
-  assert.equal(result.contextLost, false, `${name}: WebGL context`);
-  assert.equal(result.error, 0, `${name}: WebGL error`);
-  report.webgl.push({ name, ...result });
+  await page.waitForTimeout(1900); // through the fade up and the crossfade
+  const s = await state();
+  assert.equal(s.slidesOpen, true, `${name}: slides up`);
+  assert.equal(s.slideLoaded, true, `${name}: image ${s.slide} loaded`);
   await page.screenshot({ path: path.join(output, `${name}.png`) });
 }
 
@@ -207,17 +188,10 @@ async function playCompleteVariant(variant) {
   assert.equal(lobby.storyEnding, variant);
   assert.equal(lobby.jaxFate, variant);
   assert.equal(lobby.endingVariant, variant === 'saved' ? 'saved' : 'bittersweet');
-  for (const name of ['Ribbit', 'Ragatha', 'Kaufmo', 'Kinger', 'Gangle', 'Zooble']) {
-    assert.equal(lobby.cast[name], 1, `${variant} Lobby ${name}`);
-  }
-  assert.equal(lobby.cast.Jax, variant === 'saved' ? 1 : 0);
+  assert.equal(lobby.roomLoaded, false, 'the maze is gone, nothing plays behind the slides');
   await visual(`${variant}-lobby`);
 
-  const door = await progressTo(s => s.doorScene && s.currentDialogue === doorKey, `${variant} exit door`);
-  for (const name of ['Pomni', 'Ribbit', 'Ragatha', 'Kaufmo', 'Caine', 'Kinger', 'Gangle', 'Zooble']) {
-    assert.equal(door.cast[name], 1, `${variant} door ${name}`);
-  }
-  assert.equal(door.cast.Jax, variant === 'saved' ? 1 : 0);
+  await progressTo(s => s.doorPart && s.currentDialogue === doorKey, `${variant} exit door`);
   await visual(`${variant}-exit-door`);
 
   const done = await progressTo(s => s.completionCard, `${variant} completion card`);
@@ -233,6 +207,10 @@ async function playCompleteVariant(variant) {
   assert.deepEqual(done.actions, [...lobbyActions, ...doorActions]);
   assert.equal(done.storyEnding, variant);
   assert.equal(done.contextLost, false);
+  assert.equal(done.slidesOpen, false, 'the slides are gone by the card');
+  assert.deepEqual(await page.evaluate(() => window.__endingReview.slides.splice(0)), [
+    ...[1, 2, 3, 4, 5].map(n => `${variant}-${n}`), 'final-1', 'final-2', 'final-3', 'final-4',
+  ]);
   return call('checkpoint');
 }
 
@@ -251,23 +229,20 @@ try {
     const s = await state();
     assert.equal(s.level3Complete, true);
     assert.equal(s.storyEnding, 'saved');
-    assert.equal(s.cast.Jax, 1);
     const saved = await call('checkpoint');
-    assert.equal(saved.room, 'tadc');
     assert.equal(saved.story.ending, 'saved');
     await call('home');
     await assertHomeSafe();
   });
 
   const savedCheckpoint = await playCompleteVariant('saved');
-  await check('Saved developer button completes the Lobby-to-door sequence with Jax and the full cast', async () => {
-    assert.equal(savedCheckpoint.room, 'tadc');
+  await check('Saved developer button plays both parts over all its slides, with Jax', async () => {
     assert.equal(savedCheckpoint.story.ending, 'saved');
   });
   await dismissCard();
 
   const abstractedCheckpoint = await playCompleteVariant('abstracted');
-  await check('Abstracted developer button completes both scenes without Jax', async () => {
+  await check('Abstracted developer button plays both parts over its own slides, without Jax', async () => {
     assert.equal(abstractedCheckpoint.story.ending, 'abstracted');
   });
   await dismissCard();
@@ -278,34 +253,50 @@ try {
     const s = await state();
     assert.equal(s.level3Complete, true);
     assert.equal(s.storyEnding, 'saved');
-    assert.equal(s.cast.Jax, 1);
+    assert.equal(s.slidesOpen, true);
     await call('home');
     await assertHomeSafe();
   });
 
   await check('Escape at the exit door skips to the completion card without a stale scene', async () => {
     await start('abstracted');
-    await progressTo(s => s.doorScene && s.currentDialogue === 'exitDoorAbstracted', 'Escape at exit door');
+    await progressTo(s => s.doorPart && s.currentDialogue === 'exitDoorAbstracted', 'Escape at exit door');
+    await page.waitForTimeout(600); // the Escape guard after the pointer unlock
     await key('Escape');
     const s = await progressTo(current => current.completionCard, 'skipped ending card');
     assert.deepEqual(s.cancellations, ['exitDoorAbstracted']);
     assert.equal(s.actions.includes('pomniLeaves'), false);
-    assert.equal(s.doorScene, false);
+    assert.equal(s.slidesOpen, false);
     await dismissCard();
   });
 
-  await check('Home during the exit door disposes the scene and suppresses delayed fades and cards', async () => {
+  await check('A click anywhere continues, and the Skip button skips straight to the card', async () => {
     await start('saved');
-    await progressTo(s => s.doorScene && s.currentDialogue === 'exitDoorSaved', 'Home at exit door');
-    await call('rememberScene');
-    await call('home');
-    await assertHomeSafe();
-    assert.equal(await call('staleSceneChildren'), 0);
+    await page.waitForTimeout(600);
+    const before = await page.evaluate(() => window.__endingReview.nodes.length);
+    // Twice: the first finishes typing the line, the next moves on from it.
+    await page.mouse.click(550, 120);
+    await page.mouse.click(550, 120);
+    await wait(count => window.__endingReview.nodes.length > count, before);
+    await page.click('.ending-skip');
+    const s = await progressTo(current => current.completionCard, 'skipped by the button');
+    assert.deepEqual(s.cancellations, ['endingLobbySaved']);
+    assert.deepEqual(s.starts, ['endingLobbySaved'], 'a skip in the first part skips the door too');
+    assert.equal(s.slidesOpen, false);
+    await dismissCard();
   });
 
-  await check('Home during cast loading invalidates the old ending before assets arrive', async () => {
+  await check('Home during the exit door closes the slides and suppresses delayed fades and cards', async () => {
+    await start('saved');
+    await progressTo(s => s.doorPart && s.currentDialogue === 'exitDoorSaved', 'Home at exit door');
+    await call('home');
+    await assertHomeSafe();
+    assert.equal((await state()).slidesOpen, false);
+  });
+
+  await check('Home while the slides load invalidates the old ending before they arrive', async () => {
     let delay = true;
-    await page.route('**/models/characters/jax/jax_from_tadc.glb', async route => {
+    await page.route('**/ending/*.jpg', async route => {
       if (delay) {
         delay = false;
         await new Promise(resolve => setTimeout(resolve, 1400));

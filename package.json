@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "test": "node test/_verify_dialogue.mjs && node test/_verify_collision.mjs && node --test test/_verify_kaufmo_hallway.mjs test/_verify_level1.mjs test/_verify_level2.mjs test/_verify_story_flow.mjs test/_verify_asset_lifecycle.mjs test/_verify_picture_scatter.mjs test/_verify_maze.mjs test/_verify_maze_hints.mjs test/_verify_maze_shaders.mjs test/_verify_maze_polish.mjs test/_verify_maze_encounter.mjs test/_verify_maze_jax.mjs test/_verify_save.mjs test/_verify_caine_memory.mjs test/_verify_gloinks.mjs test/_verify_abstraction.mjs test/_verify_ending.mjs test/_verify_ending_cast.mjs test/_verify_intro_story.mjs",
+    "test": "node test/_verify_dialogue.mjs && node test/_verify_collision.mjs && node --test test/_verify_kaufmo_hallway.mjs test/_verify_level1.mjs test/_verify_level2.mjs test/_verify_story_flow.mjs test/_verify_asset_lifecycle.mjs test/_verify_picture_scatter.mjs test/_verify_maze.mjs test/_verify_maze_hints.mjs test/_verify_maze_shaders.mjs test/_verify_maze_polish.mjs test/_verify_maze_encounter.mjs test/_verify_maze_jax.mjs test/_verify_save.mjs test/_verify_caine_memory.mjs test/_verify_gloinks.mjs test/_verify_abstraction.mjs test/_verify_ending.mjs test/_verify_ending_cast.mjs test/_verify_ending_slides.mjs test/_verify_intro_story.mjs",
     "build": "vite build",
     "package": "node tools/package.mjs",
     "voices": "node tools/generateVoices.mjs",

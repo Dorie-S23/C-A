@@ -63,6 +63,15 @@
       "signature": "f93d61e9d2fa",
       "gain": 0.65
     },
+    "gangle-0973709e": {
+      "signature": "7abd6c42cf55"
+    },
+    "gangle-79d916b6": {
+      "signature": "f6e5d1a6286b"
+    },
+    "gangle-da884160": {
+      "signature": "92ffd34b11c8"
+    },
     "jax-02e2fa50": {
       "signature": "a456df48cc00"
     },
@@ -374,6 +383,17 @@
     },
     "kaufmo-fafe7b62": {
       "signature": "177174df4503"
+    },
+    "kinger-a2ec7a3a": {
+      "signature": "c2dce8802bf9",
+      "gain": 0.65
+    },
+    "kinger-aec98507": {
+      "signature": "7d01cfce76a5"
+    },
+    "kinger-bd5c5bd7": {
+      "signature": "1b6de11f515a",
+      "gain": 0.65
     },
     "narrator-1da66f57": {
       "signature": "7ca9744443c4"
@@ -998,6 +1018,15 @@
     },
     "ribbit-ff8ee077": {
       "signature": "952e52b53434"
+    },
+    "zooble-165294ec": {
+      "signature": "5cb2018c163b"
+    },
+    "zooble-1ec0914a": {
+      "signature": "e917c7eee056"
+    },
+    "zooble-67511161": {
+      "signature": "191c17d833b6"
     }
   }
 }
