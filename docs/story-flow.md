@@ -239,8 +239,9 @@ buttons jump straight to it. The full-size images are in `docs/ending-panels/`.
 
 `trapped` is the abstracted Lobby, then the same corridor where the door won't
 open (`exitDoorTrappedDialogue`): Caine finds them and they turn back, fading to
-black, not white. It has no art of its own yet, so it reuses the slides that show
-the door shut (`abstracted-1` to `abstracted-4`, `final-2`, `final-4`).
+black, not white. Its slides are `abstracted-1` to `abstracted-4`, `trapped-1`
+(the door rattling), `final-2` and `trapped-2` (Pomni's hand on the door). The two
+`trapped-*` images are composites of the other slides' art, not Gemini originals.
 
 The 3D staging this replaced is still in `src/cutscenes/endingCutscene.js`, with
 `test/_verify_ending_cast.mjs` keeping it working, but nothing in the game plays it.

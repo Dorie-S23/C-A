@@ -212,7 +212,7 @@ async function playCompleteVariant(variant) {
   assert.equal(done.contextLost, false);
   assert.equal(done.slidesOpen, false, 'the slides are gone by the card');
   assert.deepEqual(await page.evaluate(() => window.__endingReview.slides.splice(0)), variant === 'trapped'
-    ? ['abstracted-1', 'abstracted-2', 'abstracted-3', 'abstracted-4', 'final-2', 'final-4']
+    ? ['abstracted-1', 'abstracted-2', 'abstracted-3', 'abstracted-4', 'trapped-1', 'final-2', 'trapped-2']
     : [...[1, 2, 3, 4, 5].map(n => `${variant}-${n}`), 'final-1', 'final-2', 'final-3', 'final-4']);
   return call('checkpoint');
 }

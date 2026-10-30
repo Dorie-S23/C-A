@@ -33,14 +33,15 @@ export const ENDING_SLIDES = Object.freeze({
     kingerLeaves: './models/game%20screens/ending/abstracted-5.jpg',
     ...FAREWELL,
   }),
-  // No art of its own yet: the same Lobby, then only the images with the door
-  // shut, since it never opens here.
+  // The same Lobby, then only images with the door shut, since it never opens.
+  // Caine stays up through their turning back, until Pomni's left at the door.
   trapped: Object.freeze({
     walkOut: './models/game%20screens/ending/abstracted-1.jpg',
     ragathaHolds: './models/game%20screens/ending/abstracted-2.jpg',
     run: './models/game%20screens/ending/abstracted-3.jpg',
     gathered: './models/game%20screens/ending/abstracted-4.jpg',
+    doorWontOpen: './models/game%20screens/ending/trapped-1.jpg',
     caineAppears: './models/game%20screens/ending/final-2.jpg',
-    turnBack: './models/game%20screens/ending/final-4.jpg',
+    pomniLingers: './models/game%20screens/ending/trapped-2.jpg',
   }),
 });

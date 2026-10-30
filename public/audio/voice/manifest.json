@@ -23,6 +23,12 @@
       "signature": "f1a3162d94fb",
       "gain": 0.65
     },
+    "caine-5d4e9bd9": {
+      "signature": "b7626a31e181"
+    },
+    "caine-5e270347": {
+      "signature": "f048916e11ad"
+    },
     "caine-6ff0eb77": {
       "signature": "82266f9911bb",
       "gain": 0.65
@@ -44,6 +50,10 @@
       "signature": "dd468da8de95",
       "gain": 0.65
     },
+    "caine-bb83de78": {
+      "signature": "4770c2218a66",
+      "gain": 0.65
+    },
     "caine-be572098": {
       "signature": "bd1d65b192f8"
     },
@@ -62,6 +72,9 @@
     "caine-fed7af5a": {
       "signature": "f93d61e9d2fa",
       "gain": 0.65
+    },
+    "gangle-00fc2e97": {
+      "signature": "214554e96e6f"
     },
     "gangle-0973709e": {
       "signature": "7abd6c42cf55"
@@ -369,8 +382,14 @@
     "kaufmo-dbbb830c": {
       "signature": "c9be181af6ca"
     },
+    "kaufmo-dc1c460e": {
+      "signature": "21ad8b3861cc"
+    },
     "kaufmo-e2fc6838": {
       "signature": "32539228bfb0"
+    },
+    "kaufmo-eb1868fb": {
+      "signature": "eac3a5a39785"
     },
     "kaufmo-ee0309e7": {
       "signature": "52c0d8088a3d"
@@ -383,6 +402,10 @@
     },
     "kaufmo-fafe7b62": {
       "signature": "177174df4503"
+    },
+    "kinger-102f805c": {
+      "signature": "1df15af1e987",
+      "gain": 0.65
     },
     "kinger-a2ec7a3a": {
       "signature": "c2dce8802bf9",
@@ -419,8 +442,14 @@
     "pomni-03f12dc9": {
       "signature": "d51520537e77"
     },
+    "pomni-09830631": {
+      "signature": "9d756d3bbd2a"
+    },
     "pomni-0b5252f5": {
       "signature": "636ee1d3abac"
+    },
+    "pomni-0c3d45a8": {
+      "signature": "30b0aebe4368"
     },
     "pomni-0d9c8d6d": {
       "signature": "11d8f3d01cea"
@@ -829,6 +858,9 @@
     "ragatha-7d56fc36": {
       "signature": "1d196031b5f6"
     },
+    "ragatha-7f8a2390": {
+      "signature": "8b4efea6eec3"
+    },
     "ragatha-91d0d161": {
       "signature": "305593a9bfb0"
     },
@@ -840,6 +872,9 @@
     },
     "ribbit-16b99e75": {
       "signature": "c389ae625224"
+    },
+    "ribbit-1feaec4e": {
+      "signature": "fbb0eec754f9"
     },
     "ribbit-27e614a6": {
       "signature": "0a7170b4c5bf"

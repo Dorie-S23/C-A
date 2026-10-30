@@ -19,7 +19,7 @@ const SCRIPTS = {
 const ORDER = {
   saved: ['saved-1', 'saved-2', 'saved-3', 'saved-4', 'saved-5', 'final-1', 'final-2', 'final-3', 'final-4'],
   abstracted: ['abstracted-1', 'abstracted-2', 'abstracted-3', 'abstracted-4', 'abstracted-5', 'final-1', 'final-2', 'final-3', 'final-4'],
-  trapped: ['abstracted-1', 'abstracted-2', 'abstracted-3', 'abstracted-4', 'final-2', 'final-4'],
+  trapped: ['abstracted-1', 'abstracted-2', 'abstracted-3', 'abstracted-4', 'trapped-1', 'final-2', 'trapped-2'],
 };
 
 for (const variant of ['saved', 'abstracted', 'trapped']) {
@@ -55,5 +55,5 @@ test('Jax is only in the slides of the ending he is in', () => {
 
 test('the trapped ending never shows the door open', () => {
   const urls = Object.values(ENDING_SLIDES.trapped).map(url => path.basename(url, '.jpg'));
-  for (const open of ['abstracted-5', 'final-1', 'final-3']) assert.equal(urls.includes(open), false, open);
+  for (const open of ['abstracted-5', 'final-1', 'final-3', 'final-4']) assert.equal(urls.includes(open), false, open);
 });
