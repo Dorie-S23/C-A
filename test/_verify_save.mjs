@@ -9,7 +9,7 @@ import { createLevel2Items } from '../src/state/level2Items.js';
 import {
   getLevelPoints, resetEscapeThreshold, restoreEscapeThreshold, setLevelPoints, snapshotEscapeThreshold,
 } from '../src/state/escapeThreshold.js';
-import { createSaveSlots, parseSaveFile, saveFileContents, saveFileName, SAVE_FILE_FORMAT, SAVE_VERSION, SLOT_COUNT } from '../src/game/saveGame.js';
+import { createSaveSlots, parseSaveFile, savedPose, saveFileContents, saveFileName, SAVE_FILE_FORMAT, SAVE_VERSION, SLOT_COUNT } from '../src/game/saveGame.js';
 
 function memoryStorage() {
   const data = new Map();
@@ -154,6 +154,21 @@ test('a save file round-trips the checkpoint, and nothing else passes for one', 
   assert.equal(parseSaveFile(JSON.stringify({ format: SAVE_FILE_FORMAT, version: SAVE_VERSION, objectives: {} })), null, 'no room to load into');
   assert.deepEqual(parseSaveFile(JSON.stringify({ format: SAVE_FILE_FORMAT, version: SAVE_VERSION + 1, savedAt: 'x', room: 'tadc', objectives: {} })),
     { incompatible: true, savedAt: 'x' }, 'another version of the game');
+});
+
+test('where Pomni stood survives a slot and a file; a save without it just has none', () => {
+  const pose = { x: -1.8, y: 0.05, z: -110.3, yaw: 1.2, pomniYaw: -2, pitch: -0.1 };
+  const checkpoint = { room: 'dorm', from: 'ribbit', objectives: { active: 'find-kaufmo', completed: [] }, pose };
+  const slots = createSaveSlots(memoryStorage());
+  slots.write(1, checkpoint);
+  assert.deepEqual(savedPose(slots.read(1)), pose);
+  assert.deepEqual(savedPose(parseSaveFile(saveFileContents(checkpoint))), pose);
+
+  assert.equal(savedPose({ room: 'dorm' }), null, 'a save from before poses, or one taken mid-scene');
+  assert.equal(savedPose(null), null);
+  assert.equal(savedPose({ pose: { ...pose, z: undefined } }), null, 'a field missing');
+  assert.equal(savedPose({ pose: { ...pose, x: 'nowhere' } }), null, 'a damaged field');
+  assert.equal(savedPose(JSON.parse(JSON.stringify({ pose: { ...pose, y: NaN } }))), null, 'NaN comes back from JSON as null');
 });
 
 test('a save file is named for what it is', () => {
