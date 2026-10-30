@@ -831,21 +831,42 @@ const DEV_SKIP_INTRO_KEY = 'tadc.devSkipIntro';
 const devSkipIntroInput = document.getElementById('dev-skip-intro');
 const roomPreviewsButton = document.getElementById('btn-room-previews');
 
-// Room previews is the dev room/dialogue picker (every room, no story) —
-// only useful, and only shown, in Dev mode; everyone else plays through the
-// level select instead.
+// Dev mode, in Options: one switch that, ticked, opens up what it offers
+// (#dev-options): opening on room selection, skipping cutscenes, and Room
+// previews, the dev room/dialogue picker (every room, no story). Unticked,
+// they're all off and hidden; everyone else plays through the level select.
+const DEV_MODE_KEY = 'tadc.devMode';
+const devModeInput = document.getElementById('dev-mode');
+const devOptions = document.getElementById('dev-options');
 function refreshRoomPreviewsButton() {
-  roomPreviewsButton.hidden = !devSkipIntroInput.checked;
+  devOptions.hidden = !devModeInput.checked;
+  devModeInput.setAttribute('aria-expanded', String(devModeInput.checked));
+  roomPreviewsButton.hidden = !devModeInput.checked;
 }
 
-function setDevSkipIntro(on) {
-  devSkipIntroInput.checked = on;
+function remember(key, on) {
   try {
-    if (on) localStorage.setItem(DEV_SKIP_INTRO_KEY, '1');
-    else localStorage.removeItem(DEV_SKIP_INTRO_KEY);
+    if (on) localStorage.setItem(key, '1');
+    else localStorage.removeItem(key);
   } catch {
     // Storage blocked — it just won't persist past this page.
   }
+}
+function setDevMode(on) {
+  devModeInput.checked = on;
+  remember(DEV_MODE_KEY, on);
+  // Off turns everything under it off with it.
+  if (!on) {
+    setDevSkipIntro(false);
+    devSkipCutscenesInput.checked = false;
+    remember(DEV_SKIP_CUTSCENES_KEY, false);
+  }
+  refreshRoomPreviewsButton();
+}
+function setDevSkipIntro(on) {
+  devSkipIntroInput.checked = on;
+  remember(DEV_SKIP_INTRO_KEY, on);
+  if (on && !devModeInput.checked) setDevMode(true);
   refreshRoomPreviewsButton();
 }
 const devParam = new URLSearchParams(window.location.search).get('dev');
@@ -860,16 +881,20 @@ const devMazeSeed = (() => {
   console.warn('Ignoring invalid mazeSeed; use an integer from 0 to 4294967295.');
   return undefined;
 })();
-if (devParam !== null) {
-  setDevSkipIntro(devParam !== '0');
-} else {
-  try {
-    devSkipIntroInput.checked = localStorage.getItem(DEV_SKIP_INTRO_KEY) === '1';
-  } catch {
-    devSkipIntroInput.checked = false;
+const stored = (key) => { try { return localStorage.getItem(key) === '1'; } catch { return false; } };
+// (Set up below with the cutscene setting, which Dev mode also governs.)
+function restoreDevMode() {
+  devSkipIntroInput.checked = stored(DEV_SKIP_INTRO_KEY);
+  devSkipCutscenesInput.checked = stored(DEV_SKIP_CUTSCENES_KEY);
+  // On if it was, or if either option under it was (from before there was a switch).
+  devModeInput.checked = stored(DEV_MODE_KEY) || devSkipIntroInput.checked || devSkipCutscenesInput.checked;
+  if (devParam !== null) {
+    if (devParam === '0') setDevMode(false);
+    else setDevSkipIntro(true);
   }
   refreshRoomPreviewsButton();
 }
+devModeInput.addEventListener('change', () => setDevMode(devModeInput.checked));
 devSkipIntroInput.addEventListener('change', () => setDevSkipIntro(devSkipIntroInput.checked));
 
 // Dev mode: fast-forward every cutscene and story conversation (see
@@ -877,19 +902,8 @@ devSkipIntroInput.addEventListener('change', () => setDevSkipIntro(devSkipIntroI
 // this browser like the setting above.
 const DEV_SKIP_CUTSCENES_KEY = 'tadc.devSkipCutscenes';
 const devSkipCutscenesInput = document.getElementById('dev-skip-cutscenes');
-try {
-  devSkipCutscenesInput.checked = localStorage.getItem(DEV_SKIP_CUTSCENES_KEY) === '1';
-} catch {
-  devSkipCutscenesInput.checked = false;
-}
-devSkipCutscenesInput.addEventListener('change', () => {
-  try {
-    if (devSkipCutscenesInput.checked) localStorage.setItem(DEV_SKIP_CUTSCENES_KEY, '1');
-    else localStorage.removeItem(DEV_SKIP_CUTSCENES_KEY);
-  } catch {
-    // Storage blocked — it just won't persist past this page.
-  }
-});
+devSkipCutscenesInput.addEventListener('change', () => remember(DEV_SKIP_CUTSCENES_KEY, devSkipCutscenesInput.checked));
+restoreDevMode();
 
 document.getElementById('btn-replay-intro').addEventListener('click', () => {
   titleOptions.hidden = true;
@@ -915,6 +929,34 @@ cinematicSkip.addEventListener('click', () => {
   cinematicSkip.hidden = true;
   fastForwardCutscenes();
 });
+// While the intro skips, the loading screen (its pictures and parade) over
+// the black curtain and any cinematic UI, rather than a plain black screen.
+const SKIP_LOADING_TEXT = 'Skipping the intro…';
+let skipLoadingShown = false;
+function showSkipLoading(show) {
+  if (show) {
+    // Every frame: each part of the intro it skips through hides the
+    // overlay as it hands over to the next.
+    skipLoadingShown = true;
+    if (overlay.classList.contains('hidden') || !overlay.classList.contains('skip-loading')) {
+      overlay.classList.add('loading', 'skip-loading');
+      overlay.classList.remove('hidden');
+      overlayTitle.textContent = 'Loading…';
+      overlaySubtitle.textContent = SKIP_LOADING_TEXT;
+    }
+    return;
+  }
+  if (!skipLoadingShown) return;
+  skipLoadingShown = false;
+  overlay.classList.remove('skip-loading');
+  // A room load that's taken the overlay over since keeps its loading
+  // screen. Otherwise it goes: plain Click to Play once she's playable
+  // (resumeOpeningGameplay) or the pause menu, else hidden.
+  const ours = overlaySubtitle.textContent === SKIP_LOADING_TEXT;
+  if (overlayTitle.textContent === 'Loading…' && !ours) return;
+  overlay.classList.remove('loading');
+  if (ours) overlay.classList.add('hidden');
+}
 // While the skip button is up, Escape presses it. Captured ahead of the
 // pause and dialogue handlers, which would otherwise pause the opening or
 // cancel its conversation. P still pauses.
@@ -2009,19 +2051,37 @@ async function finishKaufmoLevel(token) {
   if (!playRoomDialogue('level3Jax', { onComplete: intoTheMaze, onCancel: intoTheMaze })) intoTheMaze();
 }
 
-/** Too few photos: Kaufmo abstracts. Game Over, then the search starts over. */
+/**
+ * Too few photos: Kaufmo abstracts, in front of her: he comes apart, his
+ * abstracted form rises where he stood, and it leaps on her. Then Game
+ * Over, and the search starts over.
+ */
 async function kaufmoAbstracted(token) {
   const memoryTicket = caineMemory.revision;
-  // He comes apart, and his abstracted form rises where he stood.
   const room = currentRoomKey === 'kaufmo' ? currentRoomInfo : null;
   const kaufmoApi = room?.kaufmoApi;
   let abstracted = null;
   if (kaufmoApi) {
     resetMoveState();
+    stage.hold(true);
+    // She faces him; the camera watches the two of them from the side.
+    const kaufmoAt = kaufmoApi.kaufmo.getWorldPosition(new THREE.Vector3());
+    turnPomniTowards(kaufmoAt);
+    stageCamera = frameKaufmoAbstracting(player.position.clone().setY(player.position.y - PLAYER_HEIGHT), kaufmoAt);
     abstracted = await abstractions.transform(kaufmoApi.kaufmo, {
       parent: room.group, form: takeAbstractedForm(room), effect: kaufmoApi.abstraction, voidSeconds: ABSTRACT_SECONDS,
     });
     if (token !== loadToken) return;
+    if (abstracted.form) {
+      // A beat, eyeing her; then it jumps on her.
+      await new Promise((resolve) => setTimeout(resolve, FORM_EYES_HER_MS));
+      if (token !== loadToken) return;
+      const feet = player.position.clone().setY(player.position.y - PLAYER_HEIGHT);
+      await abstracted.leap(feet, { seconds: FORM_LEAP_SECONDS, height: FORM_LEAP_HEIGHT });
+      if (token !== loadToken) return;
+      hurtFlash.classList.add('shown');
+      requestAnimationFrame(() => requestAnimationFrame(() => hurtFlash.classList.remove('shown')));
+    }
   }
   const retry = await showLevelComplete(
     'Kaufmo has abstracted.',
@@ -2029,8 +2089,31 @@ async function kaufmoAbstracted(token) {
     { resume: false, chime: 'fail', buttonLabel: 'Retry Level 2', memoryRetry: 'level2' }
   );
   abstracted?.undo();
+  if (kaufmoApi && token === loadToken) { stageCamera = null; stage.hold(false); }
   if (!retry || token !== loadToken) return;
   await resetPhotoSearch(memoryTicket);
+}
+
+/**
+ * A shot of Kaufmo (at `him`) over Pomni's shoulder (feet at `her`): high
+ * behind her, so her hat doesn't hide him, looking at him and up enough for
+ * his abstracted form, which then leaps at her (and the camera). Pulled in
+ * off any wall; if that leaves it right on top of her (she has her back to
+ * a wall), it swings round her to wherever there's most room instead.
+ */
+function frameKaufmoAbstracting(her, him) {
+  const target = him.clone().setY(him.y + FORM_SHOT_AIM);
+  const back = her.clone().sub(him).setY(0).normalize();
+  let best = null;
+  for (const swing of [0, 0.5, -0.5, 1, -1]) {
+    const way = back.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), swing);
+    const desired = her.clone().addScaledVector(way, FORM_SHOT_DISTANCE).setY(her.y + FORM_SHOT_HEIGHT);
+    const position = resolveOpeningCamera(target, desired);
+    const room = position.distanceTo(her.clone().setY(position.y));
+    if (!best || room > best.room + 0.4) best = { position, room };
+    if (room > FORM_SHOT_DISTANCE * 0.8) break; // the straight-on shot fits: take it
+  }
+  return { position: best.position, target };
 }
 
 /**
@@ -2488,6 +2571,16 @@ function worsenJaxGlitch(room) {
   jaxGlitch.burst();
   jaxApi.glitch?.();
 }
+
+// Kaufmo's abstraction (kaufmoAbstracted): the shot of it
+// (frameKaufmoAbstracting), how long his form eyes her once risen, and its
+// leap onto her.
+const FORM_SHOT_DISTANCE = 2.2;   // behind her
+const FORM_SHOT_HEIGHT = 2.5;     // above the floor she's on
+const FORM_SHOT_AIM = 1.7;        // up his form
+const FORM_EYES_HER_MS = 700;
+const FORM_LEAP_SECONDS = 0.75;
+const FORM_LEAP_HEIGHT = 1.8;
 
 // Failing a level, the one who breaks (Pomni in the maze, Kaufmo, Jax)
 // abstracts: eaten away by the void, then the abstracted form rising where
@@ -5725,8 +5818,10 @@ function animate() {
   updateMazeSearch(rawDelta);
   introStory.update(delta);
   fastForwardCutscenes();
-  // Black until she's playable, then the curtain fades off the room.
+  // Black until she's playable, then the curtain fades off the room, with
+  // the loading screen over it meanwhile.
   skipCurtain.classList.toggle('shown', skipIntroRequested && !paused);
+  showSkipLoading(skipIntroRequested && !paused);
   const skipScale = skipIntroRequested ? SKIP_SPEED : 1;
   if (!paused) {
     updateMovers(delta);
@@ -5878,6 +5973,13 @@ export function gloinkPomniForReview() {
   const gloink = hazards.find(hazard => hazard.mesh.userData?.isGloink) ?? hazards[0];
   if (gloink) gloink.mesh.position.set(player.position.x, gloink.mesh.position.y, player.position.z);
   return { health: pomniHealth, caught, hudHidden: pomniHealthHUD.hidden };
+}
+
+/** Development-only review: Kaufmo abstracts now (in his room), as if the photos fell short. */
+export function abstractKaufmoForReview() {
+  if (!import.meta.env.DEV || currentRoomKey !== 'kaufmo') return false;
+  void kaufmoAbstracted(loadToken);
+  return true;
 }
 
 /** Read-only development diagnostics for story and room browser regressions. */

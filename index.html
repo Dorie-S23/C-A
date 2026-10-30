@@ -1588,6 +1588,10 @@
             }
             #title-options .title-panel-box label { color: #f6e7c8; }
             #title-options .title-panel-box label.title-toggle { color: #eee4f4; }
+            /* Dev mode's options, opened under its switch. */
+            #dev-options { display: flex; flex-direction: column; gap: inherit; align-items: inherit;
+                margin: -0.2em 0 0 0.5em; padding-left: 1em; border-left: 2px solid rgba(255, 210, 122, 0.55); }
+            #dev-options[hidden] { display: none; }
             #title-options input[type="range"] { accent-color: #ffd27a; }
             #title-options #caine-memory-note { color: #d9cde6; opacity: 1; font-size: 0.82rem; line-height: 1.4; }
             #title-options .title-panel-box button,
@@ -1828,6 +1832,8 @@
             #skip-curtain { position: fixed; inset: 0; z-index: 19; background: #000;
                 pointer-events: none; opacity: 0; transition: opacity .4s; }
             #skip-curtain.shown { opacity: 1; transition: none; }
+            /* Skipping the intro: the loading screen above the curtain (main.js showSkipLoading). */
+            #overlay.skip-loading { z-index: 19; }
             #objective-hud {
                 position: fixed;
                 top: 1rem;
@@ -2175,18 +2181,25 @@
                 </label>
                 <p id="caine-memory-note" role="status">Caine’s run/retry history stays in this browser, separately from saves. Off stops captions and new history.</p>
                 <button type="button" data-caine-clear>Clear Caine’s Memory</button>
+                <!-- Dev mode: one switch; ticked, it opens up what it offers. -->
                 <label class="title-toggle">
-                    <input id="dev-skip-intro" type="checkbox" />
-                    <span>Dev mode: open on room selection</span>
+                    <input id="dev-mode" type="checkbox" aria-controls="dev-options" aria-expanded="false" />
+                    <span>Dev mode</span>
                 </label>
-                <label class="title-toggle">
-                    <input id="dev-skip-cutscenes" type="checkbox" />
-                    <span>Dev mode: skip cutscenes and dialogue</span>
-                </label>
+                <div id="dev-options" hidden>
+                    <label class="title-toggle">
+                        <input id="dev-skip-intro" type="checkbox" />
+                        <span>Open on room selection</span>
+                    </label>
+                    <label class="title-toggle">
+                        <input id="dev-skip-cutscenes" type="checkbox" />
+                        <span>Skip cutscenes and dialogue</span>
+                    </label>
+                    <button id="btn-room-previews">Room previews</button>
+                </div>
                 <button id="btn-new-game">Select Level</button>
                 <button id="btn-load-game">Load Game</button>
                 <button id="btn-replay-intro">&#9654; Replay intro</button>
-                <button id="btn-room-previews">Room previews</button>
                 <button id="btn-options-credits">Credits</button>
                 <button id="btn-options-controls">Controls</button>
                 <button id="btn-options-back">Back</button>
