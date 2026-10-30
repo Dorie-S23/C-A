@@ -36,12 +36,15 @@ const CHOICE_HINT = 'move the mouse or ↑/↓ to pick · click or press Space t
  * A picked choice option is then shown (and voiced) as its speaker's own
  * line, and the next advance brings in the reply — see selectOption.
  *
- * @param {{ speakers: object, voice?: object, escapeCancels?: () => boolean }} options
+ * @param {{ speakers: object, voice?: object, escapeCancels?: () => boolean,
+ *   controllerPrompts?: () => ({ continue: string, choice: string } | null) }} options
  *   escapeCancels: whether Escape backs out of the script right now. In
  *   play, Escape is the pause key (it frees the mouse), so main.js says no
  *   then and the conversation simply carries on after the pause.
+ *   controllerPrompts: the footer hints naming controller buttons while a
+ *   controller is in use, or null for the keyboard/mouse ones.
  */
-export function createDialogueUI({ speakers, voice = null, escapeCancels = () => true }) {
+export function createDialogueUI({ speakers, voice = null, escapeCancels = () => true, controllerPrompts = () => null }) {
   const root = document.getElementById('dialogue');
   const box = document.getElementById('dialogue-box');
   const portraitLeft = document.getElementById('dialogue-portrait-left');
@@ -255,7 +258,8 @@ export function createDialogueUI({ speakers, voice = null, escapeCancels = () =>
     box.classList.toggle('dialogue-box-beat', node.type === 'beat');
     setDistress(node.type === 'line' && node !== echo && distressFor ? distressFor(node) : 0);
     optionsEl.hidden = true;
-    continueEl.textContent = CONTINUE_HINT;
+    const prompts = controllerPrompts();
+    continueEl.textContent = prompts?.continue ?? CONTINUE_HINT;
 
     if (node.type === 'beat') {
       nameEl.textContent = '';
@@ -268,7 +272,7 @@ export function createDialogueUI({ speakers, voice = null, escapeCancels = () =>
       nameEl.textContent = speaker ? speaker.name : '';
       stopTyping();
       textEl.textContent = node.text ?? '';
-      continueEl.textContent = CHOICE_HINT;
+      continueEl.textContent = prompts?.choice ?? CHOICE_HINT;
       optionsEl.hidden = false;
       renderOptions(node.options);
       return;

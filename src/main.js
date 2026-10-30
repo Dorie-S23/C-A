@@ -26,6 +26,7 @@ import { createVoicePlayer } from './audio/voicePlayer.js';
 import { createAmbience } from './audio/ambience.js';
 import { createMusic, DEFAULT_MUSIC_VOLUME } from './audio/music.js';
 import { createTitleScreen } from './ui/titleScreen.js';
+import { createGamepadInput } from './input/gamepad.js';
 import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold } from './state/escapeThreshold.js';
 import { createStoryProgress } from './game/storyProgress.js';
 import { createSaveSlots } from './game/saveGame.js';
@@ -263,14 +264,34 @@ const ESCAPE_UNLOCK_WINDOW_MS = 500;
 const dialogueUI = createDialogueUI({
   speakers: SPEAKERS,
   voice: dialogueVoice,
-  escapeCancels: () => !isLocked && !paused && performance.now() - lastUnlockMs > ESCAPE_UNLOCK_WINDOW_MS,
+  // Never during the opening's story conversations: cancelling one sent
+  // Ragatha out of the room for good, and T only replayed her lines. In a
+  // cinematic, Escape (and the controller's B) falls through to its pause.
+  escapeCancels: () => !isLocked && !paused && !activeCinematic()?.active && !openingInvitationPlaying
+    && performance.now() - lastUnlockMs > ESCAPE_UNLOCK_WINDOW_MS,
+  controllerPrompts: () => (gamepad.active ? {
+    continue: `press ${gamepad.label('Space')} to continue ▾`,
+    choice: `↑/↓ to pick · ${gamepad.label('Space')} to choose`,
+  } : null),
 });
 const actionCaptions = createActionCaptions();
 const minimap = createMinimap();
 const objectives = createObjectiveController();
 const objectiveHUD = createObjectiveHUD({ objectives, root: document.getElementById('objective-hud') });
 const controlsTutorial = createControlsTutorial();
-const tutorialHUD = createTutorialHUD({ tutorial: controlsTutorial, root: document.getElementById('tutorial-hud') });
+const tutorialHUD = createTutorialHUD({
+  tutorial: controlsTutorial, root: document.getElementById('tutorial-hud'),
+  // Controller wording while the pad is in use; null keeps the keyboard lines.
+  labelFor: (id) => {
+    if (!gamepad.active) return null;
+    return {
+      move: 'Left stick - Move',
+      look: 'Right stick - Look around',
+      run: `Hold ${gamepad.label('ShiftLeft')} - Run`,
+      interact: `Press ${gamepad.label('KeyE')} - Interact`,
+    }[id];
+  },
+});
 let preLevel1Session = false;
 let storySessionId = 0;
 let morningDialoguePending = false;
@@ -301,6 +322,9 @@ let activeOpening = null;
 let activeEntrance = null;
 let activeJaxPass = null;
 const activeCinematic = () => activeJaxPass?.active ? activeJaxPass : activeEntrance?.active ? activeEntrance : activeOpening;
+// Pomni's "Come in." after an opening without the seated shot runs outside
+// any cinematic, so there's no pause to fall back on; Escape just waits.
+let openingInvitationPlaying = false;
 let openingCompleted = false; // per new game; room previews do not start a game
 let skipIntroRequested = false; // the Skip intro button, until play starts
 let openingFrameProfile = { frames: 0, seconds: 0, maxSeconds: 0 };
@@ -324,8 +348,13 @@ function fastForwardCutscenes() {
   if (cinematic?.active && cinematic.skippable) cinematic.skip();
 }
 
+// Hints name keyboard keys ("Press T to continue"); while the controller is
+// in use, name the pad button standing in for that key instead.
+const HINT_KEYS = { E: 'KeyE', H: 'KeyH', T: 'KeyT', V: 'KeyV' };
+
 function showHint(text, durationMs = 3000) {
-  hint.textContent = text;
+  hint.textContent = text.replace(/\b([Pp]ress) ([EHTV])\b/g,
+    (match, press, key) => `${press} ${gamepad.label(HINT_KEYS[key])}`);
   hint.classList.add('visible');
   clearTimeout(hintTimeout);
   hintTimeout = setTimeout(() => hint.classList.remove('visible'), durationMs);
@@ -497,10 +526,11 @@ const musicVolumeInput = document.getElementById('music-volume');
 const musicVolumeValue = document.getElementById('music-volume-value');
 const MUSIC_VOLUME_KEY = 'tadc.musicVolume';
 
+// Keys shouldn't drive the menu hidden behind an open panel.
+const titleMenuBlocked = () => !titleOptions.hidden || !titleQuit.hidden || !creditsPanel.classList.contains('hidden');
 const titleScreen = createTitleScreen({
   renderer,
-  // Keys shouldn't drive the menu hidden behind an open panel.
-  isBlocked: () => !titleOptions.hidden || !titleQuit.hidden || !creditsPanel.classList.contains('hidden'),
+  isBlocked: titleMenuBlocked,
   onAction: (action) => {
     if (action === 'play') {
       startNewGame();
@@ -744,7 +774,7 @@ function returnToHome({ toRoomPicker = false } = {}) {
   activeJaxPass?.dispose(); activeJaxPass = null;
   cancelCutscene();
   cancelLevelComplete();
-  activeEntrance?.dispose(); activeEntrance = null;
+  activeEntrance?.dispose(); activeEntrance = null; openingInvitationPlaying = false;
   activeOpening = null;
   cinematicSkip.hidden = true;
   if (isLocked) document.exitPointerLock();
@@ -944,6 +974,7 @@ function completeOpening() {
     showHint('Morning conversation interrupted. Press T to continue.', 8000);
     return;
   }
+  openingInvitationPlaying = true;
   dialogueUI.play(POMNI_INVITATION, {
     onComplete: () => finishOpeningInvitation(token, false),
     onCancel: () => finishOpeningInvitation(token, true),
@@ -960,6 +991,7 @@ function seatedOpeningDialogue() {
 }
 
 function finishOpeningInvitation(token, cancelled) {
+  openingInvitationPlaying = false;
   if (token !== loadToken || currentRoomKey !== 'pomni') return;
   if (cancelled && activeOpening?.phase === 'seated') {
     currentRoom.userData.openingInvitationCancelled = true;
@@ -2269,7 +2301,7 @@ function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
   dropRoomPreload();
   activeJaxPass?.dispose(); activeJaxPass = null;
 
-  activeEntrance?.dispose(); activeEntrance = null;
+  activeEntrance?.dispose(); activeEntrance = null; openingInvitationPlaying = false;
   // Invalidate callbacks before cancelling a dialogue owned by the old room.
   cancelLevelComplete();
   const myToken = ++loadToken; // any older in-flight load becomes stale the instant this fires
@@ -2663,6 +2695,68 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => setMove(e.code, false));
 
+// --- Controller ---
+// Right stick look speed at full tilt, radians per second (scaled by the
+// same Options sensitivity as the mouse).
+const STICK_YAW_SPEED = 3.0;
+const STICK_PITCH_SPEED = 2.0;
+
+/**
+ * Browsers only grant pointer lock to a click or key press, which a
+ * controller button doesn't count as. Chrome makes one exception: a page
+ * that released the lock itself (Start below calls exitPointerLock) may
+ * take it back without one. Otherwise, and for the first lock of a
+ * session, the player has to click once.
+ */
+function lockFromGamepad() {
+  Promise.resolve(renderer.domElement.requestPointerLock()).catch(() => {
+    showHint('Click once to start - the browser needs a mouse click before the controller can take over.', 5000);
+  });
+}
+
+const gamepad = createGamepadInput({
+  mode: () => {
+    if (mazeHints.isOpen) return 'menu';
+    if (dialogueUI.isActive && !paused) return 'dialogue';
+    if (activeCinematic()?.active) return paused ? 'menu' : 'cinematic';
+    if (isLocked) return 'play';
+    if (titleScreen.active && !titleMenuBlocked()) return 'title';
+    return 'menu';
+  },
+  onStart: () => {
+    if (activeCinematic()?.active) { pauseOpening(!paused); return; }
+    // Releasing the lock ourselves shows the pause menu (see pointerlockchange)
+    // and is what lets the next Start take it back without a click.
+    if (isLocked) { document.exitPointerLock(); return; }
+    if (!pauseMenu.hidden) { if (readyToPlay && currentRoom) lockFromGamepad(); return; }
+    if (currentRoomKey === 'maze' && paused) return;
+    if (readyToPlay && currentRoom && !overlay.classList.contains('hidden')) lockFromGamepad();
+  },
+  // A on "Click to Play" (nothing focused there) starts, like Start.
+  onConfirm: () => {
+    if (!readyToPlay || !currentRoom || overlay.classList.contains('hidden') || !pauseMenu.hidden) return false;
+    if (currentRoomKey === 'maze' && paused) return false;
+    lockFromGamepad();
+    return true;
+  },
+  onConnect: () => showHint('Controller connected', 2500),
+});
+
+/** Right-stick look, under the same conditions as the mouse-look handler. */
+function updateGamepadLook(deltaSeconds) {
+  if (gamepad.lookX === 0 && gamepad.lookY === 0) return;
+  if (!isLocked || !readyToPlay || paused || activeCinematic()?.active || dialogueUI.isActive || stageBusy() || activeCutscene) return;
+  const scale = mouseSensitivityScale * deltaSeconds;
+  const oldYaw = cameraYaw, oldPitch = cameraPitch;
+  cameraYaw -= gamepad.lookX * STICK_YAW_SPEED * scale;
+  cameraPitch = THREE.MathUtils.clamp(
+    cameraPitch + gamepad.lookY * STICK_PITCH_SPEED * scale, PITCH_MIN, PITCH_MAX,
+  );
+  if (shouldShowObjective(gameplayHUDContext())) {
+    controlsTutorial.look(Math.hypot(cameraYaw - oldYaw, cameraPitch - oldPitch));
+  }
+}
+
 // Bedroom lighting previews never ship as active player controls.
 if (import.meta.env.DEV) {
   window.addEventListener('keydown', (event) => {
@@ -2698,6 +2792,7 @@ function resetMoveState() {
   move.left = false;
   move.right = false;
   move.sprint = false;
+  gamepad.resetSprint();
   // Called on every teleport too: drop any jump in progress, and the floor
   // follow snaps her down onto wherever she now stands.
   jumpQueued = false;
@@ -4118,11 +4213,16 @@ function updateMazeFinalEncounter(){
 }
 
 function updateMovement(deltaSeconds) {
-  const speed = WALK_SPEED * (move.sprint ? SPRINT_MULTIPLIER : 1) * DEV_SPEED_MULTIPLIER;
+  const sprinting = move.sprint || gamepad.sprint;
+  const speed = WALK_SPEED * (sprinting ? SPRINT_MULTIPLIER : 1) * DEV_SPEED_MULTIPLIER;
 
   velocity.x = Number(move.right) - Number(move.left);
   velocity.z = Number(move.back) - Number(move.forward);
   if (velocity.lengthSq() > 0) velocity.normalize();
+  // Keys win; otherwise the left stick steers, and a half tilt walks at
+  // half speed (the walk clip follows her actual speed, so it slows too).
+  else velocity.set(gamepad.moveX, 0, gamepad.moveY);
+  const padMoving = gamepad.moveX !== 0 || gamepad.moveY !== 0;
   velocity.multiplyScalar(speed * deltaSeconds);
 
   // Camera-relative basis: W always walks "into the screen".
@@ -4208,8 +4308,8 @@ function updateMovement(deltaSeconds) {
 
   // Animate from how far she actually got, so walking into a wall doesn't bob.
   const moved = Math.hypot(player.position.x - frameStartX, player.position.z - frameStartZ);
-  if (shouldShowObjective(gameplayHUDContext()) && (move.forward || move.back || move.left || move.right)) {
-    controlsTutorial.move(moved, move.sprint);
+  if (shouldShowObjective(gameplayHUDContext()) && (move.forward || move.back || move.left || move.right || padMoving)) {
+    controlsTutorial.move(moved, sprinting);
   }
   updatePomniWalk(deltaSeconds, deltaSeconds > 0 ? moved / deltaSeconds : 0);
 
@@ -4631,7 +4731,7 @@ function updateInteractionFocus() {
 
   focusedInteractable = focused;
   interactPrompt.hidden = !focused;
-  if (focused) interactPrompt.textContent = `E — ${focused.prompt()}`;
+  if (focused) interactPrompt.textContent = `${gamepad.label('KeyE')} — ${focused.prompt()}`;
 }
 
 /** Optional room-specific enable/range gates also apply to direct ray hits. */
@@ -4719,6 +4819,10 @@ function animate() {
   // The music steps back under voices, and under the cinematics' own
   // snores, knocks and footsteps.
   music.setDucked(dialogueUI.isActive || Boolean(activeCinematic()?.active));
+  // Polled before anything reads input this frame; its buttons arrive as
+  // key events, so they land exactly where a key press would have.
+  gamepad.update(rawDelta);
+  updateGamepadLook(delta);
   updateCaineArrival(delta);
   updateSearchTimer(delta);
   updateMazeSearch(rawDelta);
