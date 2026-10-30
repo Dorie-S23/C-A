@@ -95,6 +95,16 @@ const STUTTER_SHIFT = 0.035;       // metres
 const GLITCH_SECONDS = 0.4;
 const GLITCH_SIZE = 2.5;           // how much bigger its skips are
 
+// Restless (setRestless; the maze, waiting for Pomni with his back to her):
+// he shuffles from side to side in little steps, stops at each end, then
+// goes back, hands fidgeting and head glancing about. Until he's engaged
+// (engage(point)): he stops, turns to face her and settles.
+const RESTLESS_REACH = 0.34;      // metres either side of his mark
+const RESTLESS_PERIOD = 3.6;      // seconds there and back
+const RESTLESS_STEP = 0.16;       // metres per shuffled step
+const RESTLESS_LIFT = THREE.MathUtils.degToRad(24); // knee bend of a stepping leg
+const RESTLESS_SETTLE = 2.5;      // how fast he stops (or starts) pacing
+
 /**
  * Finds a bone by a loose, punctuation-insensitive match on its name.
  * glTF export mangles "upper_leg.L_53_59" in ways that vary by loader
@@ -192,6 +202,23 @@ export function loadJax() {
     let distressed=false,engaged=false,engagement=0;
     const restorePose=()=>{for(const [bone,rotation]of rest)bone.quaternion.copy(rotation);};
     function setDistressed(value){distressed=Boolean(value);engaged=false;engagement=0;targetYaw=null;restorePose();}
+    let onStutter = null;
+    const restless = { on: false, homeYaw: 0, pacing: 0, offset: 0, travelled: 0 };
+    /** Restless pacing facing `homeYaw` (see RESTLESS_*); off returns him to standing. */
+    function setRestless(value, homeYaw = jax.rotation.y) {
+      restless.on = Boolean(value);
+      restless.homeYaw = homeYaw;
+      restless.pacing = restless.on ? 1 : 0;
+      engaged = false; engagement = 0; targetYaw = null; distressed = false;
+      restorePose();
+      model.position.x = 0;
+    }
+    /** Restless: stop and turn to face a world point; null goes back to pacing at his wall. */
+    function engage(point) {
+      engaged = Boolean(point);
+      if (point) faceTowards(point);
+      else targetYaw = restless.homeYaw;
+    }
     function engageDistressed(point){engaged=Boolean(point);faceTowards(point);}
     let walk = null;
     let idleTime = 0;
@@ -219,6 +246,7 @@ export function loadJax() {
       if (skip.gap > 0 && skip.tear === 0) return;
       const size = skip.tear > 0 ? GLITCH_SIZE : 1;
       skip.hold = between(STUTTER_HOLD);
+      onStutter?.();
       skip.gap = between(STUTTER_GAP);
       idleTime += STUTTER_SKIP;
       skip.jerk = (Math.random() * 2 - 1) * STUTTER_JERK * size;
@@ -252,6 +280,7 @@ export function loadJax() {
       if (!walk) {
         stutter(deltaSeconds);
         const time = idleTime;
+        if (restless.on) { updateRestless(deltaSeconds, time); return; }
         if(distressed){
           restorePose();engagement=THREE.MathUtils.lerp(engagement,engaged?1:0,1-Math.exp(-deltaSeconds*1.4));
           const breath=Math.sin(time*Math.PI*2*0.22),twitch=Math.pow(Math.max(0,Math.sin(time*0.9)),10)*Math.sin(time*38)*0.009;
@@ -324,6 +353,50 @@ export function loadJax() {
       }
     }
 
+    function updateRestless(deltaSeconds, time) {
+      restorePose();
+      // Pacing eases out while he's engaged and back in once he's let go.
+      restless.pacing = THREE.MathUtils.damp(restless.pacing, engaged ? 0 : 1, RESTLESS_SETTLE, deltaSeconds);
+      engagement = THREE.MathUtils.damp(engagement, engaged ? 1 : 0, RESTLESS_SETTLE, deltaSeconds);
+      // Side to side: quick across, a pause at each end (a squashed sine).
+      const sweep = Math.tanh(2.4 * Math.sin(time * Math.PI * 2 / RESTLESS_PERIOD)) / Math.tanh(2.4);
+      const offset = sweep * RESTLESS_REACH * restless.pacing;
+      const moved = Math.abs(offset - restless.offset);
+      restless.offset = offset;
+      restless.travelled += moved;
+      const speed = moved / Math.max(deltaSeconds, 1e-4);
+      const stepping = THREE.MathUtils.clamp(speed / 0.25, 0, 1);
+      // Little steps: one knee then the other as he shuffles.
+      const stepPhase = restless.travelled / RESTLESS_STEP * Math.PI;
+      poseLeg(bones.lowerLegL, Math.max(0, Math.sin(stepPhase)) * RESTLESS_LIFT * stepping);
+      poseLeg(bones.lowerLegR, Math.max(0, -Math.sin(stepPhase)) * RESTLESS_LIFT * stepping);
+      poseLeg(bones.upperLegL, -Math.max(0, Math.sin(stepPhase)) * RESTLESS_LIFT * .45 * stepping);
+      poseLeg(bones.upperLegR, -Math.max(0, -Math.sin(stepPhase)) * RESTLESS_LIFT * .45 * stepping);
+      model.position.x = offset + skip.shift;
+      // Hunched, weight rocking onto the leading foot, head never still:
+      // glancing about, now and then over his shoulder. Engaged, he lifts it to her.
+      const glance = Math.sin(time * 0.9) * 0.35 + Math.pow(Math.max(0, Math.sin(time * 0.37)), 8) * 0.6;
+      bendBone(bones.spine, jax, SIDEWAYS, IDLE_HUNCH_ANGLE * 1.6 * (1 - engagement * .5));
+      bendBone(bones.spine, jax, FORWARD, -sweep * 0.05 * restless.pacing);
+      bendBone(bones.spine, jax, SIDEWAYS, Math.sin(time * IDLE_TREMBLE_HZ * Math.PI * 2) * IDLE_TREMBLE_ANGLE);
+      bendBone(bones.head, jax, UP, glance * (1 - engagement));
+      bendBone(bones.head, jax, SIDEWAYS, 0.18 * (1 - engagement) + Math.sin(time * IDLE_TREMBLE_HZ * Math.PI * 2 + 1.3) * IDLE_TREMBLE_ANGLE);
+      if (skip.jerk) {
+        bendBone(bones.head, jax, UP, skip.jerk);
+        bendBone(bones.spine, jax, SIDEWAYS, skip.jerk * 0.5);
+      }
+      // Hands fidgeting in front of him: elbows bent, wringing.
+      const wring = Math.sin(time * 3.1) * 0.12;
+      poseLeg(bones.lowerArmL, THREE.MathUtils.degToRad(55) + wring);
+      poseLeg(bones.lowerArmR, THREE.MathUtils.degToRad(55) - wring);
+      bendBone(bones.upperArmL, jax, SIDEWAYS, -0.25);
+      bendBone(bones.upperArmR, jax, SIDEWAYS, -0.25);
+      if (targetYaw !== null) {
+        const diff = THREE.MathUtils.euclideanModulo(targetYaw - jax.rotation.y + Math.PI, Math.PI * 2) - Math.PI;
+        jax.rotation.y += diff * (1 - Math.exp(-TURN_SHARPNESS * 0.5 * deltaSeconds));
+      }
+    }
+
     /**
      * Shows or hides him while keeping his light in the scene, just dimmed
      * to nothing: a light coming or going changes the scene's light count,
@@ -337,6 +410,9 @@ export function loadJax() {
 
     return {
       jax, update, playPassBy, faceTowards, setDistressed, engageDistressed, bindPose, setShown,
+      setRestless, engage,
+      /** Called as each glitch stutter starts (for effects in step with it). */
+      set onStutter(callback) { onStutter = callback; },
       isRunning: () => walk !== null,
       setGlitching(on) { glitching = on; },
       glitch() { skip.tear = GLITCH_SECONDS; },

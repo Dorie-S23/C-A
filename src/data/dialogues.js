@@ -923,6 +923,11 @@ export const level3HallwayDialogue = [
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Wait. Not yet.' },
   { type: 'line', speaker: 'ribbit', side: 'right', text: 'Pomni, he’s hurting. We can’t just stand here.' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'I know. But I barely got a few sentences out and he bolted. If we both go charging in, he’ll feel cornered. I don’t think he’s ready to be confronted by us yet.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', direction: 'quietly, after a pause', text: 'When he gets like this, he forgets us, Pomni. Not on purpose. Everything good just… slips away from him.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'Slips away?' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'He always held onto little things. Kaufmo’s bowling nights. Jax would moan the whole way there, then never miss one. He kept a ball in his room from them. And after every fight with me, he’d turn up at the café with two hot chocolates, like it was an accident.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', direction: 'softly', text: 'Maybe he needs something he can actually hold. Something that reminds him.' },
+  { type: 'line', speaker: 'pomni', side: 'left', direction: 'half to herself', mood: 'neutral', text: 'Something that reminds him…' },
   { type: 'line', speaker: 'ribbit', side: 'right', direction: 'after a pause', text: '…Okay. So what do you need me to do?' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Find the others. Gangle, Zooble, Ragatha, Kinger. Tell them what’s happening with Jax. And tell them about Kaufmo.' },
   { type: 'line', speaker: 'ribbit', side: 'right', text: 'Kaufmo? What about him?' },
@@ -966,4 +971,35 @@ export const level3JaxFinalDialogue = [
   {id:'jaxFinal4',type:'line',speaker:'jax',side:'right',text:'Do I look okay to you?'},
   {id:'jaxFinal5',type:'line',speaker:'pomni',side:'left',mood:'neutral',text:'I found everything. We can leave now.'},
   {id:'jaxFinal6',type:'line',speaker:'jax',side:'right',text:'...You really came all this way?',next:null},
+];
+
+// Level 3.1, the maze keepsakes (nothing on screen asks for them: Ribbit
+// planted the idea in level3HallwayDialogue). What Pomni says picking each up.
+export const mazePickupBowlingDialogue = [
+  { type: 'line', speaker: 'pomni', side: 'left', direction: 'picking up the ball, quietly', mood: 'neutral',
+    text: 'This feels… familiar. Like it’s been held a lot.', next: null },
+];
+export const mazePickupMugDialogue = [
+  { type: 'line', speaker: 'pomni', side: 'left', direction: 'picking up the mug', mood: 'shocked',
+    text: 'It’s still warm. How is it still warm?', next: null },
+];
+
+// Jax's glitch fragments: short stuttering lines over an audio crackle as he
+// flickers between the maze's walls, before he turns up (no dialogue box;
+// ui/glitchCaption.js). The bowling set before he first appears, the hot
+// chocolate set before he's next found, after he first runs.
+export const JAX_GLITCH_FRAGMENTS = {
+  bowling: ['…strike… every time… and nobody…', '…ten pins… all of them… down…', '…never missed one… never…'],
+  mug: ['…two cups… one’s always cold…', '…wasn’t an accident… it never was…', '…she always… waited…'],
+};
+
+// Level 3, in the maze: what Pomni overhears the first two times she finds
+// Jax (mazeJaxChase.js), before he spots her and bolts. Provisional lines.
+export const level3JaxMumble1Dialogue = [
+  {type:'line',speaker:'jax',side:'right',direction:'mumbling to himself, back turned',
+    text:"...Okay. Okay. Nobody comes down here. Nobody ever comes down here. Just... stay put.",next:null},
+];
+export const level3JaxMumble2Dialogue = [
+  {type:'line',speaker:'jax',side:'right',direction:'mumbling to himself, twitching',
+    text:"Stop glitching. Stop it. You're fine. Everything's fine. Totally, completely fine...",next:null},
 ];

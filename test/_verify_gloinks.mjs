@@ -175,21 +175,20 @@ test('a gloink ignores her while she is not in play (menus, dialogue)', async ()
   assert.equal(room.gloinkChases[0].state, 'patrol');
 });
 
-test('gloinks guard the common areas and the final stretch into Jax’s chamber, never the start', async () => {
+test('gloinks guard the common areas and the final stretch to Jax’s hideout, never the start', async () => {
   for (let seed = 1; seed <= 40; seed++) {
     const room = await loadMazeRoom(null, { seed, mazeItems: createMazeItems() });
     const { maze, gloinkPatrols } = room;
     assert.equal(gloinkPatrols.length, 4, `seed ${seed}: all four gloinks placed`);
     const fromStart = new Map(room.mazePlacement.reachableFrom(maze.start).map(({ cell, distance }) => [cell, distance]));
 
-    // The pin paces the last three cells of the way to Jax, right up to his chamber.
+    // The pin paces three cells of the way to Jax, stopping two short of his hideout.
     const [finalStretch, ...common] = gloinkPatrols;
     assert.equal(finalStretch.type, 'pin');
     const toJax = findMazePath(maze, maze.start, maze.jax);
     const at = toJax.indexOf(finalStretch.cells[0]);
     assert.deepEqual(finalStretch.cells, toJax.slice(at, at + 3), `seed ${seed}: pin paces a stretch of the route to Jax`);
-    // The 2x2 chamber starts right after; Jax stands up to two cells into it.
-    assert.ok(toJax.length - (at + 3) <= 3, `seed ${seed}: pin’s stretch ends at Jax’s chamber`);
+    assert.equal(toJax.length - 1 - (at + 3), 2, `seed ${seed}: pin’s stretch ends two cells short of Jax`);
 
     for (const { type, cells, circuit } of common) {
       assert.ok(cells.every((cell) => fromStart.get(cell) >= 5), `seed ${seed}: ${type} keeps away from the start`);

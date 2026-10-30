@@ -1,9 +1,7 @@
 import { loadSound, loadSoundFile } from './sounds.js';
+import { holdLoop, resumeLoop, startLoop } from './pausableLoop.js';
 
 const FADE_SECONDS = 1.5;
-// Under the pause menu the room bed ducks rather than cuts out: silence
-// would read as the game having crashed.
-const PAUSED_LEVEL = 0.35;
 // Average loudness each room's bed is scaled to (see loadSound), well under
 // the voices so dialogue always sits on top.
 const RMS = 0.03;
@@ -60,7 +58,7 @@ function cutAudioRange(context, buffer, startSeconds, endSeconds) {
  */
 export function createAmbience(getContext) {
   let wanted = null;
-  let playing = null; // { key, source, fade }
+  let playing = null; // { key, loop, fade, proximity } (loop: see pausableLoop.js)
   let master = null;
   let volume = 0.45;
   let paused = false;
@@ -69,12 +67,15 @@ export function createAmbience(getContext) {
   let request = 0;
   const buffers = new Map(); // key -> Promise<AudioBuffer|null>, so each loop downloads once
 
-  const level = () => volume * (paused ? PAUSED_LEVEL : 1);
+  // Paused, the bed holds its place (see setPaused) rather than ducking.
+  const level = () => volume;
 
   function fadeOut(context) {
     if (!playing) return;
-    const { source, fade, proximity } = playing;
+    const { loop, fade, proximity } = playing;
     playing = null;
+    if (loop.held) { fade.disconnect(); proximity.disconnect(); return; }
+    const { source } = loop;
     const now = context.currentTime;
     fade.gain.cancelScheduledValues(now);
     fade.gain.setValueAtTime(fade.gain.value, now);
@@ -111,9 +112,6 @@ export function createAmbience(getContext) {
       master.gain.value = level();
       master.connect(context.destination);
     }
-    const source = context.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
     const fade = context.createGain();
     const proximity = context.createGain();
     proximity.gain.value = wanted === 'kaufmo'
@@ -122,11 +120,12 @@ export function createAmbience(getContext) {
     const now = context.currentTime;
     fade.gain.setValueAtTime(0, now);
     fade.gain.linearRampToValueAtTime(1, now + FADE_SECONDS);
-    source.connect(fade).connect(proximity).connect(master);
+    fade.connect(proximity).connect(master);
     // A random point in the loop, so walking back into a room doesn't
     // restart the exact same few seconds every time.
-    source.start(now, Math.random() * buffer.duration);
-    playing = { key: wanted, source, fade, proximity };
+    const loop = startLoop(context, buffer, fade, Math.random() * buffer.duration);
+    playing = { key: wanted, loop, fade, proximity };
+    if (paused) holdLoop(context, loop);
   }
 
   function applyLevel() {
@@ -153,8 +152,11 @@ export function createAmbience(getContext) {
 
   return {
     setRoom,
+    /** Paused, the bed stops where it is; unpaused, it carries on from there. */
     setPaused(value) {
       paused = value;
+      const context = getContext();
+      if (playing && context) (value ? holdLoop : resumeLoop)(context, playing.loop);
       applyLevel();
       applyTrackGain();
     },

@@ -1560,6 +1560,11 @@
                 padding: 12px 20px; color: white; background: #242036dd;
                 border: 1px solid #c6bfda; border-radius: 6px; cursor: pointer; }
             #cinematic-skip[hidden] { display: none; }
+            /* Covers the intro while Skip intro races it through to play;
+               under the menus (z-index 20+), over the dialogue box. */
+            #skip-curtain { position: fixed; inset: 0; z-index: 19; background: #000;
+                pointer-events: none; opacity: 0; transition: opacity .4s; }
+            #skip-curtain.shown { opacity: 1; transition: none; }
             #objective-hud {
                 position: fixed;
                 top: 1rem;
@@ -1864,6 +1869,7 @@
             <p id="objective-detail" data-objective-detail hidden></p>
         </aside>
         <button id="cinematic-skip" hidden>Skip intro</button>
+        <div id="skip-curtain" aria-hidden="true"></div>
         <aside id="tutorial-hud" role="status" aria-live="polite" aria-atomic="true" hidden>
             <img data-tutorial-portrait alt="Caine" />
             <div class="tutorial-copy">

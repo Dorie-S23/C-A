@@ -384,7 +384,45 @@ export function createHotChocolateMug() {
   }
 
   group.userData.glow = { material: mugMaterial };
+  group.userData.steam = addSteam(group, 0.56);
   return group;
+}
+
+// "Still warm": a thin curl of steam off the top, wisps rising and fading
+// in turn (animated by pulseGlow).
+const STEAM_WISPS = 4, STEAM_RISE = 0.42, STEAM_SECONDS = 2.4;
+function addSteam(group, top) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createRadialGradient?.(32, 32, 0, 32, 32, 32);
+  if (gradient) {
+    gradient.addColorStop(0, 'rgba(255,255,255,0.9)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  const wisps = [];
+  for (let i = 0; i < STEAM_WISPS; i++) {
+    const material = new THREE.SpriteMaterial({ map: texture, color: 0xf3ece4, transparent: true, opacity: 0, depthWrite: false });
+    const wisp = new THREE.Sprite(material);
+    wisp.name = 'MugSteam';
+    wisp.userData.phase = i / STEAM_WISPS;
+    group.add(wisp);
+    wisps.push(wisp);
+  }
+  return { wisps, top };
+}
+
+function animateSteam({ wisps, top }, elapsedSeconds) {
+  for (const wisp of wisps) {
+    const t = (elapsedSeconds / STEAM_SECONDS + wisp.userData.phase) % 1;
+    const sway = Math.sin((t + wisp.userData.phase) * Math.PI * 2) * 0.035;
+    wisp.position.set(sway, top + t * STEAM_RISE, sway * 0.6);
+    wisp.scale.setScalar(0.07 + t * 0.12);
+    wisp.material.opacity = 0.32 * Math.sin(Math.PI * t);
+  }
 }
 
 /** Advances every still-placed findable's glow, same contract as
@@ -399,6 +437,7 @@ export function pulseGlow(findables, elapsedSeconds) {
     const intensity = GLOW_EMISSIVE_BASE + GLOW_EMISSIVE_SWING * wave;
     if (material.emissive) material.emissiveIntensity = intensity;
     if (material.uniforms?.uGlow) material.uniforms.uGlow.value = intensity;
+    if (findable.userData.steam) animateSteam(findable.userData.steam, elapsedSeconds);
   }
 }
 
