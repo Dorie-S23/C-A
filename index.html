@@ -1556,6 +1556,10 @@
                 outline: 2px solid #ffd27a;
                 outline-offset: 2px;
             }
+            /* Fade to black between scenes (Level 3's exit); below the completion card. */
+            #scene-fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none;
+                transition: opacity 1.2s ease; z-index: 11; }
+            #scene-fade.on { opacity: 1; }
             #cinematic-skip { position: fixed; right: 24px; top: 24px; z-index: 12;
                 padding: 12px 20px; color: white; background: #242036dd;
                 border: 1px solid #c6bfda; border-radius: 6px; cursor: pointer; }
@@ -1727,6 +1731,8 @@
                     <h3>Level 3 &middot; Maze</h3>
                     <button data-jump="level3">&#9654; Play Level 3</button>
                     <button data-jump="level3LastAct">&#9654; Jax&rsquo;s last act</button>
+                    <button id="btn-ending-saved">&#127916; Ending (Jax saved)</button>
+                    <button id="btn-ending-abstracted">&#127916; Ending (Jax abstracted)</button>
                 </section>
             </div>
             <div id="room-picker" hidden>
@@ -1752,6 +1758,7 @@
                 <button id="btn-home">Back to Home</button>
             </div>
         </div>
+        <div id="scene-fade"></div>
         <div id="level-complete-panel" class="title-panel" hidden>
             <div class="title-panel-box">
                 <img id="level-complete-caine" src="./models/game%20screens/game-over-caine.png" alt="Caine reacting to the game over" hidden />

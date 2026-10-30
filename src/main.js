@@ -28,7 +28,7 @@ import { createMusic, DEFAULT_MUSIC_VOLUME } from './audio/music.js';
 import { createTitleScreen } from './ui/titleScreen.js';
 import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold, setLevelPoints, passesJaxGate } from './state/escapeThreshold.js';
 import { createChoiceTally } from './dialogue/choiceTally.js';
-import { createStoryProgress } from './game/storyProgress.js';
+import { createStoryProgress, ENDING_VARIANTS } from './game/storyProgress.js';
 import { createSaveSlots, parseSaveFile, saveFileContents, saveFileName } from './game/saveGame.js';
 import { createLoadingBackgrounds } from './ui/loadingBackgrounds.js';
 import { createLoadingSprites } from './ui/loadingSprites.js';
@@ -45,6 +45,7 @@ import { createMazeItems, createMazeSearch, MAZE_FINDABLES } from './state/mazeI
 import { runLevel1 } from './levels/level1.js';
 import { runHallwayScene } from './levels/level3Hallway.js';
 import { runLobbyScene } from './levels/level3Lobby.js';
+import { loadEndingCast, lobbyEndingPlan, stageLobbyEnding, createExitDoorScene } from './cutscenes/endingCutscene.js';
 import { kaufmoHallwayPlan, preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
 import { createMinimap } from './ui/minimap.js';
 import { nearestLandmark } from './rooms/lobbyLandmarks.js';
@@ -63,6 +64,7 @@ import {
   level2IdleDialogue, level2CompleteDialogue, level2ReturnAndSendoffDialogue, level2AbstractionDialogue,
   level2TimeUpDialogue, level3HallwayDialogue, level3JaxDialogue, level3JaxFinalDialogue,
   level3JaxMumble1Dialogue, level3JaxMumble2Dialogue, mazePickupBowlingDialogue, mazePickupMugDialogue, JAX_GLITCH_FRAGMENTS,
+  endingLobbySavedDialogue, endingLobbyAbstractedDialogue, exitDoorSavedDialogue, exitDoorAbstractedDialogue,
   level2HallwayDialogue, level2RoomOpeningDialogue, ribbitFollowupDialogue,
 } from './data/dialogues.js';
 
@@ -96,6 +98,10 @@ const DIALOGUE_SCRIPTS = {
   level3JaxMumble2: { script: level3JaxMumble2Dialogue, room: 'maze' },
   mazePickupBowling: { script: mazePickupBowlingDialogue, room: 'maze' },
   mazePickupMug: { script: mazePickupMugDialogue, room: 'maze' },
+  endingLobbySaved: { script: endingLobbySavedDialogue, room: 'tadc' },
+  endingLobbyAbstracted: { script: endingLobbyAbstractedDialogue, room: 'tadc' },
+  exitDoorSaved: { script: exitDoorSavedDialogue, room: null },
+  exitDoorAbstracted: { script: exitDoorAbstractedDialogue, room: null },
 };
 
 const ROOM_LOADERS = {
@@ -273,6 +279,7 @@ const skipCurtain = document.getElementById('skip-curtain');
 // entrance walks, staged pauses) this many times faster, behind skipCurtain.
 const SKIP_SPEED = 12;
 const levelCompletePanel = document.getElementById('level-complete-panel');
+const sceneFade = document.getElementById('scene-fade');
 const levelCompleteCaine = document.getElementById('level-complete-caine');
 const levelCompleteTitle = document.getElementById('level-complete-title');
 const levelCompleteSubtitle = document.getElementById('level-complete-subtitle');
@@ -466,6 +473,18 @@ dialoguePicker.querySelectorAll('button[data-jump]').forEach((button) => {
     devJump(button.dataset.jump);
   });
 });
+
+// Jumps to the ending for playtesting, skipping the maze: the same fade,
+// recorded outcome and ending as walking out of it (see leaveMaze).
+for (const variant of ENDING_VARIANTS) {
+  document.getElementById(`btn-ending-${variant}`).addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (currentRoom) returnToHome();
+    resetObjectiveSession(true);
+    titleScreen.hide();
+    void leaveMaze(variant);
+  });
+}
 
 btnResume.addEventListener('click', (event) => {
   event.stopPropagation();
@@ -820,6 +839,7 @@ function showRoomPicker() {
  * hatch below, which can fire before any room's ever been picked).
  */
 function returnToHome({ toRoomPicker = false } = {}) {
+  sceneFade.classList.remove('on');
   // Only restart the theme after the story faded it out; backing out of the
   // menus (Options -> Room previews -> Title screen) keeps it playing.
   if (openingAudio.mainThemeVolume < 0.5) openingAudio.stopMainTheme();
@@ -1958,6 +1978,11 @@ function loadGame(data) {
   if (isLocked) document.exitPointerLock();
   titleScreen.hide();
   titleOptions.hidden = true;
+  // Saved after leaving the maze: straight to the ending, not back inside.
+  if (storyProgress.level3Complete) {
+    void playEnding(storyProgress.ending);
+    return;
+  }
   selectRoom(data.room, {
     from: data.from ?? undefined,
     openingMode: data.room === 'pomni' ? 'settled' : undefined,
@@ -2181,6 +2206,155 @@ async function retryMaze(title, subtitle) {
   if (room && session === storySessionId && currentRoomInfo === room && currentRoomKey === 'maze') {
     caineMemory.recordRetry('maze', memoryTicket);
   }
+}
+
+/**
+ * How Level 3 went for Jax, for the ending (see ENDING_VARIANTS in
+ * storyProgress.js): what the Jax gate decided as his final conversation
+ * ended (Levels 1 to 3's points reaching 75%, escapeThreshold.js).
+ */
+function jaxOutcome() {
+  return mazeItems.jaxOutcome === 'abstracts' ? 'abstracted' : 'saved';
+}
+
+/** Fades the screen to black (true) or back (false); resolves once it's there. */
+function fadeScreen(toBlack, seconds = 1.2) {
+  sceneFade.style.transitionDuration = `${seconds}s`;
+  sceneFade.classList.toggle('on', toBlack);
+  return new Promise(resolve => setTimeout(resolve, seconds * 1000));
+}
+
+/**
+ * Level 3's exit: Pomni's controls freeze, the maze fades to black, the
+ * run records that Level 3 is done and how it went for Jax (so a save
+ * taken now resumes at the ending, not back in the maze), then the ending.
+ */
+async function leaveMaze(variant) {
+  const token = loadToken;
+  resetMoveState();
+  stage.hold(true);
+  mazeSearchTimer.hidden = true;
+  await fadeScreen(true);
+  if (token !== loadToken) return;
+  storyProgress.finishLevel3(variant);
+  takeCheckpoint();
+  await playEnding(variant);
+}
+
+// The card the ending closes on, after its two scenes.
+const ENDING_CARDS = {
+  saved: 'Pomni and Jax step out of the maze together.',
+  abstracted: 'Pomni steps out of the maze alone.',
+};
+// Each part's conversation (DIALOGUE_SCRIPTS) and the music under both.
+const ENDING_PARTS = {
+  saved: { lobby: 'endingLobbySaved', door: 'exitDoorSaved', music: 'endingSaved' },
+  abstracted: { lobby: 'endingLobbyAbstracted', door: 'exitDoorAbstracted', music: 'endingAbstracted' },
+};
+
+/**
+ * The end of the game for `variant` ('saved' or 'abstracted'), in two
+ * scenes (cutscenes/endingCutscene.js): the Circus Lobby just outside the
+ * maze door, where Pomni comes out to the others and they talk until
+ * Kaufmo says he's found the exit; then the exit door, a set of its own,
+ * where they leave one by one. Then the card, then the title screen.
+ * Escape skips what's left; developer cutscene skipping skips it all.
+ */
+async function playEnding(variant) {
+  sceneFade.classList.add('on');
+  overlay.classList.add('hidden'); // the dev menu, when it's jumped here from there
+  if (!skippingCutscenes()) {
+    let cast = null;
+    try {
+      cast = await loadEndingCast(variant);
+    } catch (error) {
+      console.warn('Ending cast unavailable; showing its card.', error);
+    }
+    if (cast && await playEndingLobby(variant, cast)) {
+      const token = loadToken;
+      let door = null;
+      try {
+        door = createExitDoorScene(renderer, variant, cast);
+      } catch (error) {
+        console.warn('Exit door scene unavailable; showing its card.', error);
+      }
+      if (door) {
+        await playEndingScene(door, ENDING_PARTS[variant].door);
+        door.dispose();
+      }
+      if (token !== loadToken) return;
+    }
+  }
+  const token = loadToken;
+  sceneFade.classList.add('on');
+  const done = await showLevelComplete('Level 3 Complete', ENDING_CARDS[variant], { resume: false, buttonLabel: 'Back to title' });
+  if (!done || token !== loadToken) return;
+  returnToHome();
+}
+
+/**
+ * The ending's first part, in the loaded Lobby outside the maze door.
+ * Resolves true once Kaufmo's led them off (the screen black again),
+ * false if it was skipped or the game moved on.
+ */
+async function playEndingLobby(variant, cast) {
+  const room = await selectRoom('tadc', {
+    from: 'maze',
+    onReady() { overlay.classList.add('hidden'); btnTitle.hidden = true; },
+  });
+  if (!room || room !== currentRoomInfo) return false;
+  const token = loadToken;
+  resetMoveState();
+  stage.hold(true);
+  music.setRoom(ENDING_PARTS[variant].music);
+  minimap.hide();
+  let lobby;
+  try {
+    lobby = stageLobbyEnding(room, stage, variant, cast, lobbyEndingPlan(room.mazeDoor.portal.arrival));
+  } catch (error) {
+    console.warn('Lobby ending unavailable; on to the exit door.', error);
+    return token === loadToken;
+  }
+  void fadeScreen(false, 1.6);
+  const finished = await new Promise((resolve) => {
+    const started = playRoomDialogue(ENDING_PARTS[variant].lobby, {
+      onNode: lobby.onNode,
+      onComplete: () => resolve(true),
+      onCancel: () => resolve(false),
+    });
+    if (!started) resolve(false);
+  });
+  if (token !== loadToken) return false;
+  await fadeScreen(true, 1.2);
+  if (token !== loadToken) return false;
+  lobby.detach();
+  stage.releaseCamera();
+  stage.lookWithHead(null);
+  return finished;
+}
+
+/** Renders a scene of its own (the exit door), fades it in, plays its conversation and fades back out. */
+function playEndingScene(ending, dialogueKey) {
+  const token = loadToken;
+  return new Promise((resolve) => {
+    let finished = false;
+    const stop = () => { if (!finished) { finished = true; resolve(); } };
+    runCutscene({ update: (delta) => { ending.update(delta); return finished; }, cancel: stop }, stop);
+    // A frame of the scene under the black before it fades up.
+    requestAnimationFrame(() => {
+      if (finished || token !== loadToken) return;
+      void fadeScreen(false, 1.6);
+      const close = async () => {
+        await fadeScreen(true, 1.4);
+        stop();
+      };
+      dialogueUI.play(DIALOGUE_SCRIPTS[dialogueKey].script, {
+        onNode: ending.onNode,
+        onComplete: close,
+        onCancel: close,
+      });
+    });
+  });
 }
 
 function updateSearchTimer(deltaSeconds) {
@@ -2467,7 +2641,7 @@ function roomLoadOptions(roomKey, { from, preview, openingMode }) {
     objectives, showLevelComplete, playChime: openingAudio.playChime, mazeItems,
     seed: roomKey === 'maze' ? mazeItems.ensureSeed(mazeAttemptSeed ?? devMazeSeed) : undefined,
     mazeDoor: roomKey !== 'tadc' ? undefined
-      : storyProgress.chasingJax ? 'jax' : storyProgress.mazeOpen ? 'open' : null,
+      : storyProgress.chasingJax ? 'jax' : storyProgress.mazeOpen || storyProgress.level3Complete ? 'open' : null,
     jaxHallway: roomKey === 'dorm' && storyProgress.findingJax,
     ribbitStory: {
       complete: () => storyProgress.ribbitComplete,
@@ -4303,10 +4477,7 @@ function checkTriggers(player) {
     }
     foundJax=true;
     reachedExit = true;
-    endLevel(
-      'Maze Complete!',
-      foundJax ? 'You found Jax and the exit.' : 'You reached the exit — but never found Jax.',
-    );
+    void leaveMaze(jaxOutcome());
   }
 }
 

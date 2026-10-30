@@ -211,8 +211,24 @@ actual embedded-image blob URLs after decoding, working around the r169
 GLTFLoader cleanup path. The browser regression tracks those URLs and checks
 that none remain at the end of loading.
 
-The maze remains the existing prototype. This change does not implement its
-planned memory searches, final Jax dialogue or branching ending cinematics.
+Leaving the maze (both keepsakes found, Jax's conversation finished) freezes
+Pomni, fades to black and records Level 3 as complete with its ending variant,
+`saved` or `abstracted` (`storyProgress.ending`, kept in saves). A save taken
+after that loads straight into the ending instead of the maze. `jaxOutcome()`
+in `main.js` decides the variant; until the final conversation can fail
+(KAN-67) it is always `saved`. `playEnding(variant)` plays the ending
+(`src/cutscenes/endingCutscene.js`, KAN-85, KAN-89, KAN-95) in two parts.
+First the real Circus Lobby, loaded with the maze door open: Pomni walks out
+of the portal, with Jax if he was saved, to Ribbit, Kaufmo and Ragatha
+waiting there (`endingLobby*Dialogue`), and they talk until Kaufmo says he's
+found the exit. Then a set of its own: a door at the edge of the circus with
+light pouring through it (`exitDoor*Dialogue`). Caine pops in to say goodbye
+and they leave one by one, Pomni last; the other side is never shown. Each
+node's `action` drives the cast and each speaker picks the shot. Gangle,
+Zooble and Kinger aren't in it until their models exist (KAN-90). Escape
+skips the rest; developer cutscene skipping skips it all. Then the **Level 3
+Complete** card, then the title screen. The dev menu's two **Ending**
+buttons jump straight to it.
 
 Developer cutscene skipping honours awaited actions and scores each choice once.
 Returning home or changing rooms cancels a pending completion card.
