@@ -33,7 +33,7 @@ import { ENDING_SLIDES } from './data/endingSlides.js';
 import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold, setLevelPoints, passesJaxGate, endingFor } from './state/escapeThreshold.js';
 import { createChoiceTally } from './dialogue/choiceTally.js';
 import { createStoryProgress, ENDING_VARIANTS } from './game/storyProgress.js';
-import { createSaveSlots, parseSaveFile, saveFileContents, saveFileName } from './game/saveGame.js';
+import { createSaveSlots, parseSaveFile, savedPose, saveFileContents, saveFileName } from './game/saveGame.js';
 import { createLoadingBackgrounds } from './ui/loadingBackgrounds.js';
 import { createLoadingSprites } from './ui/loadingSprites.js';
 import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.js';
@@ -2218,10 +2218,13 @@ function finishMazeHints() {
 }
 
 // --- Saving and loading -------------------------------------------------
-// Checkpoints only: the game keeps a snapshot of the story so far, taken
-// each time an objective changes and each time Pomni enters a room, never
-// mid-scene. The pause menu's Save writes that latest checkpoint to a slot
-// (game/saveGame.js), and Load restores it into its room.
+// The game keeps a snapshot of the story so far, taken each time an
+// objective changes and each time Pomni enters a room. The pause menu's Save
+// brings it up to the moment and adds exactly where she's standing
+// (checkpointHere), then writes it to a slot (game/saveGame.js), and Load
+// restores it into its room and puts her back on that spot. Paused in the
+// middle of a scene there's no spot to come back to, so Save keeps the latest
+// checkpoint from before it, and the scene plays again.
 //
 // Anything new that has to survive a reload (a level's progress, a story
 // flag) goes into takeCheckpoint() and loadGame() below, ideally as its
@@ -2258,6 +2261,50 @@ function takeCheckpoint() {
 }
 objectives.subscribe(() => takeCheckpoint());
 
+/** Pomni's just walking about: no conversation, cutscene or staged action has her. */
+function inFreePlay() {
+  return readyToPlay && !dialogueUI.isActive && !activeCutscene && !activeCinematic()?.active
+    && !openingInvitationPlaying && !stageBusy();
+}
+
+/**
+ * For Save: the checkpoint as of this moment, with Pomni's exact spot. Only
+ * here, not in takeCheckpoint, which also runs as scenes end, with her still
+ * on a staged mark (Level 1 finishes with her sitting on Ribbit's bed).
+ */
+function checkpointHere() {
+  if (!inFreePlay()) return;
+  takeCheckpoint();
+  if (checkpoint?.room !== currentRoomKey) return;
+  checkpoint.pose = {
+    x: player.position.x, y: player.position.y - PLAYER_HEIGHT, z: player.position.z,
+    yaw: cameraYaw, pomniYaw: pomni.rotation.y, pitch: cameraPitch,
+  };
+}
+
+/**
+ * Puts Pomni back where a save left her, on the floor there if she was saved
+ * mid-jump. Doors start shut on a load, so a spot in a doorway can overlap one:
+ * acceptMove always lets her walk out of that. If there's no floor there at
+ * all she stays at the room's usual arrival, where she already is.
+ */
+function restorePose({ x, y, z, yaw, pomniYaw, pitch }) {
+  if (collisionMeshes.length > 0) {
+    const arrival = player.position.clone();
+    player.position.set(x, y + PLAYER_HEIGHT, z);
+    if (!settleOnGround(player)) {
+      player.position.copy(arrival);
+      return;
+    }
+  } else {
+    // Procedural rooms (the maze) have one flat floor and no meshes to settle on.
+    player.position.set(x, floorY + PLAYER_HEIGHT, z);
+  }
+  cameraYaw = yaw;
+  pomni.rotation.y = pomniYaw;
+  cameraPitch = pitch;
+}
+
 /** Starts the story from a save, from the title screen or mid-game. */
 function loadGame(data) {
   if (!data || data.incompatible) return;
@@ -2293,6 +2340,7 @@ function loadGame(data) {
   selectRoom(data.room, {
     from: data.from ?? undefined,
     openingMode: data.room === 'pomni' ? 'settled' : undefined,
+    pose: savedPose(data),
     onReady: () => {
       overlayTitle.textContent = 'Click to Play';
       overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
@@ -2322,7 +2370,7 @@ function renderSaveSlots(note) {
   savePanelTitle.textContent = saving ? 'Save Game' : 'Load Game';
   savePanelNote.textContent = note ?? (saving
     ? (checkpoint
-      ? `Saves your last checkpoint (${checkpoint.objectiveTitle ?? ROOM_NAMES[checkpoint.room]}).`
+      ? `${checkpoint.pose && inFreePlay() ? 'Saves right where you are' : 'Saves your last checkpoint'} (${checkpoint.objectiveTitle ?? ROOM_NAMES[checkpoint.room]}).`
       : 'Nothing to save yet: the story saves from the end of the morning on.')
     : 'Pick a save to continue from.');
   btnSaveFile.hidden = !saving;
@@ -2415,6 +2463,7 @@ function openSavePanel(mode, { fromTitle = false } = {}) {
 document.getElementById('btn-save').addEventListener('click', (event) => {
   event.stopPropagation();
   if (currentRoomKey === 'maze' && checkpoint?.room === 'maze') checkpoint.mazeHints = mazeHints.snapshot();
+  checkpointHere();
   openSavePanel('save');
 });
 document.getElementById('btn-pause-load').addEventListener('click', (event) => {
@@ -3093,7 +3142,7 @@ function roomLoadOptions(roomKey, { from, preview, openingMode }) {
   };
 }
 
-function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
+function selectRoom(roomKey, { onReady, from, openingMode, preview, pose } = {}) {
   const loadRoom = ROOM_LOADERS[roomKey];
   if (!loadRoom) return;
   const myToken = leaveCurrentRoom();
@@ -3142,10 +3191,13 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
       // same loading screen, for walking out into.
       const settle = HALL_DOOR_ROOMS.has(roomKey) && ready ? () => readyHallBehindDoor(myToken, ready) : ready;
       applyLoadedRoom(result, settle, roomKey, openingMode === 'play');
+      if (pose) restorePose(pose);
       if (roomKey === 'maze') storyProgress.enteredMaze();
       takeCheckpoint();
       if (roomKey === 'dorm') armCaineArrival();
-      if (preLevel1Session && roomKey === 'dorm' && from === 'ribbit' && storyProgress.hallwayPending) {
+      // A save that says where she was in the hall isn't her arriving from
+      // Ribbit's room: this would stage her back at Ribbit's door.
+      if (!pose && preLevel1Session && roomKey === 'dorm' && from === 'ribbit' && storyProgress.hallwayPending) {
         playKaufmoHallway(myToken);
       }
       return result;
