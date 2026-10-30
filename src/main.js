@@ -839,7 +839,7 @@ function showRoomPicker() {
  * hatch below, which can fire before any room's ever been picked).
  */
 function returnToHome({ toRoomPicker = false } = {}) {
-  sceneFade.classList.remove('on');
+  sceneFade.classList.remove('on', 'white');
   // Only restart the theme after the story faded it out; backing out of the
   // menus (Options -> Room previews -> Title screen) keeps it playing.
   if (openingAudio.mainThemeVolume < 0.5) openingAudio.stopMainTheme();
@@ -2217,6 +2217,43 @@ function jaxOutcome() {
   return mazeItems.jaxOutcome === 'abstracts' ? 'abstracted' : 'saved';
 }
 
+/**
+ * Dorsa's final talk with Jax, acted out in the maze: the static on him
+ * follows each line's `distress`, and after round 5 the Jax gate sends it
+ * to Ending A (he steadies) or Ending B (he unravels, the clearing flashes
+ * white, and he's gone). Merged into the encounter's own handlers.
+ */
+function jaxFinalScene(room, handlers) {
+  const { jaxApi, jaxGlitch } = room;
+  const token = loadToken;
+  const actions = {
+    jaxSteadies() { jaxGlitch?.setLevel(0.12); },
+    jaxUnravels() {
+      jaxGlitch?.setLevel(1);
+      jaxGlitch?.burst();
+      jaxApi.glitch?.();
+      return new Promise(resolve => setTimeout(resolve, 1600));
+    },
+    async whiteOut() {
+      sceneFade.classList.add('white');
+      await fadeScreen(true, 0.6);
+      if (token !== loadToken) return;
+      jaxApi.setShown(false);
+      await fadeScreen(false, 1.4);
+      sceneFade.classList.remove('white');
+    },
+  };
+  return {
+    distressFor: (node) => node.distress ?? 0,
+    nextFor: (node) => (node.fateCheck ? (passesJaxGate() ? 'jaxWonOver' : 'jaxAbstracts') : undefined),
+    onNode(node) {
+      handlers.onNode?.(node);
+      if (node.distress !== undefined && jaxGlitch) jaxGlitch.setLevel(Math.max(0.12, node.distress / 3));
+      return actions[node.action]?.();
+    },
+  };
+}
+
 /** Fades the screen to black (true) or back (false); resolves once it's there. */
 function fadeScreen(toBlack, seconds = 1.2) {
   sceneFade.style.transitionDuration = `${seconds}s`;
@@ -2333,7 +2370,7 @@ async function playEndingLobby(variant, cast) {
   return finished;
 }
 
-/** Renders a scene of its own (the exit door), fades it in, plays its conversation and fades back out. */
+/** Renders a scene of its own (the red door), fades it in from black, plays its conversation and fades out to white. */
 function playEndingScene(ending, dialogueKey) {
   const token = loadToken;
   return new Promise((resolve) => {
@@ -2344,8 +2381,10 @@ function playEndingScene(ending, dialogueKey) {
     requestAnimationFrame(() => {
       if (finished || token !== loadToken) return;
       void fadeScreen(false, 1.6);
+      // The script's last direction: cut to white.
       const close = async () => {
-        await fadeScreen(true, 1.4);
+        sceneFade.classList.add('white');
+        await fadeScreen(true, 2);
         stop();
       };
       dialogueUI.play(DIALOGUE_SCRIPTS[dialogueKey].script, {
@@ -2776,7 +2815,8 @@ function applyLoadedRoom({
     const choices=createChoiceTally(level3JaxFinalDialogue);
     mazeEncounter=createMazeEncounter({items:mazeItems,
       playDialogue:handlers=>playRoomDialogue('level3JaxFinal',{...handlers,
-        onChoice:option=>{if(choices.record(option)!==null)mazeItems.setChoicePoints(choices.points);}}),
+        onChoice:option=>{if(choices.record(option)!==null)mazeItems.setChoicePoints(choices.points);},
+        ...jaxFinalScene(mazeRoom,handlers)}),
       outcome:()=>passesJaxGate()?'stays':'abstracts',
       // Talked through, he stays turned to her (how he is depends on the
       // outcome); left, he's back to his wall.
@@ -2876,6 +2916,7 @@ function applyLoadedRoom({
       mazeSearch.start();
     }
     if(mazeItems.jaxComplete)mazeSearch.tick(0,{playable:true,atJax:true});
+    if(mazeItems.jaxOutcome==='abstracts')currentRoomInfo.jaxApi?.setShown(false); // gone since Ending B
     foundJax = mazeSearch.status === 'reached';
   }
   overlay.classList.remove('loading');

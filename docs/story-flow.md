@@ -216,16 +216,25 @@ Pomni, fades to black and records Level 3 as complete with its ending variant,
 `saved` or `abstracted` (`storyProgress.ending`, kept in saves). A save taken
 after that loads straight into the ending instead of the maze. `jaxOutcome()`
 in `main.js` decides the variant; until the final conversation can fail
-(KAN-67) it is always `saved`. `playEnding(variant)` plays the ending
-(`src/cutscenes/endingCutscene.js`, KAN-85, KAN-89, KAN-95) in two parts.
-First the real Circus Lobby, loaded with the maze door open: Pomni walks out
-of the portal, with Jax if he was saved, to Ribbit, Kaufmo and Ragatha
-waiting there (`endingLobby*Dialogue`), and they talk until Kaufmo says he's
-found the exit. Then a set of its own: a door at the edge of the circus with
-light pouring through it (`exitDoor*Dialogue`). Caine pops in to say goodbye
-and they leave one by one, Pomni last; the other side is never shown. Each
-node's `action` drives the cast and each speaker picks the shot. Gangle,
-Zooble and Kinger aren't in it until their models exist (KAN-90). Escape
+(KAN-67) it is always `saved`. Jax's final maze conversation (`level3JaxFinalDialogue`) is Dorsa's
+five-round script: each round has one answer that reaches him
+(`points: 1`), scored into Level 3 with the keepsakes. After round 5 the Jax
+gate (`passesJaxGate`) sends it to Ending A (he steadies) or Ending B (he
+unravels, the clearing flashes white and he's gone); `main.js`
+`jaxFinalScene` acts it out.
+
+`playEnding(variant)` plays Dorsa's ending (`src/cutscenes/endingCutscene.js`)
+in two parts. First the maze entrance: the real Circus Lobby, loaded with the
+maze door open. Pomni walks out of the portal, with Jax if he was won over,
+to everyone waiting there, Caine a little apart (`endingLobby*Dialogue`).
+They talk, then Kaufmo leads them off at a run across the Lobby (with a short
+montage in the saved version). Then a set of its own: a quiet corridor at
+the far edge of the circus with a single red door at its end
+(`exitDoor*Dialogue`). They go through one by one, Jax last before Pomni if
+he's there; then Pomni and Caine say goodbye, Caine bows (his hat is part of
+his head mesh, so he can't take it off), Pomni steps through, the door shuts
+behind her, and it cuts to white. Each scene keeps one steady wide camera on
+everyone. Gangle, Zooble and Kinger are procedural rigs (KAN-90). Escape
 skips the rest; developer cutscene skipping skips it all. Then the **Level 3
 Complete** card, then the title screen. The dev menu's two **Ending**
 buttons jump straight to it.

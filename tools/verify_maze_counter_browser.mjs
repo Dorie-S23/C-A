@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { MAZE_SEARCH_SECONDS as FULL } from '../src/state/mazeItems.js';
+import { level3JaxFinalDialogue } from '../src/data/dialogues.js';
 
 const output = path.resolve('artifacts/maze-counter');
 await fs.mkdir(output, { recursive: true });
@@ -64,6 +65,8 @@ await page.route('**/src/main.js*', async route => {
         dialogueUI.play([{ type: 'line', speaker: 'pomni', side: 'left', text: 'Checking the maze items.' }]);
       },
       cancelDialogue: () => dialogueUI.cancel(),
+      // Calling out to him (E) once he's cornered, as mazeJaxChase.js does.
+      talkToJax: () => mazeEncounter?.update({ inRange: true, visible: true, eligible: true, requested: true }),
       cutscene(active) {
         if (active) runCutscene({ update: () => false }, () => {});
         else cancelCutscene();
@@ -140,7 +143,7 @@ await page.route('**/src/main.js*', async route => {
           spawn: currentRoomInfo ? [currentRoomInfo.spawn.x, currentRoomInfo.spawn.z] : null,
           hint: hint.textContent, hintVisible: hint.classList.contains('visible'),
           fadeOn: document.getElementById('scene-fade').classList.contains('on'),
-          cardSubtitle: levelCompleteSubtitle.textContent, ending: storyProgress.ending };
+          cardSubtitle: levelCompleteSubtitle.textContent, ending: storyProgress.ending, jaxOutcome: mazeItems.jaxOutcome };
       },
     };
   ` });
@@ -508,13 +511,27 @@ try {
   await check('Leaving the maze after Jax fades out, plays the ending scene, records it, and a save resumes at it', async () => {
     await call('startStory'); await call('lock');
     await call('pickup'); await call('pickup');
+    await call('cancelDialogue'); // Pomni's pickup line
     await call('placeAt', 'jax'); await call('tick', 0);
+    await call('talkToJax');
     await page.waitForFunction(() => window.__mazeCounterReview.state().dialogueActive);
-    for (let i = 0; i < 60 && (await state()).dialogueActive; i++) {
-      await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true, cancelable: true })));
-      await page.waitForTimeout(40);
+    // Jax's five rounds: the answer that reaches him each time (its number key).
+    const caring = level3JaxFinalDialogue.filter(n => n.type === 'choice')
+      .map(choice => String(choice.options.findIndex(o => o.points === 1) + 1));
+    for (let i = 0; i < 300 && (await state()).dialogueActive; i++) {
+      const choosing = await page.evaluate(() => document.querySelectorAll('#dialogue-options .dialogue-option').length > 0
+        && !document.getElementById('dialogue-options').hidden);
+      const key = choosing ? caring.shift() : ' ';
+      await page.evaluate(k => window.dispatchEvent(new KeyboardEvent('keydown', { code: k === ' ' ? 'Space' : `Digit${k}`, key: k, bubbles: true, cancelable: true })), key);
+      await page.waitForTimeout(60);
     }
-    assert.equal((await state()).jaxComplete, true);
+    assert.equal(caring.length, 0, 'Every round was answered');
+    const talked = await state();
+    assert.equal(talked.jaxComplete, true);
+    assert.equal(talked.escape.level3, 7, 'Both keepsakes and all five answers that reached him count');
+    // This run has no Level 1 or 2 points, so the Jax gate decides he
+    // abstracts; whichever it decided, the ending has to follow it.
+    const variant = talked.jaxOutcome === 'stays' ? 'saved' : 'abstracted';
     await call('placeAt', 'exit'); await call('triggers');
     const leaving = await state();
     assert.equal(leaving.fadeOn, true, 'The maze starts fading to black at the exit');
@@ -529,11 +546,11 @@ try {
     await skipEnding();
     const ending = await state();
     assert.equal(ending.cardTitle, 'Level 3 Complete');
-    assert.match(ending.cardSubtitle, /Pomni and Jax step out of the maze together/);
-    assert.equal(ending.ending, 'saved');
+    assert.match(ending.cardSubtitle, variant === 'saved' ? /Pomni and Jax step out of the maze together/ : /Pomni steps out of the maze alone/);
+    assert.equal(ending.ending, variant);
     assert.equal(await page.locator('#btn-level-complete-continue').textContent(), 'Back to title');
     const saved = await call('checkpoint');
-    assert.equal(saved.story.ending, 'saved', 'The checkpoint after the exit carries the ending variant');
+    assert.equal(saved.story.ending, variant, 'The checkpoint after the exit carries the ending variant');
     await page.waitForTimeout(500); // the card's pop-in
     assert.equal(await page.evaluate(() => {
       const box = document.getElementById('btn-level-complete-continue').getBoundingClientRect();
@@ -552,7 +569,7 @@ try {
     const resumed = await state();
     assert.equal(resumed.room, 'tadc', 'A save from after the maze resumes at the ending, in the Lobby');
     assert.equal(resumed.cardVisible, true); assert.equal(resumed.cardTitle, 'Level 3 Complete');
-    assert.equal(resumed.ending, 'saved');
+    assert.equal(resumed.ending, variant);
     await page.locator('#btn-level-complete-continue').click();
     assert.equal((await state()).titleActive, true);
   });

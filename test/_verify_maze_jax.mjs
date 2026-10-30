@@ -182,12 +182,14 @@ test('his glitch fragments: the bowling set as his first minute runs out, the ho
 test('the Jax gate: Levels 1 to 3 reaching 75% of what they could earn keeps him from abstracting', async () => {
   const gate = await import('../src/state/escapeThreshold.js');
   gate.resetEscapeThreshold();
-  assert.equal(gate.LEVEL_MAX_POINTS.level3, 2 + 0, 'two keepsakes (and the talk’s choices: none in the provisional one)');
-  assert.equal(gate.JAX_MAX, 11); assert.equal(gate.JAX_PASS_MARK, Math.ceil(11 * .75));
+  assert.equal(gate.LEVEL_MAX_POINTS.level3, 2 + 5, 'two keepsakes and the talk’s five rounds');
+  assert.equal(gate.JAX_MAX, 16); assert.equal(gate.JAX_PASS_MARK, Math.ceil(16 * .75));
   gate.setLevelPoints('level1', 4); gate.setLevelPoints('level2', 4);
-  assert.equal(gate.passesJaxGate(), false, '8 of 11');
-  gate.setLevelPoints('level3', 1);
-  assert.equal(gate.passesJaxGate(), true, '9 of 11');
+  assert.equal(gate.passesJaxGate(), false, '8 of 16');
+  gate.setLevelPoints('level3', 3);
+  assert.equal(gate.passesJaxGate(), false, '11 of 16');
+  gate.setLevelPoints('level3', 4);
+  assert.equal(gate.passesJaxGate(), true, '12 of 16');
   assert.equal(gate.getEscapeTotal(), 8, 'the escape gate is still Levels 1 and 2 only');
   gate.resetEscapeThreshold();
 });

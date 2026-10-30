@@ -36,8 +36,8 @@ test('E-press encounter needs a request, clear sight and eligible gameplay (not 
  for(const gate of ['inRange','visible','eligible','requested'])assert.equal(encounter.update({...press,[gate]:false}),false);
  assert.equal(encounter.update({inRange:true,visible:true,eligible:true}),false,'Never starts on its own');
  assert.equal(encounter.update(press),true,'No keepsakes needed');assert.equal(items.jaxComplete,false);assert.equal(encounter.update(press),false);assert.equal(starts,1);
- callbacks.onNode({id:'jaxFinal3'});callbacks.onCancel();assert.equal(items.jaxComplete,false);
- assert.equal(encounter.update(press),true,'Pressing E again resumes, without walking away first');assert.equal(callbacks.startAt,'jaxFinal3');
+ callbacks.onNode({id:'jaxR3'});callbacks.onCancel();assert.equal(items.jaxComplete,false);
+ assert.equal(encounter.update(press),true,'Pressing E again resumes, without walking away first');assert.equal(callbacks.startAt,'jaxR3');
  outcome='stays';callbacks.onComplete();callbacks.onComplete();assert.equal(items.jaxComplete,true);assert.equal(items.jaxOutcome,'stays');assert.equal(encounter.update(press),false);
  assert.deepEqual(released,[false,true],'Released knowing whether the talk was finished');
 });
@@ -53,10 +53,16 @@ test('barrier visibility and exact matching collision boxes unlock together with
  gate.group.updateMatrixWorld(true);gate.group.children.slice(0,4).forEach((mesh,i)=>assert.ok(new THREE.Box3().setFromObject(mesh).equals(gate.colliders[i])));
  items.collect('bowling-ball');gate.sync();assert.equal(gate.locked,true);items.collect('hot-chocolate-mug');gate.sync();assert.equal(gate.group.visible,false);assert.deepEqual(colliders,[wall]);gate.sync();assert.deepEqual(colliders,[wall]);
 });
-test('provisional final dialogue is separate, linear and ends only after its sixth line',()=>{
- const engine=createDialogueEngine(level3JaxFinalDialogue);let count=0;
- while(!engine.done){count++;engine.advance();if(count>8)throw Error('dialogue does not terminate');}
- assert.equal(count,6);
+test('final dialogue: five scored rounds, one answer each that reaches him, then Ending A or B',()=>{
+ const choices=level3JaxFinalDialogue.filter(n=>n.type==='choice');
+ assert.equal(choices.length,5);
+ for(const choice of choices)assert.equal(choice.options.filter(o=>o.points===1).length,1,choice.id);
+ assert.equal(level3JaxFinalDialogue.filter(n=>n.fateCheck).length,4,'every round-5 reply leads on to an ending');
+ for(const start of ['jaxWonOver','jaxAbstracts']){
+  const engine=createDialogueEngine(level3JaxFinalDialogue,{startAt:start});let count=0;
+  while(!engine.done){count++;engine.advance();if(count>20)throw Error(`${start} does not terminate`);}
+  assert.ok(count>=5,start);
+ }
 });
 
 test('boundary line resources are released once by normal mesh teardown',()=>{
