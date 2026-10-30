@@ -7,7 +7,7 @@ import { renderMazeHintMap, renderMazeHintLegend } from './mazeHintMap.js';
  * here: onTrail is told, and the trail runs once she's back in the maze.
  */
 export function createMazeHints({button,reminder,panel,onOpen,onClose,onChange,onTrail=()=>{},nextPortrait=()=>null,hasCollected=()=>false,getPlayerPosition=()=>null,getPlayerFacing=()=>0,getJaxPosition=()=>null}) {
-  const progress=createMazeHintProgress({hasCollected});
+  const progress=createMazeHintProgress();
   const text=panel.querySelector('[data-hint-text]'),next=panel.querySelector('[data-next-hint]');
   const portrait=panel.querySelector('[data-caine-portrait]');
   const map=panel.querySelector('[data-maze-map]'),drawing=panel.querySelector('[data-map-drawing]'),legend=panel.querySelector('[data-map-legend]');
@@ -18,7 +18,7 @@ export function createMazeHints({button,reminder,panel,onOpen,onClose,onChange,o
   next.after(view);
   const missing=()=>MAZE_HINT_OBJECTS.filter(item=>!hasCollected(item.id)).map(item=>item.id);
   function renderMap(kind) {
-    const data=renderMazeHintMap(drawing,room,{mode:kind==='jax'?'jax':'objects',missingItems:missing(),playerPosition:getPlayerPosition(),playerFacing:getPlayerFacing(),jaxPosition:getJaxPosition()});
+    const data=renderMazeHintMap(drawing,room,{mode:kind==='jax'?'jax':kind==='map'?'map':'objects',missingItems:missing(),playerPosition:getPlayerPosition(),playerFacing:getPlayerFacing(),jaxPosition:getJaxPosition()});
     renderMazeHintLegend(legend,data);
   }
   function render() {
@@ -30,8 +30,8 @@ export function createMazeHints({button,reminder,panel,onOpen,onClose,onChange,o
     // A map she's already unlocked, to look at again.
     view.hidden=Boolean(currentHint)||previewMap||Boolean(viewing)||!progress.map;
     text.hidden=!currentHint&&!previewMap&&!viewing&&Boolean(planned);
-    text.textContent=currentHint?.text ?? (viewing==='jax'?'P marks where you are. Look for J to find Jax.'
-      :viewing||previewMap?'P marks where you are. The other markers show the objects you still need.':'You have used all the hints for this search.');
+    text.textContent=currentHint?.text ?? (viewing?progress.mapText
+      :previewMap?'P marks where you are. The other markers show the objects you still need.':'You have used all the hints for this search.');
     portrait.hidden=!currentHint;
     map.hidden=!showMap;panel.classList.toggle('maze-hints--map',Boolean(showMap));
     panel.classList.toggle('maze-hints--revealed',Boolean(currentHint));

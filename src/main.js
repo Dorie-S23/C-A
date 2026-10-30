@@ -2336,10 +2336,16 @@ function jaxFinalScene(room, handlers) {
 
 /** Runs a revealed trail hint once she's back in play, then clears it away. */
 function updateMazeTrail(deltaSeconds) {
-  if (mazeTrailPending && currentRoomKey === 'maze' && currentRoomInfo?.routeToJax && mazeGameplayAvailable(gameplayHUDContext())) {
-    mazeTrailPending = false;
-    mazeTrail?.dispose();
-    mazeTrail = playMazeTrail(currentRoomInfo.group, currentRoomInfo.routeToJax(player.position));
+  // To where he is: while he's out of sight between hiding places, it waits for him.
+  const room = currentRoomInfo;
+  if (mazeTrailPending && currentRoomKey === 'maze' && room?.routeToJax && mazeChase?.atHidingPlace
+    && mazeGameplayAvailable(gameplayHUDContext())) {
+    const route = room.routeToJax(player.position);
+    if (route) {
+      mazeTrailPending = false;
+      mazeTrail?.dispose();
+      mazeTrail = playMazeTrail(room.group, route);
+    }
   }
   if (mazeTrail && !mazeTrail.update(deltaSeconds)) { mazeTrail.dispose(); mazeTrail = null; }
 }

@@ -11,6 +11,30 @@ const FADE_FROM = 2.3;     // then it fades out by TRAIL_SECONDS
 const HEIGHT = 0.18;       // metres off the floor
 const RADIUS = 0.1;        // its solid core
 const HALO_RADIUS = 0.3;   // and the soft glow round it (so it reads on the white tiles too)
+const CORNER = 0.9;        // metres: how tightly it turns a corner (well inside a 4.3 m corridor)
+
+/**
+ * Straight runs between the points (down the middle of each corridor) with
+ * a short rounded turn at each corner: unlike a spline through them, it
+ * can't swing wide into a wall.
+ */
+function corridorPath(points) {
+  const path = new THREE.CurvePath();
+  let from = points[0];
+  for (let i = 1; i < points.length; i++) {
+    const corner = points[i], next = points[i + 1];
+    if (!next) { path.add(new THREE.LineCurve3(from, corner)); break; }
+    const into = corner.clone().sub(points[i - 1]), out = next.clone().sub(corner);
+    const radius = Math.min(CORNER, into.length() / 2, out.length() / 2);
+    into.normalize(); out.normalize();
+    if (into.dot(out) > 0.999 || radius < 0.05) continue; // straight on: no corner here
+    const enter = corner.clone().addScaledVector(into, -radius), leave = corner.clone().addScaledVector(out, radius);
+    if (enter.distanceTo(from) > 1e-3) path.add(new THREE.LineCurve3(from, enter));
+    path.add(new THREE.QuadraticBezierCurve3(enter, corner, leave));
+    from = leave;
+  }
+  return path;
+}
 
 const vertexShader = /* glsl */ `
   varying float vAlong;
@@ -47,7 +71,7 @@ export function playMazeTrail(parent, points, { color = 0xffb320 } = {}) {
   const path = points.map(point => new THREE.Vector3(point.x, HEIGHT, point.z))
     .filter((point, i, all) => i === 0 || point.distanceTo(all[i - 1]) > 0.05);
   if (path.length < 2) return { update: () => false, dispose() {} };
-  const curve = new THREE.CatmullRomCurve3(path, false, 'centripetal', 0.2);
+  const curve = corridorPath(path);
   const length = curve.getLength();
   const segments = Math.max(24, Math.ceil(length * 6));
   // Shared by core and halo, so both run and fade together.

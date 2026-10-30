@@ -183,20 +183,35 @@ test('the Jax gate: Levels 1 to 3 reaching 75% of what they could earn keeps him
   gate.resetEscapeThreshold();
 });
 
-test('a trail hint runs through the corridors from her to Jax and is gone after three seconds', async () => {
+test('a trail hint runs through the corridors from her to Jax, never through a wall, and is gone after three seconds', async () => {
   const { playMazeTrail, TRAIL_SECONDS } = await import('../src/effects/mazeTrail.js');
-  const room = await loadMazeRoom(null, { seed: 42, mazeItems: createMazeItems() });
-  const her = new THREE.Vector3(...room.spawn.toArray());
-  const route = room.routeToJax(her);
-  assert.ok(route[0].distanceTo(her.clone().setY(0)) < 1e-6, 'from her');
-  assert.ok(route.at(-1).distanceTo(room.hideouts[room.jaxStop].spot) < 1e-6, 'to where he is (or will turn up)');
-  for (let i = 1; i < route.length - 1; i++) {
-    const from = room.mazePlacement.cellAt(route[i]), to = room.mazePlacement.cellAt(route[i + 1]);
-    if (i < route.length - 2) assert.equal(Math.abs(from.r - to.r) + Math.abs(from.c - to.c), 1, 'cell to neighbouring cell, never through a wall');
+  for (const seed of [1, 42, 1234]) {
+    const room = await loadMazeRoom(null, { seed, mazeItems: createMazeItems() });
+    const { jax } = room.jaxApi;
+    for (const row of room.maze.cells) for (const cell of row) {
+      if ((cell.r * 7 + cell.c) % 5) continue;
+      const her = new THREE.Vector3((cell.c - 6) * 4.5 + 1.3, 1.6, (cell.r - 6) * 4.5 - 1.1); // off-centre in her corridor
+      const route = room.routeToJax(her);
+      assert.ok(route[0].distanceTo(her.clone().setY(0)) < 1e-6, 'from her');
+      assert.ok(route.at(-1).distanceTo(jax.position.clone().setY(0)) < 1e-6, 'to where he is');
+      const trail = playMazeTrail(room.group, route);
+      const mesh = room.group.getObjectByName('MazeTrailHint');
+      // Along the core, and out to the edge of its glow either side: never into a wall.
+      const curve = mesh.geometry.parameters.path, length = curve.getLength();
+      for (let i = 0; i <= Math.ceil(length * 6); i++) {
+        const u = i / Math.ceil(length * 6), at = curve.getPointAt(u), along = curve.getTangentAt(u);
+        const across = new THREE.Vector3(-along.z, 0, along.x).normalize();
+        for (const offset of [0, .3, -.3]) {
+          const probe = at.clone().addScaledVector(across, offset);
+          assert.ok(!room.colliders.some(box => box.containsPoint(probe)), `seed ${seed}: trail from cell ${cell.r},${cell.c} goes into a wall`);
+        }
+      }
+      trail.dispose();
+    }
   }
-  const trail = playMazeTrail(room.group, route);
+  const room = await loadMazeRoom(null, { seed: 42, mazeItems: createMazeItems() });
+  const trail = playMazeTrail(room.group, room.routeToJax(new THREE.Vector3(...room.spawn.toArray())));
   const mesh = room.group.getObjectByName('MazeTrailHint');
-  assert.ok(mesh, 'laid in the maze');
   let alive = true, t = 0, heads = [];
   while (alive && t < 10) { alive = trail.update(1 / 30); t += 1 / 30; heads.push(mesh.material.uniforms.uHead.value); }
   assert.ok(Math.abs(t - TRAIL_SECONDS) < .05 && TRAIL_SECONDS === 3, `over in ${t.toFixed(2)} s`);
