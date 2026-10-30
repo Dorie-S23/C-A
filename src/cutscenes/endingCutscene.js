@@ -10,8 +10,12 @@ import { loadGangle } from '../characters/gangle.js';
 import { loadZooble } from '../characters/zooble.js';
 import { createCharacterPerformance } from '../cinematics/characterPerformance.js';
 
+// NOT PLAYED: the game's ending now runs over slides (ui/endingSlides.js, see
+// playEnding in main.js). This 3D staging is kept, and still checked by
+// test/_verify_ending_cast.mjs, in case the team wants it back.
+//
 // The ending (Dorsa's "End of game script"), in two parts. main.js
-// (playEnding) runs them in turn, playing a conversation over each
+// (playEnding) ran them in turn, playing a conversation over each
 // (endingLobby*Dialogue, then exitDoor*Dialogue) and feeding its nodes to
 // onNode, whose `action`s these act out.
 //

@@ -1593,7 +1593,8 @@
                 margin: -0.2em 0 0 0.5em; padding-left: 1em; border-left: 2px solid rgba(255, 210, 122, 0.55); }
             #dev-options[hidden] { display: none; }
             #title-options input[type="range"] { accent-color: #ffd27a; }
-            #title-options #caine-memory-note { color: #d9cde6; opacity: 1; font-size: 0.82rem; line-height: 1.4; }
+            #title-options #caine-memory-note,
+            #title-options #reset-progress-note { color: #d9cde6; opacity: 1; font-size: 0.82rem; line-height: 1.4; }
             #title-options .title-panel-box button,
             #level-select .title-panel-box button,
             #controls-card button {
@@ -2055,6 +2056,60 @@
                 #intro-story .intro-caption { font-size: 1em; bottom: 2.6em; }
             }
 
+            /* The ending's slides (src/ui/endingSlides.js): above the HUD,
+               below #scene-fade (11) and #dialogue (15), which play over them. */
+            #ending-slides {
+                position: fixed;
+                inset: 0;
+                z-index: 9;
+                background: #000;
+                overflow: hidden;
+                cursor: pointer;
+            }
+            #ending-slides[hidden] { display: none; }
+            #ending-slides .ending-image {
+                position: absolute;
+                inset: 0;
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                opacity: 0;
+                transition: opacity 0.9s ease;
+            }
+            #ending-slides .ending-image.ending-shown { opacity: 1; }
+            #ending-slides .ending-drift { animation: ending-drift 40s ease-out forwards; }
+            @keyframes ending-drift {
+                from { transform: scale(1.07); }
+                to { transform: scale(1); }
+            }
+            /* The same screen the intro's panels are on. */
+            #ending-slides::after {
+                content: '';
+                position: absolute;
+                inset: 0;
+                pointer-events: none;
+                background:
+                    repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.12) 0 1px, transparent 1px 3px),
+                    radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.6));
+            }
+            #ending-slides .ending-skip {
+                position: absolute;
+                right: 24px;
+                top: 24px;
+                z-index: 1;
+                padding: 12px 20px;
+                color: white;
+                background: #242036dd;
+                border: 1px solid #c6bfda;
+                border-radius: 6px;
+                cursor: pointer;
+                font-family: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+                font-size: inherit;
+            }
+            @media (prefers-reduced-motion: reduce) {
+                #ending-slides .ending-drift { animation: none; }
+            }
+
         </style>
     </head>
     <body>
@@ -2199,6 +2254,8 @@
                 </div>
                 <button id="btn-new-game">Select Level</button>
                 <button id="btn-load-game">Load Game</button>
+                <p id="reset-progress-note">Erases every save slot and unlocked level in this browser. Can&rsquo;t be undone.</p>
+                <button id="btn-reset-progress" type="button">Reset Progress</button>
                 <button id="btn-replay-intro">&#9654; Replay intro</button>
                 <button id="btn-options-credits">Credits</button>
                 <button id="btn-options-controls">Controls</button>
@@ -2275,6 +2332,11 @@
                 <span class="intro-hint">Space / click to continue · Esc to skip</span>
             </div>
             <button class="intro-skip" hidden>Skip story &rarr;</button>
+        </div>
+        <div id="ending-slides" hidden>
+            <img class="ending-image" alt="" />
+            <img class="ending-image" alt="" />
+            <button class="ending-skip">Skip ending &rarr;</button>
         </div>
         <aside id="tutorial-hud" role="status" aria-live="polite" aria-atomic="true" hidden>
             <img data-tutorial-portrait alt="Caine" />
@@ -2533,6 +2595,13 @@
                             </span>
                             <span class="credit-tags">
                                 <a class="tag tag-cc" href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>
+                            </span>
+                        </li>
+                        <li class="credit credits-rise">
+                            <span class="credit-what">Ending slides</span>
+                            <span class="credit-who">
+                                AI-generated with
+                                <a href="https://gemini.google.com/" target="_blank" rel="noopener">Gemini</a>
                             </span>
                         </li>
                     </ul>

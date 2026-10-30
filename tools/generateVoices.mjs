@@ -51,6 +51,9 @@ const CAST = {
     kaufmo: { voice: 'Callum', id: 'N2lVS1w4EtoT3dr4eOWO', speed: 1.08, stability: 0.3 }, // jittery clown
     ribbit: { voice: 'Lily', id: 'pFZP5JQG7iQjIQuC4Bku', speed: 0.92, stability: 0.55 },  // withdrawn
     jax: { voice: 'Chris', id: 'iP95p4xoKVk53GoZ742B', speed: 1, stability: 0.35 },       // sarcastic, cutting
+    gangle: { voice: 'Matilda', id: 'XrExE9yKIg1WjnnlVkGX', speed: 0.95, stability: 0.45 }, // timid, soft
+    zooble: { voice: 'River', id: 'SAz9YHcvj6GT2YYXdXww', speed: 0.98, stability: 0.55 },  // dry, unimpressed
+    kinger: { voice: 'Bill', id: 'pqHfZKP75CvOlQylNhV4', speed: 0.9, stability: 0.4 },     // old, frail, wandering
     narrator: { voice: 'George', id: 'JBFqnCBsd6RMkjVDRZzb', speed: 0.95, stability: 0.6 }, // the intro story: calm storyteller
   },
   edge: {
@@ -60,6 +63,9 @@ const CAST = {
     kaufmo: { voice: 'en-US-EricNeural', pitch: 12, rate: 10 },
     ribbit: { voice: 'en-CA-ClaraNeural', pitch: 2, rate: -8 },
     jax: { voice: 'en-US-AndrewNeural', pitch: -4, rate: -2 },
+    gangle: { voice: 'en-GB-SoniaNeural', pitch: 2, rate: -6 },
+    zooble: { voice: 'en-US-AriaNeural', pitch: -6, rate: -2 },
+    kinger: { voice: 'en-US-ChristopherNeural', pitch: -6, rate: -10 },
     narrator: { voice: 'en-GB-ThomasNeural', pitch: -2, rate: -6 },
   },
 };
