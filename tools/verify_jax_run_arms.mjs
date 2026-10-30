@@ -21,7 +21,6 @@ GLTFLoader.prototype.load = function (url, onLoad, _progress, onError) {
     new GLTFLoader().parseAsync(JSON.stringify(data), '').then(onLoad, onError);
   } catch (error) { onError(error); }
 };
-
 function findBone(root, prefix) {
   let found = null;
   root.traverse((child) => {
@@ -33,6 +32,7 @@ function findBone(root, prefix) {
 }
 
 const api = await loadJax();
+assert.equal(api.hasGaitAnimations(), true, 'both retargeted Pomni gait clips load onto Jax');
 const upperArmL = findBone(api.jax, 'upperarml');
 const handL = findBone(api.jax, 'handl');
 assert.ok(upperArmL && handL, 'expected to find the left shoulder and hand bones');
@@ -56,3 +56,10 @@ assert.ok(maxHandHeightAboveShoulder < -0.2,
   `hand got to ${maxHandHeightAboveShoulder.toFixed(3)} relative to the shoulder at some point in the cycle — ` +
   `still reads as raised/T-pose, not hanging at his side`);
 console.log(`PASS left hand stays at least ${(-maxHandHeightAboveShoulder).toFixed(2)} below the shoulder throughout the run cycle (never T-pose)`);
+
+const lowerLegL = findBone(api.jax, 'lowerlegl');
+const walkStart = lowerLegL.quaternion.clone();
+api.playPassBy(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -4), 2, { style: 'walk' });
+for (let i = 0; i < 20; i++) api.update(1 / 60);
+assert.ok(lowerLegL.quaternion.angleTo(walkStart) > 0.05, 'walk style plays Jax\'s retargeted walk clip');
+console.log('PASS walk style animates Jax with the retargeted walk clip');

@@ -141,10 +141,12 @@ check('Dorm lighting, bedroom door, automatic-Caine flow and lobby portal are pr
   assert.equal(typeof dorm.update, 'function');
   assert.equal(dorm.portals[0].to, 'tadc');
 });
-const lobby = await loadTadcRoom(undefined, { from: 'dorm' });
-check('Lobby keeps its existing lighting and return portal', () => {
+const lobby = await loadTadcRoom(undefined, { from: 'dorm', mazeDoor: 'open' });
+check('Lobby keeps the Dorm Hall curtain and uses a different door for the maze', () => {
   assert.equal(lobby.lighting, undefined);
   assert.equal(lobby.portals[0].to, 'dorm');
+  assert.ok(lobby.portals.some((portal) => portal.to === 'maze'));
+  assert.notEqual(lobby.mazeDoor.frameName, 'Plane119', 'the curtain-side north-end door stays ordinary');
 });
 bedroom.lighting.dispose();
 console.log('ALL BEDROOM LIGHTING CHECKS PASSED');

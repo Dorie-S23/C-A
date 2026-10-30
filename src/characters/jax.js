@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { bendBone, SIDEWAYS, UP, FORWARD } from './bendBone.js';
+import { loadJaxClips } from './jaxClips.js';
 
-// "jax_from_tadc.glb": rigged (hips/spine/legs/arms down to fingers) but,
-// like Caine's model, ships with no baked animation clips — the run below
-// is hand-posed per frame instead of played from a clip.
+// "jax_from_tadc.glb" has a rig but no baked animation clips. Walk and run
+// are retargeted from Pomni's animation-only Mixamo skeleton files.
 const JAX_URL = './models/characters/jax/jax_from_tadc.glb';
 
 // Every hip/knee/shoulder joint in this rig swings front-to-back when its
@@ -131,17 +131,22 @@ function findBone(root, prefix) {
  * @returns {Promise<{ jax: THREE.Group,
  *   update: (deltaSeconds: number) => void,
  *   playPassBy: (from: THREE.Vector3, to: THREE.Vector3, duration: number,
- *     options?: { style?: 'run' | 'sly', stay?: boolean }) => void,
+ *     options?: { style?: 'run' | 'walk' | 'sly', stay?: boolean }) => void,
  *   faceTowards: (worldPoint: THREE.Vector3 | null) => void,
  *   isRunning: () => boolean,
+ *   hasGaitAnimations: () => boolean,
  *   setGlitching: (on: boolean) => void, glitch: () => void,
  *   setShown: (on: boolean) => void,
  *   setDistressed: (on: boolean) => void, engageDistressed: (point: THREE.Vector3 | null) => void,
  *   bindPose: Map<THREE.Bone, THREE.Quaternion> }>}
  */
 export function loadJax() {
-  return new GLTFLoader().loadAsync(JAX_URL).then((gltf) => {
+  return new GLTFLoader().loadAsync(JAX_URL).then(async (gltf) => {
     const model = gltf.scene;
+    const gaitClips = await loadJaxClips(model).catch((error) => {
+      console.warn('Jax\'s Mixamo animations could not be loaded; keeping his procedural gait.', error);
+      return [];
+    });
     model.traverse((child) => {
       if (!child.isMesh) return;
       child.castShadow = true;
@@ -191,6 +196,18 @@ export function loadJax() {
     for (const bone of Object.values(bones)) {
       if (bone) rest.set(bone, bone.quaternion.clone());
     }
+
+    const gaitMixer = gaitClips.length ? new THREE.AnimationMixer(model) : null;
+    const gaitActions = Object.fromEntries(gaitClips.map((clip) => [clip.name, gaitMixer.clipAction(clip)]));
+    model.updateMatrixWorld(true);
+    const gaitHip = findBone(model, 'hips');
+    const gaitHipHeight = gaitHip
+      ? gaitHip.getWorldPosition(new THREE.Vector3()).y - new THREE.Box3().setFromObject(model).min.y
+      : 0;
+    const gaitSpeeds = Object.fromEntries(gaitClips.map((clip) => [
+      clip.name,
+      clip.userData.speedPerHipHeight * gaitHipHeight,
+    ]));
 
     const swing = new THREE.Quaternion();
     function poseLeg(bone, angle) {
@@ -256,6 +273,7 @@ export function loadJax() {
     /** `stay`: stop and stand at `to` (the Lobby chase) rather than vanish there. */
     function playPassBy(from, to, duration, { style = 'run', stay = false } = {}) {
       distressed=false;engaged=false;engagement=0;targetYaw=null;restorePose();
+      gaitMixer?.stopAllAction();
       jax.position.copy(from);
       jax.rotation.y = Math.atan2(to.x - from.x, to.z - from.z);
       jax.rotation.x = 0;
@@ -266,7 +284,14 @@ export function loadJax() {
       if (bones.spine) bones.spine.quaternion.copy(rest.get(bones.spine));
       if (bones.head) bones.head.quaternion.copy(rest.get(bones.head));
       model.position.x = 0;
-      walk = { from: from.clone(), to: to.clone(), duration, elapsed: 0, style, stay };
+      const gaitName = style === 'run' ? 'run' : 'walk';
+      const action = gaitSpeeds[gaitName] > 0 ? gaitActions[gaitName] : null;
+      if (action) {
+        action.reset();
+        action.timeScale = from.distanceTo(to) / Math.max(duration, 1e-4) / gaitSpeeds[gaitName];
+        action.play();
+      }
+      walk = { from: from.clone(), to: to.clone(), duration, elapsed: 0, style, stay, action };
     }
 
     /** Turns him (smoothly, while idle) toward a world point; null stops turning. */
@@ -320,25 +345,29 @@ export function loadJax() {
       const t = Math.min(walk.elapsed / walk.duration, 1);
       jax.position.lerpVectors(walk.from, walk.to, t);
 
-      const sly = walk.style === 'sly';
-      const phase = walk.elapsed * (sly ? 1.4 : STRIDE_HZ) * Math.PI * 2;
-      const stride = sly ? THREE.MathUtils.degToRad(26) : LEG_SWING;
-      const knee = sly ? THREE.MathUtils.degToRad(28) : KNEE_BEND;
-      poseLeg(bones.upperLegL, Math.sin(phase) * stride);
-      poseLeg(bones.upperLegR, -Math.sin(phase) * stride);
-      // One-sided (never negative) so a knee only ever bends, never
-      // hyperextends backward — cheap insurance against a broken-looking pose.
-      poseLeg(bones.lowerLegL, Math.max(0, Math.sin(phase + Math.PI / 2)) * knee);
-      poseLeg(bones.lowerLegR, Math.max(0, Math.sin(phase + Math.PI / 2 + Math.PI)) * knee);
-      poseLeg(bones.upperArmL, sly ? 0 : -Math.sin(phase) * ARM_SWING);
-      poseLeg(bones.upperArmR, sly ? 0 : Math.sin(phase) * ARM_SWING);
-      poseLeg(bones.lowerArmL, sly ? SLY_ELBOW_BEND : ELBOW_BEND);
-      poseLeg(bones.lowerArmR, sly ? SLY_ELBOW_BEND : ELBOW_BEND);
-      jax.position.y += Math.abs(Math.sin(phase)) * (sly ? .018 : BOB_HEIGHT);
-      jax.rotation.x = sly ? -.035 : LEAN_ANGLE * Math.min(walk.elapsed / LEAN_IN_SECONDS, 1);
-      jax.rotation.z = sly ? Math.sin(phase) * .025 : 0;
+      if (walk.action) {
+        gaitMixer.update(deltaSeconds);
+      } else {
+        const walking = walk.style !== 'run';
+        const phase = walk.elapsed * (walking ? 1.4 : STRIDE_HZ) * Math.PI * 2;
+        const stride = walking ? THREE.MathUtils.degToRad(26) : LEG_SWING;
+        const knee = walking ? THREE.MathUtils.degToRad(28) : KNEE_BEND;
+        poseLeg(bones.upperLegL, Math.sin(phase) * stride);
+        poseLeg(bones.upperLegR, -Math.sin(phase) * stride);
+        poseLeg(bones.lowerLegL, Math.max(0, Math.sin(phase + Math.PI / 2)) * knee);
+        poseLeg(bones.lowerLegR, Math.max(0, Math.sin(phase + Math.PI / 2 + Math.PI)) * knee);
+        poseLeg(bones.upperArmL, walking ? 0 : -Math.sin(phase) * ARM_SWING);
+        poseLeg(bones.upperArmR, walking ? 0 : Math.sin(phase) * ARM_SWING);
+        poseLeg(bones.lowerArmL, walking ? SLY_ELBOW_BEND : ELBOW_BEND);
+        poseLeg(bones.lowerArmR, walking ? SLY_ELBOW_BEND : ELBOW_BEND);
+        jax.position.y += Math.abs(Math.sin(phase)) * (walking ? .018 : BOB_HEIGHT);
+        jax.rotation.x = walking ? -.035 : LEAN_ANGLE * Math.min(walk.elapsed / LEAN_IN_SECONDS, 1);
+        jax.rotation.z = walking ? Math.sin(phase) * .025 : 0;
+      }
 
       if (t >= 1) {
+        gaitMixer?.stopAllAction();
+        restorePose();
         if (walk.stay) {
           // Back to rest, so the idle branch above starts from a clean pose
           // instead of freezing mid-stride.
@@ -385,10 +414,10 @@ export function loadJax() {
         bendBone(bones.head, jax, UP, skip.jerk);
         bendBone(bones.spine, jax, SIDEWAYS, skip.jerk * 0.5);
       }
-      // Hands fidgeting in front of him: elbows bent, wringing.
-      const wring = Math.sin(time * 3.1) * 0.12;
-      poseLeg(bones.lowerArmL, THREE.MathUtils.degToRad(55) + wring);
-      poseLeg(bones.lowerArmR, THREE.MathUtils.degToRad(55) - wring);
+      // Keep his hands tucked and still; the old alternating elbow wring
+      // made them visibly shake while he waited in the maze.
+      poseLeg(bones.lowerArmL, THREE.MathUtils.degToRad(55));
+      poseLeg(bones.lowerArmR, THREE.MathUtils.degToRad(55));
       bendBone(bones.upperArmL, jax, SIDEWAYS, -0.25);
       bendBone(bones.upperArmR, jax, SIDEWAYS, -0.25);
       if (targetYaw !== null) {
@@ -411,6 +440,7 @@ export function loadJax() {
     return {
       jax, update, playPassBy, faceTowards, setDistressed, engageDistressed, bindPose, setShown,
       setRestless, engage,
+      hasGaitAnimations: () => Boolean(gaitActions.walk && gaitActions.run),
       /** Called as each glitch stutter starts (for effects in step with it). */
       set onStutter(callback) { onStutter = callback; },
       isRunning: () => walk !== null,
