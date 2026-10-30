@@ -179,6 +179,8 @@ export function createOpeningAudio(camera) {
   let mainThemeLoading = null, mainTheme = null, mainThemeRequest = 0;
   let mainThemeVolume = 0.5;
   let mainThemeMuted = false;
+  let mainThemePaused = false; // silent under the pause menu, apart from the player's own mute
+  const mainThemeLevel = () => (mainThemeMuted || mainThemePaused ? 0 : mainThemeVolume);
   let intermissionBufferLoading = null;
   function unlock() {
     try {
@@ -218,7 +220,7 @@ export function createOpeningAudio(camera) {
     const gain = context.createGain();
     const now = context.currentTime;
     gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(mainThemeMuted ? 0 : mainThemeVolume, now + 1.5);
+    gain.gain.linearRampToValueAtTime(mainThemeLevel(), now + 1.5);
     source.connect(gain).connect(context.destination);
     // Play from 00:03 once; after reaching the end, loop from 00:16.
     source.start(now, 3);
@@ -228,13 +230,18 @@ export function createOpeningAudio(camera) {
     mainThemeVolume = THREE.MathUtils.clamp(value, 0, 0.5);
     if (!mainTheme || !listener) return;
     const context = listener.context;
-    mainTheme.gain.gain.setTargetAtTime(mainThemeMuted ? 0 : mainThemeVolume, context.currentTime, 0.12);
+    mainTheme.gain.gain.setTargetAtTime(mainThemeLevel(), context.currentTime, 0.12);
   }
   function setMainThemeMuted(value) {
     mainThemeMuted = Boolean(value);
     if (!mainTheme || !listener) return;
     const context = listener.context;
-    mainTheme.gain.gain.setTargetAtTime(mainThemeMuted ? 0 : mainThemeVolume, context.currentTime, 0.12);
+    mainTheme.gain.gain.setTargetAtTime(mainThemeLevel(), context.currentTime, 0.12);
+  }
+  function setMainThemePaused(value) {
+    mainThemePaused = Boolean(value);
+    if (!mainTheme || !listener) return;
+    mainTheme.gain.gain.setTargetAtTime(mainThemeLevel(), listener.context.currentTime, 0.05);
   }
   async function playIntermissionCue() {
     if (!listener) return;
@@ -262,6 +269,8 @@ export function createOpeningAudio(camera) {
     get state() { return listener?.context.state ?? 'not-created'; },
     /** The shared AudioContext, or null until the first gesture unlocks audio. */
     get context() { return listener?.context ?? null; },
+    /** The camera's listener, once audio's unlocked (null before). */
+    get listener() { return listener; },
     get currentTime() { return listener?.context.currentTime ?? null; },
     get mainThemeMuted() { return mainThemeMuted; },
     playMainTheme,
@@ -269,6 +278,7 @@ export function createOpeningAudio(camera) {
     get mainThemeVolume() { return mainThemeVolume; },
     setMainThemeVolume,
     setMainThemeMuted,
+    setMainThemePaused,
     playIntermissionCue,
     createEntranceSession(room, options) {
       return listener ? createEntranceAudioSession(listener, room, undefined, options) : null;

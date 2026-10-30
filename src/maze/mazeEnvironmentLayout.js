@@ -72,13 +72,18 @@ export function shapeMazeEnvironment(maze) {
   if (!best) throw new Error('Maze has no room for the funhouse destination.');
   const chamber = best.region;
   edgesWithin(chamber).forEach(([a, wall, b, opposite]) => { a.walls[wall] = b.walls[opposite] = false; });
-  maze.jax = best.destination;
-  const measured = distances();
-  maze.jaxNeighbor = chamber.filter(cell => Math.abs(cell.r - maze.jax.r) + Math.abs(cell.c - maze.jax.c) === 1)
-    .sort((a, b) => measured.get(a) - measured.get(b))[0];
-  minimumJaxDistance = Math.max(18, Math.ceil(best.distance * 0.7));
   chamber.forEach(cell => protectedCells.add(cell));
   entrance.forEach(cell => protectedCells.add(cell));
+
+  // Jax hides in a corner, not the open chamber: a dead end far from the
+  // start, at the end of a long branch, as near a corner of the maze as
+  // one that far gets. Facing its back wall, he's only found by going
+  // all the way down there.
+  const hideout = chooseHideout(maze, distances(), protectedCells);
+  maze.jax = hideout.cell;
+  maze.jaxNeighbor = hideout.neighbour;
+  minimumJaxDistance = Math.max(18, Math.ceil(hideout.distance * 0.7));
+  protectedCells.add(maze.jax);
 
   const alcoves = getReachableCells(maze, start)
     .filter(({ cell, distance }) => !protectedCells.has(cell) && degree(cell) === 1 && distance >= 6)
@@ -115,4 +120,32 @@ export function shapeMazeEnvironment(maze) {
     candidate.perimeter.forEach(cell => used.add(cell));
   }
   return { entrance, chamber, alcoves, loops, patrolCells, minimumJaxDistance };
+}
+
+/** Jax's dead end: see shapeMazeEnvironment. */
+function chooseHideout(maze, measured, protectedCells) {
+  const { cells, rows, cols } = maze;
+  const at = (r, c) => cells[r]?.[c];
+  const openWays = cell => DIRECTIONS.filter(([wall]) => !cell.walls[wall]);
+  const toCorner = cell => Math.min(cell.r, rows - 1 - cell.r) + Math.min(cell.c, cols - 1 - cell.c);
+  // How many cells back to where the branch leaves a junction.
+  const branch = cell => {
+    let previous = null, length = 0;
+    for (let at_ = cell; at_ && openWays(at_).length <= 2 && length < 40; length++) {
+      const next = openWays(at_).map(([, , dr, dc]) => at(at_.r + dr, at_.c + dc)).find(other => other !== previous);
+      previous = at_; at_ = next;
+    }
+    return length;
+  };
+  const farthest = Math.max(...measured.values());
+  const deadEnds = [...measured].filter(([cell]) => openWays(cell).length === 1 && !protectedCells.has(cell));
+  // Far, though a corner a little nearer beats a far spot mid-wall.
+  const pool = deadEnds.filter(([, distance]) => distance >= farthest * 0.45);
+  const farEnough = distance => (distance >= farthest * 0.6 ? 0 : 1);
+  const [cell, distance] = (pool.length ? pool : deadEnds)
+    .sort(([a, da], [b, db]) => Math.min(toCorner(a), 4) - Math.min(toCorner(b), 4)
+      || farEnough(da) - farEnough(db) || branch(b) - branch(a) || db - da || a.r - b.r || a.c - b.c)[0]
+    ?? [...measured].sort(([, a], [, b]) => b - a)[0];
+  const [, , dr, dc] = openWays(cell)[0] ?? DIRECTIONS[0];
+  return { cell, distance, neighbour: at(cell.r + dr, cell.c + dc) ?? cell };
 }

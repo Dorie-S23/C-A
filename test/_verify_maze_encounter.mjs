@@ -7,39 +7,44 @@ import {createJaxStageBoundary} from '../src/rooms/jaxStageBoundary.js';
 import {level3JaxFinalDialogue} from '../src/data/dialogues.js';
 import {createDialogueEngine} from '../src/dialogue/dialogueEngine.js';
 const collectBoth=items=>{items.collect('bowling-ball');items.collect('hot-chocolate-mug');};
-test('required IDs, either order and duplicates drive the three objective stages',()=>{
+test('keepsakes are optional points, in either order; on screen it only ever says Follow Jax',()=>{
  for(const order of [['bowling-ball','hot-chocolate-mug'],['hot-chocolate-mug','bowling-ball']]){
-  const items=createMazeItems();assert.equal(mazeObjective(items).count,0);assert.equal(items.collect('unrelated'),false);
-  assert.equal(items.completeJax(),false);items.collect(order[0]);items.collect(order[0]);assert.equal(items.totalFound(),1);assert.equal(items.hasAllRequired(),false);
-  items.collect(order[1]);assert.equal(items.hasAllRequired(),true);assert.equal(mazeObjective(items).title,'Find Jax');assert.equal(items.jaxComplete,false);
-  assert.equal(items.completeJax(),true);assert.equal(items.completeJax(),false);assert.equal(mazeObjective(items).title,'Reach the exit');
+  const items=createMazeItems();assert.deepEqual(mazeObjective(items),{title:'Follow Jax',complete:false});assert.equal(items.collect('unrelated'),false);
+  assert.equal(items.score,0);items.collect(order[0]);items.collect(order[0]);assert.equal(items.totalFound(),1);assert.equal(items.score,1,'one point each, whichever');
+  assert.equal(mazeObjective(items).title,'Follow Jax');items.collect(order[1]);assert.equal(items.score,2);
+  items.setChoicePoints(3);assert.equal(items.score,5,'with the conversation’s choices');
+  assert.equal(items.completeJax('stays'),true);assert.equal(items.completeJax('abstracts'),false);assert.equal(items.jaxOutcome,'stays');assert.equal(mazeObjective(items).title,'Reach the exit');
  }
+ const none=createMazeItems();assert.equal(none.completeJax('abstracts'),true,'he can be talked to with no keepsakes');assert.equal(none.jaxOutcome,'abstracts');
 });
-test('checkpoints restore zero, either single item, both and completed without stale state',()=>{
+test('checkpoints restore zero, either single item, both, choice points and outcome without stale state',()=>{
  for(const ids of [[],['bowling-ball'],['hot-chocolate-mug'],['bowling-ball','hot-chocolate-mug']])for(const complete of [false,true]){
-  const source=createMazeItems();source.ensureSeed(123);ids.forEach(id=>source.collect(id));if(complete)source.completeJax();const saved=JSON.parse(JSON.stringify(source.snapshot()));
-  const target=createMazeItems();collectBoth(target);target.completeJax();target.ensureSeed(187);target.restore(saved);
-  assert.deepEqual(target.snapshot(),source.snapshot());assert.equal(target.ensureSeed(42),123);
-  target.restore();assert.equal(target.totalFound(),0);assert.equal(target.seed,null);assert.equal(target.jaxComplete,false);
+  const source=createMazeItems();source.ensureSeed(123);ids.forEach(id=>source.collect(id));source.setChoicePoints(ids.length);if(complete)source.completeJax(ids.length?'stays':'abstracts');
+  const saved=JSON.parse(JSON.stringify(source.snapshot()));
+  const target=createMazeItems();collectBoth(target);target.setChoicePoints(9);target.completeJax('stays');target.ensureSeed(187);target.restore(saved);
+  assert.deepEqual(target.snapshot(),source.snapshot());assert.equal(target.score,source.score);assert.equal(target.ensureSeed(42),123);
+  target.restore();assert.equal(target.totalFound(),0);assert.equal(target.seed,null);assert.equal(target.jaxComplete,false);assert.equal(target.score,0);assert.equal(target.jaxOutcome,null);
  }
- const items=createMazeItems();items.restore({collected:['bowling-ball','other','other'],seed:-1,jaxComplete:true});assert.equal(items.totalFound(),1);assert.equal(items.seed,null);assert.equal(items.jaxComplete,false);
+ const items=createMazeItems();items.restore({collected:['bowling-ball','other','other'],seed:-1,jaxOutcome:'stays',choicePoints:-4});
+ assert.equal(items.totalFound(),1);assert.equal(items.seed,null);assert.equal(items.jaxOutcome,null,'no outcome without a finished talk');assert.equal(items.choicePoints,0);
  items.reset();assert.equal(items.totalFound(),0);assert.equal(items.seed,null);
 });
-test('automatic encounter requires explicit objects, clear sight and eligible gameplay; only genuine finish unlocks exit',()=>{
- const items=createMazeItems();let callbacks,starts=0;
- const encounter=createMazeEncounter({items,playDialogue:handlers=>{callbacks=handlers;starts++;return true;}});
- const approach={inRange:true,visible:true,eligible:true};
- assert.equal(encounter.update(approach),false);items.collect('bowling-ball');assert.equal(encounter.update(approach),false);items.collect('hot-chocolate-mug');
- for(const gate of ['inRange','visible','eligible'])assert.equal(encounter.update({...approach,[gate]:false}),false);
- assert.equal(encounter.update(approach),true);assert.equal(items.jaxComplete,false);assert.equal(encounter.update(approach),false);assert.equal(starts,1);
- callbacks.onNode({id:'jaxFinal3'});callbacks.onCancel();assert.equal(items.jaxComplete,false);assert.equal(encounter.update(approach),false);
- encounter.update({...approach,inRange:false});assert.equal(encounter.update(approach),true);assert.equal(callbacks.startAt,'jaxFinal3');
- callbacks.onComplete();callbacks.onComplete();assert.equal(items.jaxComplete,true);assert.equal(encounter.update(approach),false);
+test('E-press encounter needs a request, clear sight and eligible gameplay (not the keepsakes); finishing records the outcome',()=>{
+ const items=createMazeItems();let callbacks,starts=0,released=[],outcome='abstracts';
+ const encounter=createMazeEncounter({items,playDialogue:handlers=>{callbacks=handlers;starts++;return true;},outcome:()=>outcome,onRelease:()=>released.push(items.jaxComplete)});
+ const press={inRange:true,visible:true,eligible:true,requested:true};
+ for(const gate of ['inRange','visible','eligible','requested'])assert.equal(encounter.update({...press,[gate]:false}),false);
+ assert.equal(encounter.update({inRange:true,visible:true,eligible:true}),false,'Never starts on its own');
+ assert.equal(encounter.update(press),true,'No keepsakes needed');assert.equal(items.jaxComplete,false);assert.equal(encounter.update(press),false);assert.equal(starts,1);
+ callbacks.onNode({id:'jaxR3'});callbacks.onCancel();assert.equal(items.jaxComplete,false);
+ assert.equal(encounter.update(press),true,'Pressing E again resumes, without walking away first');assert.equal(callbacks.startAt,'jaxR3');
+ outcome='stays';callbacks.onComplete();callbacks.onComplete();assert.equal(items.jaxComplete,true);assert.equal(items.jaxOutcome,'stays');assert.equal(encounter.update(press),false);
+ assert.deepEqual(released,[false,true],'Released knowing whether the talk was finished');
 });
 test('interruption/disposal invalidates stale dialogue completion and preserves collected items',()=>{
  const items=createMazeItems();collectBoth(items);let callbacks;
  const encounter=createMazeEncounter({items,playDialogue:handlers=>{callbacks=handlers;return true;}});
- encounter.update({inRange:true,visible:true,eligible:true});encounter.dispose();callbacks.onComplete();assert.equal(items.jaxComplete,false);assert.equal(items.totalFound(),2);
+ encounter.update({inRange:true,visible:true,eligible:true,requested:true});encounter.dispose();callbacks.onComplete();assert.equal(items.jaxComplete,false);assert.equal(items.totalFound(),2);
 });
 test('barrier visibility and exact matching collision boxes unlock together without changing wall boxes',()=>{
  const items=createMazeItems(),wall=new THREE.Box3(new THREE.Vector3(-10,0,-10),new THREE.Vector3(-9,3,-9)),colliders=[wall];
@@ -48,10 +53,16 @@ test('barrier visibility and exact matching collision boxes unlock together with
  gate.group.updateMatrixWorld(true);gate.group.children.slice(0,4).forEach((mesh,i)=>assert.ok(new THREE.Box3().setFromObject(mesh).equals(gate.colliders[i])));
  items.collect('bowling-ball');gate.sync();assert.equal(gate.locked,true);items.collect('hot-chocolate-mug');gate.sync();assert.equal(gate.group.visible,false);assert.deepEqual(colliders,[wall]);gate.sync();assert.deepEqual(colliders,[wall]);
 });
-test('provisional final dialogue is separate, linear and ends only after its sixth line',()=>{
- const engine=createDialogueEngine(level3JaxFinalDialogue);let count=0;
- while(!engine.done){count++;engine.advance();if(count>8)throw Error('dialogue does not terminate');}
- assert.equal(count,6);
+test('final dialogue: five scored rounds, one answer each that reaches him, then Ending A or B',()=>{
+ const choices=level3JaxFinalDialogue.filter(n=>n.type==='choice');
+ assert.equal(choices.length,5);
+ for(const choice of choices)assert.equal(choice.options.filter(o=>o.points===1).length,1,choice.id);
+ assert.equal(level3JaxFinalDialogue.filter(n=>n.fateCheck).length,4,'every round-5 reply leads on to an ending');
+ for(const start of ['jaxWonOver','jaxAbstracts']){
+  const engine=createDialogueEngine(level3JaxFinalDialogue,{startAt:start});let count=0;
+  while(!engine.done){count++;engine.advance();if(count>20)throw Error(`${start} does not terminate`);}
+  assert.ok(count>=5,start);
+ }
 });
 
 test('boundary line resources are released once by normal mesh teardown',()=>{

@@ -65,21 +65,22 @@ test('maze expiry is clamped to zero and emitted only once', () => {
   assert.equal(search.status, 'expired');
 });
 
-test('maze search needs both all items and a current Jax arrival', () => {
+test('maze search stops on reaching Jax, keepsakes or not', () => {
   const search = createMazeSearch(); search.start();
-  assert.equal(search.tick(1, { playable: true, atJax: true }), null);
-  assert.equal(search.tick(1, { playable: true, allItems: true }), null);
+  assert.equal(search.tick(1, { playable: false, atJax: true }), null);
+  assert.equal(search.tick(1, { playable: true }), null);
+  assert.equal(search.tick(1, { playable: true }), null);
   assert.equal(search.timeLeft, 298);
   assert.equal(search.status, 'searching');
-  assert.equal(search.tick(0, { playable: true, allItems: true, atJax: true }), 'reached');
+  assert.equal(search.tick(0, { playable: true, atJax: true }), 'reached');
   assert.equal(search.status, 'reached');
   assert.equal(search.tick(999, { playable: true }), null);
   assert.equal(search.timeLeft, 298);
 });
 
-test('reaching Jax with all items at the deadline wins before expiry', () => {
+test('reaching Jax at the deadline wins before expiry', () => {
   const search = createMazeSearch(); search.start(); search.tick(299, { playable: true });
-  assert.equal(search.tick(1, { playable: true, allItems: true, atJax: true }), 'reached');
+  assert.equal(search.tick(1, { playable: true, atJax: true }), 'reached');
   assert.equal(search.timeLeft, 1);
 });
 
@@ -328,7 +329,7 @@ test('100 seeded final mazes retain reachability, honour placement limits and us
 
 
 // Exercise the actual room's layout pass, independently of the legacy generator.
-test('funhouse layouts preserve circulation, pockets, hazard path and a remote Jax chamber across 100 seeds', async () => {
+test('funhouse layouts preserve circulation, pockets, hazard path and a remote Jax hideout across 100 seeds', async () => {
   const { shapeMazeEnvironment } = await import('../src/maze/mazeEnvironmentLayout.js');
   for (const seed of [123, 0xffffffff, ...Array.from({ length: 100 }, (_, i) => i)]) {
     const maze = generateMaze(13, 13, makeRng(seed), 0);
@@ -346,7 +347,9 @@ test('funhouse layouts preserve circulation, pockets, hazard path and a remote J
     assert.ok(reached.find(entry => entry.cell === maze.jax).distance >= layout.minimumJaxDistance);
     assert.equal(layout.entrance.length, 4);
     assert.equal(layout.chamber.length, 4);
-    assert.ok(layout.chamber.includes(maze.jax) && layout.chamber.includes(maze.jaxNeighbor));
+    // Jax hides in a dead end of his own, not the open chamber; his neighbour is its one way in.
+    assert.equal(Object.values(maze.jax.walls).filter(wall => !wall).length, 1, `seed ${seed}: Jax's hideout is a dead end`);
+    assert.ok(!layout.chamber.includes(maze.jax) && !layout.alcoves.includes(maze.jax) && !layout.entrance.includes(maze.jax));
     assert.equal(Math.abs(maze.jax.r - maze.jaxNeighbor.r) + Math.abs(maze.jax.c - maze.jaxNeighbor.c), 1);
     assert.ok(layout.loops.length >= 2, `seed ${seed}: at least two intentional circuits`);
     assert.ok(layout.alcoves.length >= 2);
@@ -359,6 +362,7 @@ test('funhouse layouts preserve circulation, pockets, hazard path and a remote J
       loop.forEach((cell, i) => openBetween(cell, loop[(i + 1) % loop.length]));
     }
     maze.path.slice(1).forEach((cell, i) => openBetween(maze.path[i], cell));
+    openBetween(maze.jax, maze.jaxNeighbor);
     for (const cell of layout.alcoves) {
       assert.equal(Object.values(cell.walls).filter(wall => !wall).length, 1);
       assert.ok(!layout.patrolCells.includes(cell) && !layout.chamber.includes(cell) && !layout.entrance.includes(cell));

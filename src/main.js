@@ -26,7 +26,10 @@ import { createVoicePlayer } from './audio/voicePlayer.js';
 import { createAmbience } from './audio/ambience.js';
 import { createMusic, DEFAULT_MUSIC_VOLUME } from './audio/music.js';
 import { createTitleScreen } from './ui/titleScreen.js';
-import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold } from './state/escapeThreshold.js';
+import { createGamepadInput } from './input/gamepad.js';
+import { createIntroStory } from './ui/introStory.js';
+import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold, setLevelPoints, passesJaxGate } from './state/escapeThreshold.js';
+import { createChoiceTally } from './dialogue/choiceTally.js';
 import { createStoryProgress, ENDING_VARIANTS } from './game/storyProgress.js';
 import { createSaveSlots, parseSaveFile, saveFileContents, saveFileName } from './game/saveGame.js';
 import { createLoadingBackgrounds } from './ui/loadingBackgrounds.js';
@@ -34,6 +37,9 @@ import { createLoadingSprites } from './ui/loadingSprites.js';
 import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.js';
 import { createLevel2Items, pickKaufmoScript, photoUrls, PHOTO_COUNT, PHOTO_THRESHOLD, PHOTO_URLS } from './state/level2Items.js';
 import {createMazeEncounter} from './levels/mazeEncounter.js';
+import { runMazeJaxChase } from './levels/mazeJaxChase.js';
+import { createMazeSounds } from './audio/mazeSounds.js';
+import { createGlitchCaption } from './ui/glitchCaption.js';
 import {createMazeObjectiveHUD} from './ui/mazeObjectiveHUD.js';
 import { createMazeHints } from './ui/mazeHints.js';
 import './ui/mazeHints.css';
@@ -59,6 +65,7 @@ import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
   level2IdleDialogue, level2CompleteDialogue, level2ReturnAndSendoffDialogue, level2AbstractionDialogue,
   level2TimeUpDialogue, level3HallwayDialogue, level3JaxDialogue, level3JaxFinalDialogue,
+  level3JaxMumble1Dialogue, level3JaxMumble2Dialogue, mazePickupBowlingDialogue, mazePickupMugDialogue, JAX_GLITCH_FRAGMENTS,
   endingLobbySavedDialogue, endingLobbyAbstractedDialogue, exitDoorSavedDialogue, exitDoorAbstractedDialogue,
   level2HallwayDialogue, level2RoomOpeningDialogue, ribbitFollowupDialogue,
 } from './data/dialogues.js';
@@ -89,6 +96,10 @@ const DIALOGUE_SCRIPTS = {
   level3Hallway: { script: level3HallwayDialogue, room: 'dorm' },
   level3Jax: { script: level3JaxDialogue, room: 'tadc' },
   level3JaxFinal: {script:level3JaxFinalDialogue,room:'maze'},
+  level3JaxMumble1: { script: level3JaxMumble1Dialogue, room: 'maze' },
+  level3JaxMumble2: { script: level3JaxMumble2Dialogue, room: 'maze' },
+  mazePickupBowling: { script: mazePickupBowlingDialogue, room: 'maze' },
+  mazePickupMug: { script: mazePickupMugDialogue, room: 'maze' },
   endingLobbySaved: { script: endingLobbySavedDialogue, room: 'tadc' },
   endingLobbyAbstracted: { script: endingLobbyAbstractedDialogue, room: 'tadc' },
   exitDoorSaved: { script: exitDoorSavedDialogue, room: null },
@@ -265,6 +276,10 @@ const CAINE_HINT_IMAGES = [
 let nextCaineHintImage = 0;
 const interactPrompt = document.getElementById('prompt');
 const cinematicSkip = document.getElementById('cinematic-skip');
+const skipCurtain = document.getElementById('skip-curtain');
+// Skip intro runs the parts that can't be cut short (getting up, the
+// entrance walks, staged pauses) this many times faster, behind skipCurtain.
+const SKIP_SPEED = 12;
 const levelCompletePanel = document.getElementById('level-complete-panel');
 const sceneFade = document.getElementById('scene-fade');
 const levelCompleteCaine = document.getElementById('level-complete-caine');
@@ -278,6 +293,8 @@ const mazeSearchTimer = document.getElementById('maze-search-timer');
 const searchTimer = document.getElementById('search-timer');
 const hintKey = document.getElementById('hint-key');
 const dialogueVoice = createVoicePlayer();
+// The narrated backstory a new game opens with (PLAY or Options > New Game).
+const introStory = createIntroStory({ root: document.getElementById('intro-story'), voice: dialogueVoice });
 // Escape mid-game pauses (it frees the mouse) rather than backing out of a
 // conversation; it only cancels on the menu screens (dialogue previews).
 // The browser may report the unlock just before or just after the key.
@@ -286,14 +303,34 @@ const ESCAPE_UNLOCK_WINDOW_MS = 500;
 const dialogueUI = createDialogueUI({
   speakers: SPEAKERS,
   voice: dialogueVoice,
-  escapeCancels: () => !isLocked && !paused && performance.now() - lastUnlockMs > ESCAPE_UNLOCK_WINDOW_MS,
+  // Never during the opening's story conversations: cancelling one sent
+  // Ragatha out of the room for good, and T only replayed her lines. In a
+  // cinematic, Escape (and the controller's B) falls through to its pause.
+  escapeCancels: () => !isLocked && !paused && !activeCinematic()?.active && !openingInvitationPlaying
+    && performance.now() - lastUnlockMs > ESCAPE_UNLOCK_WINDOW_MS,
+  controllerPrompts: () => (gamepad.active ? {
+    continue: `press ${gamepad.label('Space')} to continue ▾`,
+    choice: `↑/↓ to pick · ${gamepad.label('Space')} to choose`,
+  } : null),
 });
 const actionCaptions = createActionCaptions();
 const minimap = createMinimap();
 const objectives = createObjectiveController();
 const objectiveHUD = createObjectiveHUD({ objectives, root: document.getElementById('objective-hud') });
 const controlsTutorial = createControlsTutorial();
-const tutorialHUD = createTutorialHUD({ tutorial: controlsTutorial, root: document.getElementById('tutorial-hud'), portraits: CAINE_HINT_IMAGES });
+const tutorialHUD = createTutorialHUD({
+  tutorial: controlsTutorial, root: document.getElementById('tutorial-hud'), portraits: CAINE_HINT_IMAGES,
+  // Controller wording while the pad is in use; null keeps the keyboard lines.
+  labelFor: (id) => {
+    if (!gamepad.active) return null;
+    return {
+      move: 'Left stick - Move',
+      look: 'Right stick - Look around',
+      run: `Hold ${gamepad.label('ShiftLeft')} - Run`,
+      interact: `Press ${gamepad.label('KeyE')} - Interact`,
+    }[id];
+  },
+});
 let preLevel1Session = false;
 let storySessionId = 0;
 let morningDialoguePending = false;
@@ -324,6 +361,9 @@ let activeOpening = null;
 let activeEntrance = null;
 let activeJaxPass = null;
 const activeCinematic = () => activeJaxPass?.active ? activeJaxPass : activeEntrance?.active ? activeEntrance : activeOpening;
+// Pomni's "Come in." after an opening without the seated shot runs outside
+// any cinematic, so there's no pause to fall back on; Escape just waits.
+let openingInvitationPlaying = false;
 let openingCompleted = false; // per new game; room previews do not start a game
 let skipIntroRequested = false; // the Skip intro button, until play starts
 let openingFrameProfile = { frames: 0, seconds: 0, maxSeconds: 0 };
@@ -347,8 +387,13 @@ function fastForwardCutscenes() {
   if (cinematic?.active && cinematic.skippable) cinematic.skip();
 }
 
+// Hints name keyboard keys ("Press T to continue"); while the controller is
+// in use, name the pad button standing in for that key instead.
+const HINT_KEYS = { E: 'KeyE', H: 'KeyH', T: 'KeyT', V: 'KeyV' };
+
 function showHint(text, durationMs = 3000, { caine = false } = {}) {
-  hintText.textContent = text;
+  hintText.textContent = text.replace(/\b([Pp]ress) ([EHTV])\b/g,
+    (match, press, key) => `${press} ${gamepad.label(HINT_KEYS[key])}`);
   hint.classList.toggle('hint--caine', caine);
   hintKicker.hidden = !caine;
   hintPortrait.hidden = !caine;
@@ -380,6 +425,13 @@ dialoguePicker.querySelectorAll('button[data-story]').forEach((button) => {
     event.stopPropagation();
     startNewGame(); // the story for real, from the opening
   });
+});
+// The narrated intro panels, then on into the new game like PLAY. Always
+// plays, even with dev mode's skip-cutscenes on, since it was asked for.
+document.getElementById('btn-backstory').addEventListener('click', (event) => {
+  event.stopPropagation();
+  openingAudio.unlock(); // while this click still counts as a user gesture
+  introStory.play(() => startNewGame());
 });
 
 // --- Developer jumps ----------------------------------------------------
@@ -562,15 +614,16 @@ function startTitleTheme() {
   openingAudio.playMainTheme();
 }
 
+// Keys shouldn't drive the menu hidden behind an open panel.
+const titleMenuBlocked = () => !titleOptions.hidden || !titleQuit.hidden || !creditsPanel.classList.contains('hidden');
 const titleScreen = createTitleScreen({
   renderer,
   onIntroStart: startTitleTheme,
   onMenu: startTitleTheme,
-  // Keys shouldn't drive the menu hidden behind an open panel.
-  isBlocked: () => !titleOptions.hidden || !titleQuit.hidden || !creditsPanel.classList.contains('hidden'),
+  isBlocked: titleMenuBlocked,
   onAction: (action) => {
     if (action === 'play') {
-      startNewGame();
+      startNewGameWithStory();
     } else if (action === 'options') {
       titleOptions.hidden = false;
     } else if (action === 'quit') {
@@ -748,7 +801,7 @@ document.getElementById('btn-replay-intro').addEventListener('click', () => {
 document.getElementById('btn-new-game').addEventListener('click', (event) => {
   event.stopPropagation();
   titleOptions.hidden = true;
-  startNewGame();
+  startNewGameWithStory();
 });
 document.getElementById('btn-room-previews').addEventListener('click', () => {
   titleOptions.hidden = true;
@@ -764,6 +817,15 @@ cinematicSkip.addEventListener('click', () => {
   cinematicSkip.hidden = true;
   fastForwardCutscenes();
 });
+// While the skip button is up, Escape presses it. Captured ahead of the
+// pause and dialogue handlers, which would otherwise pause the opening or
+// cancel its conversation. P still pauses.
+window.addEventListener('keydown', (event) => {
+  if (event.code !== 'Escape' || event.repeat || paused || cinematicSkip.hidden) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  cinematicSkip.click();
+}, true);
 document.getElementById('btn-options-credits').addEventListener('click', openCredits);
 document.getElementById('btn-options-back').addEventListener('click', () => {
   titleOptions.hidden = true;
@@ -819,7 +881,7 @@ function showRoomPicker() {
  * hatch below, which can fire before any room's ever been picked).
  */
 function returnToHome({ toRoomPicker = false } = {}) {
-  sceneFade.classList.remove('on');
+  sceneFade.classList.remove('on', 'white');
   // Only restart the theme after the story faded it out; backing out of the
   // menus (Options -> Room previews -> Title screen) keeps it playing.
   if (openingAudio.mainThemeVolume < 0.5) openingAudio.stopMainTheme();
@@ -835,7 +897,7 @@ function returnToHome({ toRoomPicker = false } = {}) {
   activeJaxPass?.dispose(); activeJaxPass = null;
   cancelCutscene();
   cancelLevelComplete();
-  activeEntrance?.dispose(); activeEntrance = null;
+  activeEntrance?.dispose(); activeEntrance = null; openingInvitationPlaying = false;
   activeOpening = null;
   cinematicSkip.hidden = true;
   if (isLocked) document.exitPointerLock();
@@ -846,6 +908,7 @@ function returnToHome({ toRoomPicker = false } = {}) {
   ambience.setPaused(false);
   music.setRoom(null);
   music.setPaused(false);
+  openingAudio.setMainThemePaused(false);
   caineArrivalIn = null;
   resetMoveState();
   resetStage();
@@ -874,6 +937,7 @@ function returnToHome({ toRoomPicker = false } = {}) {
   focusedInteractable = null;
   interactPrompt.hidden = true;
   mazeEncounter?.dispose();mazeEncounter=null;
+  mazeSounds?.dispose();mazeSounds=null;mazeChase?.stop();mazeChase=null;
   foundJax = false;
   reachedExit = false;
   caught = false;
@@ -887,6 +951,22 @@ function returnToHome({ toRoomPicker = false } = {}) {
     overlay.classList.add('hidden');
     titleScreen.show({ playIntro: false });
   }
+}
+
+/**
+ * PLAY and Options > New Game: the intro story (src/ui/introStory.js) first,
+ * then the new game. It starts and ends on black, like the title's fade
+ * into the tent and Pomni's dark bedroom on either side of it. Dev mode's
+ * skip-cutscenes setting and the dev story button go straight to the game.
+ */
+function startNewGameWithStory() {
+  if (devSkipCutscenesInput.checked) {
+    startNewGame();
+    return;
+  }
+  openingAudio.unlock(); // while this click/keypress still counts as a user gesture
+  titleScreen.hide();
+  introStory.play(() => startNewGame());
 }
 
 /**
@@ -979,6 +1059,7 @@ function pauseOpening(value) {
   activeJaxPass?.setPaused(value);
   ambience.setPaused(value);
   music.setPaused(value);
+  openingAudio.setMainThemePaused(value);
   dialogueUI.setPaused(value);
   if (!value) clock.getDelta(); // a background-tab pause must not fast-forward on resume
   resetMoveState();
@@ -1037,6 +1118,7 @@ function completeOpening() {
     resumeOpeningGameplay(token);
     return;
   }
+  openingInvitationPlaying = true;
   dialogueUI.play(POMNI_INVITATION, {
     onComplete: () => finishOpeningInvitation(token, false),
     onCancel: () => finishOpeningInvitation(token, true),
@@ -1053,6 +1135,7 @@ function seatedOpeningDialogue() {
 }
 
 function finishOpeningInvitation(token, cancelled) {
+  openingInvitationPlaying = false;
   if (token !== loadToken || currentRoomKey !== 'pomni') return;
   if (cancelled && activeOpening?.phase === 'seated') {
     currentRoom.userData.openingInvitationCancelled = true;
@@ -1399,6 +1482,9 @@ const missionApi = {
   get stage() {
     return stage;
   },
+  get playerPosition() { return player.position; },
+  /** Where the camera's looking. */
+  get viewDirection() { return camera.getWorldDirection(new THREE.Vector3()); },
 };
 
 function startMission(key) {
@@ -1835,15 +1921,18 @@ const itemState = createLevel2Items({
 const storyProgress = createStoryProgress({ objectives, isStorySession: () => preLevel1Session });
 
 // --- Level 3 maze keepsakes ---------------------------------------------
-// Not scored, just a hint on pickup — same shared-instance-survives-room-
+// Optional: each is a Level 3 point (mazeItems.score, with the final talk's
+// choices) towards the Jax gate. Nothing on screen asks for them; Pomni says
+// something as she picks each up. Same shared-instance-survives-room-
 // changes lifecycle as itemState above.
+const MAZE_PICKUP_LINES = { 'bowling-ball': 'mazePickupBowling', 'hot-chocolate-mug': 'mazePickupMug' };
 let mazeEncounter=null,lastMazeExitHint=0;
+// This maze visit's keepsake sounds and Jax chase (fragments' caption), stopped on leaving it.
+let mazeSounds=null,mazeChase=null;
+const glitchCaption=createGlitchCaption();
 const mazeItems = createMazeItems({
-  onChange(){currentRoomInfo?.jaxBoundary?.sync();takeCheckpoint();},
-  onCollect: (id, count, total) => {
-    const label = MAZE_FINDABLES.find((findable) => findable.id === id)?.label ?? 'something';
-    showHint(`Found the ${label}. (${count}/${total})`);
-  },
+  onChange(){setLevelPoints('level3',mazeItems.score);currentRoomInfo?.jaxBoundary?.sync();takeCheckpoint();},
+  onCollect: (id) => { playRoomDialogue(MAZE_PICKUP_LINES[id]); },
 });
 const mazeSearch = createMazeSearch();
 let mazeGloinkWarningPending = false;
@@ -2133,8 +2222,8 @@ function canReachMazeJax() {
 }
 
 function mazeSearchInstructions() {
-  return {title:mazeItems.jaxComplete?'Reach the exit':mazeItems.hasAllRequired()?'Find Jax':"Find Jax's missing objects",
-    detail:mazeItems.jaxComplete?'The conversation is complete. Leave the maze.':mazeItems.hasAllRequired()?'Approach Jax with a clear view to begin the conversation.':'Find the bowling ball and hot chocolate mug, then approach Jax before time runs out.'};
+  return {title:mazeItems.jaxComplete?'Reach the exit':'Follow Jax',
+    detail:mazeItems.jaxComplete?'The conversation is complete. Leave the maze.':'Find Jax before time runs out. He runs when you get close, so follow him until he stops running, then call out to him (E).'};
 }
 
 function updateMazeSearch(deltaSeconds) {
@@ -2149,14 +2238,11 @@ function updateMazeSearch(deltaSeconds) {
   }
   const result = mazeSearch.tick(elapsed, {
     playable,
-    allItems: MAZE_FINDABLES.every(({ id }) => mazeItems.hasCollected(id)),
     atJax: canReachMazeJax(),
   });
   if (result === 'reached') {
-    // The real conversation (mazeEncounter/updateMazeFinalEncounter) starts
-    // on its own from proximity + line of sight — no hint needed here, and
-    // the persistent objective HUD (mazeObjective() above) already says
-    // "Approach Jax with a clear view to begin the conversation."
+    // No hint: this is her walking up to him after calling out, and the
+    // conversation (mazeJaxChase.js) follows by itself.
     foundJax = true;
   } else if (result === 'expired') {
     restartMazeSearch();
@@ -2189,11 +2275,48 @@ async function retryMaze(title, subtitle) {
 
 /**
  * How Level 3 went for Jax, for the ending (see ENDING_VARIANTS in
- * storyProgress.js). The final conversation has no losing path yet
- * (KAN-67), so finishing it is the only way to the exit and he's saved.
+ * storyProgress.js): what the Jax gate decided as his final conversation
+ * ended (Levels 1 to 3's points reaching 75%, escapeThreshold.js).
  */
 function jaxOutcome() {
-  return mazeItems.jaxComplete ? 'saved' : 'abstracted';
+  return mazeItems.jaxOutcome === 'abstracts' ? 'abstracted' : 'saved';
+}
+
+/**
+ * Dorsa's final talk with Jax, acted out in the maze: the static on him
+ * follows each line's `distress`, and after round 5 the Jax gate sends it
+ * to Ending A (he steadies) or Ending B (he unravels, the clearing flashes
+ * white, and he's gone). Merged into the encounter's own handlers.
+ */
+function jaxFinalScene(room, handlers) {
+  const { jaxApi, jaxGlitch } = room;
+  const token = loadToken;
+  const actions = {
+    jaxSteadies() { jaxGlitch?.setLevel(0.12); },
+    jaxUnravels() {
+      jaxGlitch?.setLevel(1);
+      jaxGlitch?.burst();
+      jaxApi.glitch?.();
+      return new Promise(resolve => setTimeout(resolve, 1600));
+    },
+    async whiteOut() {
+      sceneFade.classList.add('white');
+      await fadeScreen(true, 0.6);
+      if (token !== loadToken) return;
+      jaxApi.setShown(false);
+      await fadeScreen(false, 1.4);
+      sceneFade.classList.remove('white');
+    },
+  };
+  return {
+    distressFor: (node) => node.distress ?? 0,
+    nextFor: (node) => (node.fateCheck ? (passesJaxGate() ? 'jaxWonOver' : 'jaxAbstracts') : undefined),
+    onNode(node) {
+      handlers.onNode?.(node);
+      if (node.distress !== undefined && jaxGlitch) jaxGlitch.setLevel(Math.max(0.12, node.distress / 3));
+      return actions[node.action]?.();
+    },
+  };
 }
 
 /** Fades the screen to black (true) or back (false); resolves once it's there. */
@@ -2354,7 +2477,7 @@ async function playEndingLobby(variant, cast) {
   return finished;
 }
 
-/** Renders a scene of its own (the exit door), fades it in, plays its conversation and fades back out. */
+/** Renders a scene of its own (the red door), fades it in from black, plays its conversation and fades out to white. */
 function playEndingScene(ending, dialogueKey) {
   const token = loadToken;
   return new Promise((resolve) => {
@@ -2365,11 +2488,13 @@ function playEndingScene(ending, dialogueKey) {
     requestAnimationFrame(() => {
       if (finished || token !== loadToken) return;
       void fadeScreen(false, 1.6);
+      // The script's last direction: cut to white.
       const close = async () => {
         // Home cancels the cutscene before it cancels this dialogue. In that
         // case the old conversation must not fade the new title back to black.
         if (finished || token !== loadToken) { stop(); return; }
-        await fadeScreen(true, 1.4);
+        sceneFade.classList.add('white');
+        await fadeScreen(true, 2);
         stop();
       };
       dialogueUI.play(DIALOGUE_SCRIPTS[dialogueKey].script, {
@@ -2553,10 +2678,9 @@ function mazeGameplayAvailable(context) {
 
 function updateMazeItemsCounter(context) {
   const visible = mazeGameplayAvailable(context);
-  if (mazeItemsCounter.hidden === visible) mazeItemsCounter.hidden = !visible;
 
-  const text = `Objects found: ${mazeItems.totalFound()}/${MAZE_FINDABLES.length}`;
-  if (mazeItemsCounter.textContent !== text) mazeItemsCounter.textContent = text;
+  // No keepsake count: nothing on screen asks for them (only "Follow Jax").
+  if (!mazeItemsCounter.hidden) mazeItemsCounter.hidden = true;
   const timerVisible = visible && mazeSearch.status === 'searching';
   if (mazeSearchTimer.hidden === timerVisible) mazeSearchTimer.hidden = !timerVisible;
   if (timerVisible) {
@@ -2618,7 +2742,7 @@ function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
   dropRoomPreload();
   activeJaxPass?.dispose(); activeJaxPass = null;
 
-  activeEntrance?.dispose(); activeEntrance = null;
+  activeEntrance?.dispose(); activeEntrance = null; openingInvitationPlaying = false;
   // Invalidate callbacks before cancelling a dialogue owned by the old room.
   cancelLevelComplete();
   const myToken = ++loadToken; // any older in-flight load becomes stale the instant this fires
@@ -2652,6 +2776,7 @@ function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
   focusedInteractable = null;
   interactPrompt.hidden = true;
   mazeEncounter?.dispose();mazeEncounter=null;
+  mazeSounds?.dispose();mazeSounds=null;mazeChase?.stop();mazeChase=null;
   foundJax = false;
   reachedExit = false;
   caught = false;
@@ -2786,12 +2911,35 @@ function applyLoadedRoom({
   currentRoom = group;
   currentRoomKey = roomKey;
   if(roomKey==='maze'){
+    // Finding him (mazeJaxChase.js): he turns up a minute in, mumbles and
+    // bolts twice, then in his nook she calls out (E) and they talk here.
+    const mazeRoom=currentRoomInfo;
+    const listener=openingAudio.listener;
+    mazeSounds=listener?createMazeSounds(listener,mazeRoom.keepsakes):null;
+    const chase=mazeChase=runMazeJaxChase(missionApi,mazeRoom,{
+      startTalk:()=>mazeEncounter.update({inRange:true,visible:true,eligible:true,requested:true}),
+      fragments:JAX_GLITCH_FRAGMENTS,caption:glitchCaption,crackle:()=>mazeSounds?.crackle(),
+    });
+    // His talk's choices are scored like Level 1's; with the keepsakes and
+    // Levels 1 and 2 they decide, as it ends, whether he abstracts.
+    const choices=createChoiceTally(level3JaxFinalDialogue);
     mazeEncounter=createMazeEncounter({items:mazeItems,
-      playDialogue:handlers=>playRoomDialogue('level3JaxFinal',handlers),
-      onEngage:()=>currentRoomInfo?.jaxApi.engageDistressed(player.position),
-      onRelease:()=>currentRoomInfo?.jaxApi.engageDistressed(null),
+      playDialogue:handlers=>playRoomDialogue('level3JaxFinal',{...handlers,
+        onChoice:option=>{if(choices.record(option)!==null)mazeItems.setChoicePoints(choices.points);},
+        ...jaxFinalScene(mazeRoom,handlers)}),
+      outcome:()=>passesJaxGate()?'stays':'abstracts',
+      // Talked through, he stays turned to her (how he is depends on the
+      // outcome); left, he's back to his wall.
+      onRelease:()=>chase.talkEnded(mazeItems.jaxComplete,mazeItems.jaxOutcome),
     });
     foundJax=mazeItems.jaxComplete;
+    mazeRoom.interactables.push({
+      objects:mazeRoom.jaxEncounter.objects,anchor:mazeRoom.jaxEncounter.anchor,radius:chase.callRadius,
+      seeThrough:mazeRoom.jaxBoundary.colliders, // his own (invisible) personal space doesn't hide him
+      prompt:()=>'Call out to Jax',
+      enabled:()=>chase.callable&&!mazeItems.jaxComplete&&!mazeEncounter?.active,
+      interact:()=>chase.call(),
+    });
   }
   // Keep XDDCC playing through the opening Pomni/Dorm Hall story beats;
   // entering Ribbit's room starts Still Friends for her cutscene.
@@ -2877,7 +3025,8 @@ function applyLoadedRoom({
       mazeAttemptSeed = currentRoomInfo.mazeSeed;
       mazeSearch.start();
     }
-    if(mazeItems.jaxComplete)mazeSearch.tick(0,{playable:true,allItems:true,atJax:true});
+    if(mazeItems.jaxComplete)mazeSearch.tick(0,{playable:true,atJax:true});
+    if(mazeItems.jaxOutcome==='abstracts')currentRoomInfo.jaxApi?.setShown(false); // gone since Ending B
     foundJax = mazeSearch.status === 'reached';
   }
   overlay.classList.remove('loading');
@@ -3022,6 +3171,68 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => setMove(e.code, false));
 
+// --- Controller ---
+// Right stick look speed at full tilt, radians per second (scaled by the
+// same Options sensitivity as the mouse).
+const STICK_YAW_SPEED = 3.0;
+const STICK_PITCH_SPEED = 2.0;
+
+/**
+ * Browsers only grant pointer lock to a click or key press, which a
+ * controller button doesn't count as. Chrome makes one exception: a page
+ * that released the lock itself (Start below calls exitPointerLock) may
+ * take it back without one. Otherwise, and for the first lock of a
+ * session, the player has to click once.
+ */
+function lockFromGamepad() {
+  Promise.resolve(renderer.domElement.requestPointerLock()).catch(() => {
+    showHint('Click once to start - the browser needs a mouse click before the controller can take over.', 5000);
+  });
+}
+
+const gamepad = createGamepadInput({
+  mode: () => {
+    if (mazeHints.isOpen) return 'menu';
+    if (dialogueUI.isActive && !paused) return 'dialogue';
+    if (activeCinematic()?.active) return paused ? 'menu' : 'cinematic';
+    if (isLocked) return 'play';
+    if (titleScreen.active && !titleMenuBlocked()) return 'title';
+    return 'menu';
+  },
+  onStart: () => {
+    if (activeCinematic()?.active) { pauseOpening(!paused); return; }
+    // Releasing the lock ourselves shows the pause menu (see pointerlockchange)
+    // and is what lets the next Start take it back without a click.
+    if (isLocked) { document.exitPointerLock(); return; }
+    if (!pauseMenu.hidden) { if (readyToPlay && currentRoom) lockFromGamepad(); return; }
+    if (currentRoomKey === 'maze' && paused) return;
+    if (readyToPlay && currentRoom && !overlay.classList.contains('hidden')) lockFromGamepad();
+  },
+  // A on "Click to Play" (nothing focused there) starts, like Start.
+  onConfirm: () => {
+    if (!readyToPlay || !currentRoom || overlay.classList.contains('hidden') || !pauseMenu.hidden) return false;
+    if (currentRoomKey === 'maze' && paused) return false;
+    lockFromGamepad();
+    return true;
+  },
+  onConnect: () => showHint('Controller connected', 2500),
+});
+
+/** Right-stick look, under the same conditions as the mouse-look handler. */
+function updateGamepadLook(deltaSeconds) {
+  if (gamepad.lookX === 0 && gamepad.lookY === 0) return;
+  if (!isLocked || !readyToPlay || paused || activeCinematic()?.active || dialogueUI.isActive || stageBusy() || activeCutscene) return;
+  const scale = mouseSensitivityScale * deltaSeconds;
+  const oldYaw = cameraYaw, oldPitch = cameraPitch;
+  cameraYaw -= gamepad.lookX * STICK_YAW_SPEED * scale;
+  cameraPitch = THREE.MathUtils.clamp(
+    cameraPitch + gamepad.lookY * STICK_PITCH_SPEED * scale, PITCH_MIN, PITCH_MAX,
+  );
+  if (shouldShowObjective(gameplayHUDContext())) {
+    controlsTutorial.look(Math.hypot(cameraYaw - oldYaw, cameraPitch - oldPitch));
+  }
+}
+
 // Bedroom lighting previews never ship as active player controls.
 if (import.meta.env.DEV) {
   window.addEventListener('keydown', (event) => {
@@ -3078,6 +3289,7 @@ function resetMoveState() {
   move.left = false;
   move.right = false;
   move.sprint = false;
+  gamepad.resetSprint();
   // Called on every teleport too: drop any jump in progress, and the floor
   // follow snaps her down onto wherever she now stands.
   jumpQueued = false;
@@ -3200,6 +3412,7 @@ function pauseRoomForMenu() {
   dialogueUI.setPaused(true);
   ambience.setPaused(true);
   music.setPaused(true);
+  openingAudio.setMainThemePaused(true);
   overlay.classList.remove('hidden');
   overlayTitle.textContent = 'Paused';
   overlaySubtitle.textContent = pauseCaption.textContent = 'The show will resume when you’re ready.';
@@ -3227,6 +3440,7 @@ document.addEventListener('pointerlockchange', () => {
     if (paused) dialogueUI.setPaused(false);
     ambience.setPaused(false);
     music.setPaused(false);
+    openingAudio.setMainThemePaused(false);
     paused = false;
     runPendingJumpStart();
     return;
@@ -4470,9 +4684,9 @@ function checkTriggers(player) {
 
   updateMazeSearch(0);
   if (triggers.exit.containsPoint(triggerProbe)) {
-    if(!mazeItems.hasAllRequired()||!mazeItems.jaxComplete){
+    if(!mazeItems.jaxComplete){
       const now=performance.now();
-      if(!lastMazeExitHint||now-lastMazeExitHint>3000){showHint(mazeItems.hasAllRequired()?"Find Jax and finish your conversation before leaving.":"Find Jax's missing bowling ball and hot chocolate mug first.");lastMazeExitHint=now;}
+      if(!lastMazeExitHint||now-lastMazeExitHint>3000){showHint("Find Jax and talk to him before leaving.");lastMazeExitHint=now;}
       return;
     }
     foundJax=true;
@@ -4481,28 +4695,17 @@ function checkTriggers(player) {
   }
 }
 
-/** Automatic Last Act approach; no E press or broad found-Jax trigger. */
-function updateMazeFinalEncounter(){
-  if(currentRoomKey!=='maze'||!mazeEncounter||!currentRoomInfo?.jaxAnchor)return;
-  const anchor=currentRoomInfo.jaxAnchor;
-  const inRange=Math.hypot(player.position.x-anchor.x,player.position.z-anchor.z)<=2.35
-    &&Math.abs(player.position.y-PLAYER_HEIGHT-anchor.y)<0.65;
-  const eligible=mazeSearch.status!=='expired'&&isLocked&&readyToPlay&&!paused&&!dialogueUI.isActive&&!stageBusy()&&!activeCutscene&&!activeCinematic()?.active&&!activeJaxPass?.active&&!activeOpening?.active;
-  let visible=false;
-  if(inRange&&eligible&&mazeItems.hasAllRequired()){
-    const origin=player.position.clone().add(new THREE.Vector3(0,-0.1,0)),target=anchor.clone().setY(anchor.y+1.6),direction=target.sub(origin),distance=direction.length();
-    const ray=new THREE.Ray(origin,direction.normalize()),hit=new THREE.Vector3();
-    visible=!colliders.some(box=>ray.intersectBox(box,hit)&&origin.distanceTo(hit)<distance-0.03);
-  }
-  mazeEncounter.update({inRange,visible,eligible});
-}
-
 function updateMovement(deltaSeconds) {
-  const speed = WALK_SPEED * (move.sprint ? SPRINT_MULTIPLIER : 1) * DEV_SPEED_MULTIPLIER;
+  const sprinting = move.sprint || gamepad.sprint;
+  const speed = WALK_SPEED * (sprinting ? SPRINT_MULTIPLIER : 1) * DEV_SPEED_MULTIPLIER;
 
   velocity.x = Number(move.right) - Number(move.left);
   velocity.z = Number(move.back) - Number(move.forward);
   if (velocity.lengthSq() > 0) velocity.normalize();
+  // Keys win; otherwise the left stick steers, and a half tilt walks at
+  // half speed (the walk clip follows her actual speed, so it slows too).
+  else velocity.set(gamepad.moveX, 0, gamepad.moveY);
+  const padMoving = gamepad.moveX !== 0 || gamepad.moveY !== 0;
   velocity.multiplyScalar(speed * deltaSeconds);
 
   // Camera-relative basis: W always walks "into the screen".
@@ -4588,8 +4791,8 @@ function updateMovement(deltaSeconds) {
 
   // Animate from how far she actually got, so walking into a wall doesn't bob.
   const moved = Math.hypot(player.position.x - frameStartX, player.position.z - frameStartZ);
-  if (shouldShowObjective(gameplayHUDContext()) && (move.forward || move.back || move.left || move.right)) {
-    controlsTutorial.move(moved, move.sprint);
+  if (shouldShowObjective(gameplayHUDContext()) && (move.forward || move.back || move.left || move.right || padMoving)) {
+    controlsTutorial.move(moved, sprinting);
   }
   updatePomniWalk(deltaSeconds, deltaSeconds > 0 ? moved / deltaSeconds : 0);
 
@@ -5014,7 +5217,7 @@ function updateInteractionFocus() {
 
   focusedInteractable = focused;
   interactPrompt.hidden = !focused;
-  if (focused) interactPrompt.textContent = `E — ${focused.prompt()}`;
+  if (focused) interactPrompt.textContent = `${gamepad.label('KeyE')} — ${focused.prompt()}`;
 }
 
 /** Optional room-specific enable/range gates also apply to direct ray hits. */
@@ -5074,6 +5277,7 @@ function hasLineOfSight(interactable) {
   }
   if (sightRaycaster.intersectObjects(sightCandidates, false).length > 0) return false;
   for (const box of colliders) {
+    if (interactable.seeThrough?.includes(box)) continue;
     if (sightRaycaster.ray.intersectBox(box, cameraHitPoint) && cameraHitPoint.distanceTo(sightOrigin) < distance) {
       return false;
     }
@@ -5102,16 +5306,25 @@ function animate() {
   // The music steps back under voices, and under the cinematics' own
   // snores, knocks and footsteps.
   music.setDucked(dialogueUI.isActive || Boolean(activeCinematic()?.active));
+  // Polled before anything reads input this frame; its buttons arrive as
+  // key events, so they land exactly where a key press would have.
+  gamepad.update(rawDelta);
+  updateGamepadLook(delta);
   updateCaineArrival(delta);
   updateSearchTimer(delta);
   updateMazeSearch(rawDelta);
+  introStory.update(delta);
   fastForwardCutscenes();
+  // Black until she's playable, then the curtain fades off the room.
+  skipCurtain.classList.toggle('shown', skipIntroRequested && !paused);
+  const skipScale = skipIntroRequested ? SKIP_SPEED : 1;
   if (!paused) {
     updateMovers(delta);
     // playerActive: she's actually in play, so maze Gloinks may see her.
     if (!activeOpening?.active) roomUpdate?.(delta, player.position, {
       playerActive: isLocked && readyToPlay && !dialogueUI.isActive && !activeCutscene && !stageBusy(),
     });
+    mazeSounds?.update(delta, player.position);
     refreshDynamicColliders();
     // Her bedroom's lighting runs the environment itself.
     if (!currentRoomInfo?.lighting) {
@@ -5127,7 +5340,7 @@ function animate() {
   }
   ambience.setKaufmoProximity(writingSoundLevel);
   if (!paused && stageDelay) {
-    stageDelay.remaining -= delta;
+    stageDelay.remaining -= delta * skipScale;
     if (stageDelay.remaining <= 0) {
       const delay = stageDelay;
       stageDelay = null;
@@ -5143,7 +5356,7 @@ function animate() {
           updateCamera(delta);
           follow = { position: camera.position.clone(), target: cameraTarget.clone() };
         }
-        activeEntrance.update(rawDelta, follow);
+        activeEntrance.update(rawDelta * skipScale, follow);
         // She turns to Ragatha as Ragatha greets her (once she's up: until
         // then the opening's own animation has her). The update above can
         // end the entrance and clear activeEntrance, hence the ?.
@@ -5163,10 +5376,10 @@ function animate() {
           updateCamera(delta);
           follow = { position: camera.position.clone(), target: cameraTarget.clone() };
         }
-        activeOpening.update(rawDelta, follow); // animation clock is not the movement/collision step clamp
+        activeOpening.update(rawDelta * skipScale, follow); // animation clock is not the movement/collision step clamp
       }
     } else {
-      if (stageWalk && !paused) updateStageWalk(delta);
+      if (stageWalk && !paused) updateStageWalk(delta * skipScale);
       else if (isLocked && readyToPlay && !dialogueUI.isActive && !activeJaxPass?.active && !stageBusy() && !activeCutscene) updateMovement(delta);
       else updatePomniWalk(delta, 0); // settle the waddle while paused/talking
       if (!activeCutscene) updateCamera(delta);
@@ -5174,9 +5387,8 @@ function animate() {
   }
   // Background room compilation can stall a frame; keep the brief visible
   // crossing from completing between two renders on slower machines.
-  if (!paused) activeJaxPass?.update(Math.min(rawDelta, .1));
+  if (!paused) activeJaxPass?.update(skipIntroRequested ? rawDelta * skipScale : Math.min(rawDelta, .1));
   minimap.update(player.position.x, player.position.z, cameraYaw);
-  updateMazeFinalEncounter();
   updateInteractionFocus();
   const hudContext = gameplayHUDContext();
   updateMemoryCaption(delta, hudContext);

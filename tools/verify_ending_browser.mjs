@@ -69,7 +69,7 @@ await page.route('**/src/main.js*', async route => {
         return { error: gl.getError(), contextLost: gl.isContextLost() };
       },
       state() {
-        const exit = activeCutscene && lastFrame?.scene?.getObjectByName('ExitDoorSet') ? lastFrame.scene : null;
+        const exit = activeCutscene && lastFrame?.scene?.getObjectByName('ExitCorridor') ? lastFrame.scene : null;
         const castRoot = exit ?? currentRoom;
         const plan = exit ? exitDoorPlan() : currentRoomInfo?.mazeDoor
           ? lobbyEndingPlan(currentRoomInfo.mazeDoor.portal.arrival) : null;
@@ -194,7 +194,7 @@ async function assertHomeSafe() {
 }
 
 const commonDoorActions = [
-  'gathered', 'caineArrives', 'kaufmoLeaves', 'ribbitLeaves', 'ragathaLeaves',
+  'gathered', 'hush', 'pomniLooksRound', 'doorOpens', 'kaufmoLeaves', 'ribbitLeaves', 'ragathaLeaves',
   'gangleLeaves', 'zoobleLeaves', 'kingerLeaves',
 ];
 
@@ -225,11 +225,11 @@ async function playCompleteVariant(variant) {
   assert.deepEqual(done.completions, [lobbyKey, doorKey]);
   assert.deepEqual(done.cancellations, []);
   const lobbyActions = variant === 'saved'
-    ? ['walkOut', 'groupReacts', 'jaxLooksAway', 'kaufmoExit']
-    : ['walkOut', 'groupReacts', 'groupRealises', 'grief', 'kaufmoExit'];
+    ? ['walkOut', 'ribbitToJax', 'kaufmoOffers', 'caineSpots', 'caineFreezes', 'kaufmoSteps', 'jaxToKaufmo', 'run', 'montageGangle', 'montageGlance', 'montageKinger']
+    : ['walkOut', 'ribbitLooks', 'grief', 'ragathaHolds', 'kaufmoStares', 'caineDrifts', 'kaufmoSteps', 'run'];
   const doorActions = variant === 'saved'
-    ? [...commonDoorActions, 'jaxLeaves', 'pomniLeaves']
-    : [...commonDoorActions, 'pomniLooksBack', 'pomniLeaves'];
+    ? [...commonDoorActions, 'jaxLeaves', 'pomniStops', 'pomniTurns', 'caineHat', 'pomniLeaves', 'caineAlone']
+    : [...commonDoorActions, 'pomniStops', 'pomniTurns', 'caineHat', 'pomniLeaves', 'caineAlone'];
   assert.deepEqual(done.actions, [...lobbyActions, ...doorActions]);
   assert.equal(done.storyEnding, variant);
   assert.equal(done.contextLost, false);

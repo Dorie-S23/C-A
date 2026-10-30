@@ -1,4 +1,5 @@
 import { arrangeTrack, ROOM_TRACKS } from './musicScores.js';
+import { holdLoop, resumeLoop, startLoop } from './pausableLoop.js';
 
 // Mono at 32 kHz: high enough for the music box's top partials (up to
 // ~14 kHz), and a 50-second loop is still only ~6 MB once rendered.
@@ -10,8 +11,6 @@ const SEGMENT_SECONDS = 6;
 const RING_SECONDS = 4.5;
 const FADE_IN_SECONDS = .4;
 const FADE_OUT_SECONDS = 1.5;
-// Under the pause menu the music dips rather than stops, like the ambience.
-const PAUSED_LEVEL = .35;
 // While someone is talking (or a cutscene's own sounds are playing) the
 // music steps back so the voices and effects sit clearly on top.
 const DUCKED_LEVEL = .45;
@@ -304,7 +303,7 @@ async function render(key) {
  */
 export function createMusic(getContext) {
   let wantedRoom = null;
-  let playing = null; // { track, source, fade }
+  let playing = null; // { track, loop, fade } (loop: see pausableLoop.js)
   let master = null;
   let volume = DEFAULT_MUSIC_VOLUME;
   let paused = false;
@@ -312,7 +311,8 @@ export function createMusic(getContext) {
   let request = 0;
   const buffers = new Map(); // track key -> Promise<AudioBuffer|null>, each rendered once
 
-  const level = () => volume * (paused ? PAUSED_LEVEL : ducked ? DUCKED_LEVEL : 1);
+  // Paused, the music holds its place (see setPaused) rather than dipping.
+  const level = () => volume * (ducked ? DUCKED_LEVEL : 1);
 
   // Needs no live context (rendering is offline, and an AudioBuffer can be
   // made without one), so prepare() can start before audio is unlocked.
@@ -333,8 +333,10 @@ export function createMusic(getContext) {
 
   function fadeOut(context) {
     if (!playing) return;
-    const { source, fade } = playing;
+    const { loop, fade } = playing;
     playing = null;
+    if (loop.held) { fade.disconnect(); return; }
+    const { source } = loop;
     const now = context.currentTime;
     fade.gain.cancelScheduledValues(now);
     fade.gain.setValueAtTime(fade.gain.value, now);
@@ -361,18 +363,16 @@ export function createMusic(getContext) {
       master.gain.value = level();
       master.connect(context.destination);
     }
-    const source = context.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
     const fade = context.createGain();
     const now = context.currentTime;
     fade.gain.setValueAtTime(0, now);
     fade.gain.linearRampToValueAtTime(1, now + FADE_IN_SECONDS);
-    source.connect(fade).connect(master);
+    fade.connect(master);
     // From the top: unlike the ambience, a tune dropped in mid-phrase
     // sounds like a mistake.
-    source.start(now);
-    playing = { track: wanted, source, fade };
+    const loop = startLoop(context, buffer, fade);
+    playing = { track: wanted, loop, fade };
+    if (paused) holdLoop(context, loop);
   }
 
   function applyLevel() {
@@ -397,8 +397,11 @@ export function createMusic(getContext) {
     prepare(key) {
       if (ROOM_TRACKS[key]) load(ROOM_TRACKS[key]);
     },
+    /** Paused, the music stops where it is; unpaused, it carries on from there. */
     setPaused(value) {
       paused = value;
+      const context = getContext();
+      if (playing && context) (value ? holdLoop : resumeLoop)(context, playing.loop);
       applyLevel();
     },
     /** Called every frame, so it only touches the audio graph on a change. */

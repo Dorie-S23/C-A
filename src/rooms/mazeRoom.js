@@ -14,6 +14,13 @@ import { loadJax } from '../characters/jax.js';
 import { loadGloinks } from '../characters/gloink.js';
 import { createGloinkChase } from '../characters/gloinkChase.js';
 import { createBowlingBall, createHotChocolateMug, placeMazeFindable, pulseGlow } from '../props/mazeFindables.js';
+import { applyJaxGlitch } from '../shaders/jaxGlitch.js';
+
+// Jax isn't there when she arrives: he turns up in his hideout after this
+// long of her actually being in play in the maze.
+export const JAX_SPAWN_SECONDS = 60;
+// How far in front of his nook's back wall he paces.
+const JAX_FROM_WALL = 1.1;
 
 // Exported so main.js can size the player's outer bounds without duplicating
 // numbers, the same way room.js exposes ROOM.
@@ -203,17 +210,45 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
   // The exit still gets a placeholder marker — real dressing (a doorway,
   // light, etc.) is still for the team to add — but Jax himself is the
   // real model now, not a stand-in.
-  const jaxCenter = cellCenter(maze.jax.r, maze.jax.c);
-  const jaxNeighborCenter = cellCenter(maze.jaxNeighbor.r, maze.jaxNeighbor.c);
+  // Each of his hiding places is a dead end. He stands near its back wall
+  // facing it, his back to the way in. The last (maze.jax, see
+  // shapeMazeEnvironment) is his nook, with its scenery; he runs there
+  // from two others first (hideouts, chosen once the Gloinks are placed).
+  const hideoutAt = (cell) => {
+    const open = [[-1, 0, 'top'], [0, 1, 'right'], [1, 0, 'bottom'], [0, -1, 'left']].find(([, , wall]) => !cell.walls[wall]);
+    const centre = cellCenter(cell.r, cell.c);
+    const wayIn = open ? new THREE.Vector3(open[1], 0, open[0]) : new THREE.Vector3(0, 0, 1);
+    return { cell, wayIn, spot: centre.clone().addScaledVector(wayIn, -(cellSize / 2 - JAX_FROM_WALL)),
+      facing: Math.atan2(-wayIn.x, -wayIn.z) };
+  };
+  const jaxSpot = hideoutAt(maze.jax).spot;
   const { jax } = jaxApi;
-  jax.position.set(jaxCenter.x, 0, jaxCenter.z);
-  // Face the selected chamber approach rather than an arbitrary direction.
-  jax.rotation.y = Math.atan2(jaxNeighborCenter.x - jaxCenter.x, jaxNeighborCenter.z - jaxCenter.z);
-  jax.visible = true;
   group.add(jax);
   ownMazeShadowPass(jax);
-  jaxApi.setDistressed(true);
-  const jaxBoundary=createJaxStageBoundary({position:jaxCenter,colliders,isUnlocked:()=>Boolean(mazeItems?.hasAllRequired())});
+  jaxApi.setGlitching(true);
+  const jaxGlitch = applyJaxGlitch(jax);
+  jaxApi.onStutter = () => jaxGlitch.burst();
+  // Until he's turned up he isn't there at all: no model, no barrier.
+  let jaxSpawned = false, jaxWait = 0;
+  jax.visible = false;
+  function spawnJax() {
+    if (jaxSpawned) return;
+    jaxSpawned = true; jax.visible = true;
+  }
+  let hideouts = [hideoutAt(maze.jax)], jaxStop = 0;
+  /** Puts him at hiding place `index`, pacing at its wall. */
+  function placeJax(index) {
+    jaxStop = Math.min(index, hideouts.length - 1);
+    const { spot, facing } = hideouts[jaxStop];
+    jax.position.set(spot.x, 0, spot.z);
+    jax.rotation.y = facing;
+    jaxApi.setRestless(true, facing);
+  }
+  const atNook = () => jaxStop === hideouts.length - 1;
+  // His personal space at the nook, while he's there (she talks to him
+  // from outside it).
+  const jaxBoundary=createJaxStageBoundary({position:jaxSpot,colliders,
+    isUnlocked:()=>!jaxSpawned||!atNook()});
   group.add(jaxBoundary.group);
 
   const exitCenter = cellCenter(maze.exit.r, maze.exit.c);
@@ -233,21 +268,22 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
   // reads fine for a marker shape but not for a rigged character with legs
   // that never move — left for a later pass).
   const jaxWaypoints = [
-    new THREE.Vector3(jaxCenter.x, 0.8, jaxCenter.z),
-    new THREE.Vector3(jaxNeighborCenter.x, 0.8, jaxNeighborCenter.z),
+    new THREE.Vector3(jaxSpot.x, 0.8, jaxSpot.z),
+    new THREE.Vector3(...cellCenter(maze.jaxNeighbor.r, maze.jaxNeighbor.c).setY(0.8).toArray()),
   ];
 
   // Gloinks keep to the maze's common areas rather than its corridors:
   // one circling each planned loop (environmentLayout.loops: 3x3 rings
   // where several routes cross, signposted overhead), and one pacing the
-  // last stretch of the way into Jax's chamber, so reaching him means
-  // dodging it. The main route and side branches are otherwise clear.
-  // Placed before the keepsakes so those stay off every Gloink's cells.
-  const FINAL_STRETCH_CELLS = 3;
+  // last stretch of the way to Jax's hideout (stopping short of it), so
+  // reaching him means dodging it. The main route and side branches are
+  // otherwise clear. Placed before the keepsakes so those stay off every
+  // Gloink's cells.
+  const FINAL_STRETCH_CELLS = 3, SHORT_OF_JAX = 2;
   const toJax = findMazePath(maze, maze.start, maze.jax) ?? [];
-  const chamberEntry = toJax.findIndex((cell) => environmentLayout.chamber.includes(cell));
-  const finalStretch = chamberEntry > 1
-    ? toJax.slice(Math.max(1, chamberEntry - FINAL_STRETCH_CELLS), chamberEntry)
+  const stretchEnd = toJax.length - 1 - SHORT_OF_JAX;
+  const finalStretch = stretchEnd > 1
+    ? toJax.slice(Math.max(1, stretchEnd - FINAL_STRETCH_CELLS), stretchEnd)
     : [];
   // No Gloink patrols within this many steps of the start, where she'd be
   // spotted the moment she arrives. A loop that close (or a maze with too
@@ -293,8 +329,12 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
   ].filter(({ cells }) => cells.length >= 2);
   const gloinkPatrolCells = gloinkPlans.flatMap(({ cells }) => cells);
 
+  hideouts = [...chooseJaxStops(maze, environmentLayout, gloinkPatrolCells).map(hideoutAt), hideouts[0]];
+  placeJax(mazeItems?.jaxComplete ? hideouts.length - 1 : 0);
+  if (mazeItems?.jaxComplete) spawnJax(); // already talked: he's in his nook on a revisit
+
   const shaderEffects = createMazeShaderEffects({
-    patrolCells: gloinkPatrolCells, cellCenter, cellSize, jaxPosition: jaxCenter,
+    patrolCells: gloinkPatrolCells, cellCenter, cellSize, jaxPosition: jaxSpot,
     backdrop: group.getObjectByName('JaxTheatreBackdrop'),
   });
   group.add(shaderEffects.group);
@@ -307,7 +347,7 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
   const reservedCells = [
     ...environmentLayout.entrance, ...environmentLayout.chamber,
     maze.start, maze.jax, maze.jaxNeighbor, maze.exit,
-    ...gloinkPatrolCells,
+    ...gloinkPatrolCells, ...hideouts.map(({ cell }) => cell),
   ];
   const itemCells = [];
   // Bound to this room's final corridor graph and seeded stream. Future search
@@ -334,6 +374,7 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
 
   const findableRoom = { group, interactables: [], colliders };
   const placedFindables = [];
+  const keepsakes = []; // { id, object }: the ones still to find, for their sounds
   if (mazeItems) {
     const findables = [
       { id: 'bowling-ball', label: 'bowling ball', createMesh: createBowlingBall },
@@ -353,7 +394,7 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
       // Consume a rotation for every slot, including collected items.
       const rotationRandom = rng();
       const mesh = placeMazeFindable(findableRoom, mazeItems, id, label, createMesh, selected.position, () => rotationRandom);
-      if (mesh) placedFindables.push(mesh);
+      if (mesh) { placedFindables.push(mesh); keepsakes.push({ id, object: mesh }); }
     });
   }
 
@@ -365,9 +406,15 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
    *   in play (not in a menu or a conversation); only then can a Gloink see her
    */
   function update(deltaSeconds, playerPosition, { playerActive = true } = {}) {
+    if (!jaxSpawned && playerActive && (jaxWait += deltaSeconds) >= JAX_SPAWN_SECONDS) spawnJax();
     jaxBoundary.sync();
     shaderEffects.update(deltaSeconds, playerPosition);
-    jaxApi.update(deltaSeconds);
+    // (Seen before he's turned up only as a glitch fragment's flicker.)
+    if (jaxSpawned || jax.visible) {
+      jaxApi.update(deltaSeconds);
+      jaxGlitch.update(deltaSeconds);
+    }
+    room.storyUpdate?.(deltaSeconds, playerPosition);
     const seen = playerActive ? playerPosition : null;
     for (const chase of gloinkChases) chase.update(deltaSeconds, seen);
     for (const gloink of gloinks) gloink.update(deltaSeconds);
@@ -424,12 +471,54 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
 
   const jaxObjects = [];
   jax.traverse(object => { if (object.isMesh) jaxObjects.push(object); });
-  const jaxEncounter = { anchor: jax, objects: jaxObjects, radius: 2.5 };
+  // Reaching him, for the countdown: at his nook (the ones before, he runs from).
+  const jaxEncounter = { anchor: jax, objects: jaxObjects, radius: 2.5, enabled: () => jaxSpawned && atNook(),
+    seeThrough: jaxBoundary.colliders }; // his own (invisible) personal space doesn't hide him
 
-  return {
+  const room = {
     mazeSeed: seed, maze, mazePlacement, jaxEncounter, environmentLayout, shaderEffects,
-    jaxBoundary, jaxAnchor:jaxCenter, jaxApi,
+    jaxBoundary, jaxApi, jaxGlitch, spawnJax, placeJax, hideouts, keepsakes,
+    /** Where he is now (he moves between hiding places). */
+    get jaxAnchor() { return jax.position; },
+    get jaxSpawned() { return jaxSpawned; },
+    get jaxWait() { return jaxWait; },
+    get jaxStop() { return jaxStop; },
+    get jaxAtNook() { return atNook(); },
+    /** The way (cell centres) from hiding place `from` to the next one. */
+    routeOn(from) {
+      const path = findMazePath(maze, hideouts[from].cell, hideouts[Math.min(from + 1, hideouts.length - 1)].cell) ?? [];
+      return path.map(({ r, c }) => cellCenter(r, c));
+    },
     group, bounds, spawn, spawnFacing, colliders, triggers, movers, hazards, update, gloinkChases, gloinkPatrols,
     interactables: findableRoom.interactables,
   };
+  return room;
+}
+
+/**
+ * The two dead ends Jax runs from before his nook (maze.jax): well away
+ * from the start, off every Gloink's beat and the keepsakes' pockets, and
+ * as far from the nook and each other (by the corridors) as they can be.
+ */
+function chooseJaxStops(maze, layout, patrolCells) {
+  const distancesFrom = cell => new Map(getReachableCells(maze, cell).map(({ cell: other, distance }) => [other, distance]));
+  const fromStart = distancesFrom(maze.start), fromNook = distancesFrom(maze.jax);
+  const farthest = Math.max(...fromStart.values());
+  const taken = new Set([...layout.chamber, ...layout.entrance, maze.start, maze.exit, maze.jax, maze.jaxNeighbor,
+    ...patrolCells, ...layout.alcoves.slice(0, 2)]);
+  const deadEnd = cell => Object.values(cell.walls).filter(wall => !wall).length === 1;
+  // Off the dressed pockets if there are enough, otherwise any of them.
+  let pool = [...fromStart].filter(([cell, distance]) => deadEnd(cell) && !taken.has(cell) && distance >= farthest * 0.4)
+    .map(([cell]) => cell);
+  const undressed = pool.filter(cell => !layout.alcoves.includes(cell));
+  if (undressed.length >= 2) pool = undressed;
+  const stops = [];
+  for (let i = 0; i < 2; i++) {
+    if (i && !stops.length) break;
+    const away = i ? [fromNook, distancesFrom(stops[0])] : [fromNook];
+    const best = pool.filter(cell => !stops.includes(cell))
+      .sort((a, b) => Math.min(...away.map(m => m.get(b))) - Math.min(...away.map(m => m.get(a))) || a.r - b.r || a.c - b.c)[0];
+    if (best) stops.push(best);
+  }
+  return stops;
 }

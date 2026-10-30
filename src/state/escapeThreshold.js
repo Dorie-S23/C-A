@@ -1,8 +1,14 @@
+import { createChoiceTally } from '../dialogue/choiceTally.js';
+import { level3JaxFinalDialogue } from '../data/dialogues.js';
+import { MAZE_FINDABLES, MAZE_ITEM_POINTS } from './mazeItems.js';
+
 /**
  * The Escape Threshold: a hidden score carried across the whole run that
  * decides, at the end of the game, whether the party escapes (Gate 1).
  * Level 1's graded dialogue earns up to 4 points, Level 2's items up to 5
- * (one per photo — there are 5 now, not the original 3).
+ * (one per photo — there are 5 now, not the original 3). Level 3 earns a
+ * point per maze keepsake found and its final conversation's choice points;
+ * with Levels 1 and 2 it decides whether Jax abstracts (the Jax gate).
  *
  * Hidden on purpose — nothing on screen shows it; the story hints at how
  * well things are going instead. Module-level state, so it survives room
@@ -16,8 +22,21 @@
 export const LEVEL_MAX_POINTS = {
   level1: 4, // one per graded choice in Ribbit's conversation
   level2: 5, // one per C&A office picture presented to Kaufmo
+  // a point per maze keepsake, and the best answers' points in his talk
+  level3: MAZE_FINDABLES.length * MAZE_ITEM_POINTS + createChoiceTally(level3JaxFinalDialogue).maxPoints,
 };
-export const ESCAPE_MAX = Object.values(LEVEL_MAX_POINTS).reduce((sum, p) => sum + p, 0);
+// Gate 1 (escaping) is Levels 1 and 2's; Level 3 counts towards the Jax gate.
+const ESCAPE_LEVELS = ['level1', 'level2'];
+const JAX_LEVELS = ['level1', 'level2', 'level3'];
+const maxOf = levels => levels.reduce((sum, level) => sum + LEVEL_MAX_POINTS[level], 0);
+const totalOf = levels => levels.reduce((sum, level) => sum + getLevelPoints(level), 0);
+export const ESCAPE_MAX = maxOf(ESCAPE_LEVELS);
+
+// The Jax gate: Jax doesn't abstract if Levels 1 to 3 together reach this
+// share of everything they could earn.
+export const JAX_PASS_RATIO = 0.75;
+export const JAX_MAX = maxOf(JAX_LEVELS);
+export const JAX_PASS_MARK = Math.ceil(JAX_MAX * JAX_PASS_RATIO - 1e-9);
 
 // Gate 1 pass mark: mostly-good play across both levels clears it (e.g.
 // 3/4 with Ribbit and 3/5 pictures), careless play doesn't. Keeps roughly
@@ -38,14 +57,22 @@ export function getLevelPoints(level) {
 }
 
 export function getEscapeTotal() {
-  let total = 0;
-  for (const points of levelPoints.values()) total += points;
-  return total;
+  return totalOf(ESCAPE_LEVELS);
 }
 
 /** Gate 1, checked at the end of the game: does the party escape? */
 export function passesEscapeGate() {
   return getEscapeTotal() >= ESCAPE_PASS_MARK;
+}
+
+/** Levels 1 to 3's points, for the Jax gate. */
+export function getJaxTotal() {
+  return totalOf(JAX_LEVELS);
+}
+
+/** The Jax gate, checked as his final conversation ends: does he stay himself? */
+export function passesJaxGate() {
+  return getJaxTotal() >= JAX_PASS_MARK;
 }
 
 export function resetEscapeThreshold() {

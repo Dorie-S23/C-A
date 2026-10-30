@@ -216,33 +216,34 @@ Leaving the maze (both keepsakes found, Jax's conversation finished) freezes
 Pomni, fades to black and records Level 3 as complete with its ending variant,
 `saved` or `abstracted` (`storyProgress.ending`, kept in saves). A save taken
 after that loads straight into the ending instead of the maze. `jaxOutcome()`
-in `main.js` decides the variant; until the final conversation can fail
-(KAN-67) it is always `saved`. `playEnding(variant)` plays the ending
-(`src/cutscenes/endingCutscene.js`, KAN-85, KAN-89, KAN-95) in two parts.
-First the real Circus Lobby, loaded with the maze door open: Pomni walks out
-of the portal, with Jax if he was saved, to Ribbit, Kaufmo, Ragatha, Gangle,
-Zooble and Kinger waiting there (`endingLobby*Dialogue`). The last three use
-their procedural rigs and the shared character-performance actions. They talk
-until Kaufmo says he's found the exit. Then a set of its own: a door at the
-edge of the circus with light pouring through it (`exitDoor*Dialogue`). Caine
-pops in to say goodbye and they leave one by one, Pomni last; the other side
-is never shown. Each node's `action` drives the cast and each speaker picks
-the shot. Escape skips the rest; developer cutscene skipping skips it all.
-Home invalidates pending asset loads, dialogue, fades and completion cards,
-and disposes the active scene. Then the **Level 3 Complete** card, then the
-title screen. The dev menu's two **Ending** buttons jump straight to it and
-create restorable ending checkpoints.
+in `main.js` uses the result of `level3JaxFinalDialogue`: five rounds score
+into Level 3 with the keepsakes, and the Jax gate (`passesJaxGate`) selects
+whether he stays or abstracts. `jaxFinalScene` acts out that resolution.
+
+`playEnding(variant)` plays Dorsa's ending (`src/cutscenes/endingCutscene.js`)
+in two parts. First the maze entrance: the real Circus Lobby, loaded with the
+maze door open. Pomni walks out of the portal, with Jax if he was won over,
+to Ribbit, Kaufmo, Ragatha, Gangle, Zooble and Kinger, with Caine a little
+apart (`endingLobby*Dialogue`). The last three use procedural rigs and the
+shared character-performance actions. In the abstracted route, the group
+grieves before Kaufmo leads them onward; in the saved route they share a short
+running montage. Then a set of its own: a quiet corridor at the far edge of
+the circus with a single red door at its end (`exitDoor*Dialogue`). They go
+through one by one, Jax last before Pomni if he's there; then Pomni and Caine
+say goodbye, Caine bows, Pomni steps through, the door shuts behind her, and
+it cuts to white. Caine's hat is part of his head mesh, so the current model
+does not support removing it. Escape skips the rest; developer cutscene
+skipping skips it all. Then the **Level 3 Complete** card, then the title
+screen. The dev menu's two **Ending** buttons jump straight to it.
 
 With Vite on port 5174, `node tools/verify_ending_browser.mjs` checks the
-ordinary maze exit and both developer-launched variants through the real Lobby
-and exit-door controllers. It verifies story state, full cast membership,
-Jax's saved-only presence, dialogue action order, checkpoint restoration,
-Escape skipping, Home during loading and both scenes, and browser/WebGL errors.
-Review instrumentation advances the real dialogue and suppresses continuous
-drawing, but renders representative frames on demand; it does not replace the
-scene controllers. Reports and screenshots go to ignored
-`artifacts/live-ending/`. The former cast browser command delegates to this
-same live suite.
+ordinary maze exit and both developer-launched variants through the live Lobby
+and exit-door controllers. It verifies story state, cast membership, Jax's
+saved-only presence, dialogue action order, checkpoint restoration, Escape,
+Home during loading and both scenes, and browser/WebGL errors. Review
+instrumentation advances dialogue and suppresses continuous drawing while
+rendering representative frames; it does not replace the scene controllers.
+Reports and screenshots go to ignored `artifacts/live-ending/`.
 
 Developer cutscene skipping honours awaited actions and scores each choice once.
 Returning home or changing rooms cancels a pending completion card.

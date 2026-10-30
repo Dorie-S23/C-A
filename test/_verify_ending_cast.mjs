@@ -258,19 +258,13 @@ test('exit-door disposal settles a pending walk and suppresses later actions and
   assert.equal(renderer.calls, 1);
 });
 
-test('a late Caine flight callback cannot revive a disposed exit-door scene', async () => {
+test('disposing while Pomni stops at the door cannot revive Caine afterwards', async () => {
   const cast = liveCast();
-  let flightCallback;
-  let faceCalls = 0;
-  cast.caineApi.flyTo = (point, duration, callback) => { flightCallback = callback; };
-  cast.caineApi.faceTowards = () => { faceCalls++; };
   const { door } = makeDoor('saved', cast);
-  const arriving = door.onNode({ type: 'beat', action: 'caineArrives' });
+  const stopping = door.onNode({ type: 'beat', action: 'pomniStops' });
   door.dispose();
-  assert.equal(await arriving, false);
-  flightCallback();
-  await Promise.resolve();
-  assert.equal(faceCalls, 0);
+  assert.equal(await stopping, false);
+  assert.equal(cast.caineApi.caine.visible, false);
 });
 
 test('Jax departure is update-driven and resolves false on disposal', async () => {

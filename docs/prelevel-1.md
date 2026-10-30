@@ -1,7 +1,11 @@
 # Pre-Level 1 opening
 
 Start the Vite server with `npm run dev`, open `http://127.0.0.1:5173/`, and
-choose **Play** for a new story run. Room previews are available in Options;
+choose **Play** for a new story run. Play and Options → New Game first show the
+intro story: five narrated panels (`src/data/introStory.js`, images in
+`public/models/game screens/intro/`) explaining the premise. Space or a click
+finishes a caption and then turns the page; Escape or Skip story goes straight
+to the opening. Dev mode's skip-cutscenes setting leaves it out. Room previews are available in Options;
 they do not start the story or award objectives. The existing developer-mode
 option and `?dev=1` room picker remain available.
 
