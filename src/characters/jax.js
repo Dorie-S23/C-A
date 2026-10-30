@@ -44,6 +44,7 @@ const ARM_SWING = THREE.MathUtils.degToRad(36);
 const ELBOW_BEND = THREE.MathUtils.degToRad(70);
 const SLY_ELBOW_BEND = THREE.MathUtils.degToRad(25);
 const IDLE_ELBOW_BEND = THREE.MathUtils.degToRad(15); // a relaxed bend while just standing, not locked straight
+const ELBOW_FORWARD = -1; // the sign of a SIDEWAYS bend that brings a hanging forearm forward
 const BOB_HEIGHT = 0.07;
 // A forward body lean reads as "running" on its own, independent of how
 // precisely any single joint swings — leaning in over the first few
@@ -68,11 +69,19 @@ const KEY_LIGHT_INTENSITY = 6;
 const KEY_LIGHT_RANGE = 5;
 const KEY_LIGHT_OFFSET = new THREE.Vector3(0.9, 1.6, 1.1); // forward-up-right of his centre, clear of his own mesh
 
-// Standing (standNormally): upright, arms relaxed at his sides, with just a
-// slow, small breath so he isn't a statue. No shiver, hunch, shuffle or
-// twitch on top: those read as him wiggling in place.
-const IDLE_BREATHE_HZ = 0.3;
-const IDLE_BREATHE_ANGLE = THREE.MathUtils.degToRad(1.2);
+// Standing (standNormally): upright, arms relaxed at his sides, and alive
+// with slow, small movements only, so he's neither a statue nor wiggling
+// (no fast shiver, hunch, shuffle or twitch): his chest rising and falling
+// as he breathes (his arms swinging a touch with it), his weight shifting
+// from one leg to the other, his head drifting as he looks about.
+const IDLE_BREATHE_HZ = 0.25;
+const IDLE_BREATHE_ANGLE = THREE.MathUtils.degToRad(2);
+const IDLE_ARM_SWAY = THREE.MathUtils.degToRad(2.5);
+const IDLE_SHIFT_HZ = 1 / 7;
+const IDLE_SHIFT_ANGLE = THREE.MathUtils.degToRad(2.2);
+const IDLE_LOOK_HZ = 1 / 11;
+const IDLE_LOOK_ANGLE = THREE.MathUtils.degToRad(7);
+const IDLE_NOD_ANGLE = THREE.MathUtils.degToRad(2.5);
 // His arms angle out from his sides by this much, so his hands hang clear
 // of his hips instead of sinking into them.
 const ARM_OUT = 0.12; // radians
@@ -194,6 +203,50 @@ function relaxHands(model, clips) {
 }
 
 /**
+ * Rolls each hand about its own length (wrist to middle knuckle) until its
+ * palm faces his torso: call after posing. The retargeted run lines his
+ * hands up with Mixamo's but not their roll, which comes out palm-up.
+ * Which side of the knuckle row is the palm is read once here, with his
+ * arms at his sides and palms in (see relaxHands); `model` must be at rest.
+ */
+function createPalmsIn(model) {
+  model.updateMatrixWorld(true);
+  const at = (b) => b.getWorldPosition(new THREE.Vector3());
+  const torso = findBone(model, 'spine');
+  const hands = [];
+  for (const side of ['l', 'r']) {
+    const hand = findBone(model, `hand${side}`);
+    const index = findBone(model, `indexproximal${side}`), ring = findBone(model, `ringproximal${side}`);
+    const middle = findBone(model, `middleproximal${side}`);
+    if (!torso || !hand || !index || !ring || !middle) continue;
+    const entry = { hand, index, ring, middle, sign: 1 };
+    const palm = facing(entry);
+    entry.sign = palm.dot(at(torso).sub(at(hand)).setY(0)) < 0 ? -1 : 1;
+    hands.push(entry);
+  }
+  /** The palm's normal by the knuckles: (wrist to middle knuckle) × (index knuckle to ring knuckle). */
+  function facing({ hand, index, ring, middle, sign = 1 }) {
+    const along = at(middle).sub(at(hand));
+    return along.cross(at(ring).sub(at(index))).normalize().multiplyScalar(sign);
+  }
+  const roll = new THREE.Quaternion(), inverse = new THREE.Quaternion();
+  return function palmsIn() {
+    model.updateMatrixWorld(true);
+    for (const entry of hands) {
+      const axis = at(entry.middle).sub(at(entry.hand)).normalize();
+      const flat = (v) => v.addScaledVector(axis, -v.dot(axis)).normalize();
+      const palm = flat(facing(entry));
+      const toward = flat(at(torso).sub(at(entry.hand)));
+      const angle = palm.angleTo(toward) * Math.sign(palm.clone().cross(toward).dot(axis));
+      if (!Number.isFinite(angle) || Math.abs(angle) < 1e-3) continue;
+      const local = axis.applyQuaternion(entry.hand.getWorldQuaternion(inverse).invert());
+      entry.hand.quaternion.multiply(roll.setFromAxisAngle(local, angle));
+      entry.hand.updateMatrixWorld(true);
+    }
+  };
+}
+
+/**
  * Loads Jax, hidden and idle until playPassBy() is called. Still no
  * interact/collider here — he has no lines yet (that's pending the team's
  * review of the maze payoff script) — but update() keeps him breathing
@@ -269,6 +322,7 @@ export function loadJax() {
       if (bone) rest.set(bone, bone.quaternion.clone());
     }
     relaxHands(model, gaitClips);
+    const palmsIn = createPalmsIn(model);
 
     const gaitMixer = gaitClips.length ? new THREE.AnimationMixer(model) : null;
     const gaitActions = Object.fromEntries(gaitClips.map((clip) => [clip.name, gaitMixer.clipAction(clip)]));
@@ -340,11 +394,25 @@ export function loadJax() {
     /** Standing normally: rest pose, a slight elbow bend, a slow small breath. */
     function standNormally(time) {
       restorePose();
-      bendBone(bones.spine, jax, UP, Math.sin(time * IDLE_BREATHE_HZ * Math.PI * 2) * IDLE_BREATHE_ANGLE);
-      poseLeg(bones.lowerArmL, IDLE_ELBOW_BEND);
-      poseLeg(bones.lowerArmR, IDLE_ELBOW_BEND);
       bendBone(bones.upperArmL, jax, FORWARD, ARM_OUT);
       bendBone(bones.upperArmR, jax, FORWARD, -ARM_OUT);
+      // Both forearms forward, about his own side-to-side axis: poseLeg's
+      // hinge mirrors between his arms, bending one elbow backwards.
+      bendBone(bones.lowerArmL, jax, SIDEWAYS, ELBOW_FORWARD * IDLE_ELBOW_BEND);
+      bendBone(bones.lowerArmR, jax, SIDEWAYS, ELBOW_FORWARD * IDLE_ELBOW_BEND);
+      // Everything that moves comes after the elbows: each only carries
+      // the bones below it, so the elbows' own bends stay the same every
+      // frame (the arms swing, the hands don't wring).
+      const breath = Math.sin(time * IDLE_BREATHE_HZ * Math.PI * 2);
+      const shift = Math.sin(time * IDLE_SHIFT_HZ * Math.PI * 2);
+      const look = Math.sin(time * IDLE_LOOK_HZ * Math.PI * 2) + 0.4 * Math.sin(time * IDLE_LOOK_HZ * 2.3 * Math.PI * 2 + 1);
+      bendBone(bones.upperArmL, jax, SIDEWAYS, ELBOW_FORWARD * breath * IDLE_ARM_SWAY);
+      bendBone(bones.upperArmR, jax, SIDEWAYS, ELBOW_FORWARD * breath * IDLE_ARM_SWAY * 0.8);
+      bendBone(bones.spine, jax, FORWARD, shift * IDLE_SHIFT_ANGLE);
+      bendBone(bones.chest, jax, SIDEWAYS, -breath * IDLE_BREATHE_ANGLE);
+      bendBone(bones.head, jax, FORWARD, -shift * IDLE_SHIFT_ANGLE * 0.6); // keeps his head level as he leans
+      bendBone(bones.head, jax, UP, look / 1.4 * IDLE_LOOK_ANGLE);
+      bendBone(bones.head, jax, SIDEWAYS, breath * IDLE_NOD_ANGLE);
       model.position.x = 0;
     }
 
@@ -410,6 +478,7 @@ export function loadJax() {
         // The Mixamo swing brings his hands across his chest: out a little, clear of it.
         bendBone(bones.upperArmL, jax, FORWARD, RUN_ARM_OUT);
         bendBone(bones.upperArmR, jax, FORWARD, -RUN_ARM_OUT);
+        palmsIn(); // the clip's hands come palm-up: rolled back to face him
       } else {
         const walking = walk.style !== 'run';
         const phase = walk.elapsed * (walking ? 1.4 : STRIDE_HZ) * Math.PI * 2;

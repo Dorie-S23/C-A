@@ -1644,11 +1644,13 @@
                 background: rgba(255, 255, 255, 0.22);
             }
             #title-options,
+            #dev-popup,
             #level-select {
                 background: radial-gradient(ellipse at center, rgba(48, 16, 62, 0.68), rgba(8, 3, 16, 0.92));
                 backdrop-filter: blur(3px);
             }
             #title-options .title-panel-box,
+            #dev-popup .title-panel-box,
             #level-select .title-panel-box,
             #controls-card {
                 position: relative;
@@ -1667,6 +1669,7 @@
                 color: #fff;
             }
             #title-options .title-panel-box::before,
+            #dev-popup .title-panel-box::before,
             #level-select .title-panel-box::before,
             #controls-card::before {
                 content: "";
@@ -1683,6 +1686,7 @@
                     radial-gradient(circle 0.75rem at 50% 0, #000 97%, transparent) bottom / 1.5rem 0.75rem repeat-x;
             }
             #title-options .title-panel-box h2,
+            #dev-popup .title-panel-box h2,
             #level-select .title-panel-box h2,
             #controls-card h2 {
                 margin: 0;
@@ -1694,15 +1698,19 @@
                 text-shadow: 0 3px 0 #b0163f, 0 6px 0 #3d0a1a, 0 10px 18px rgba(0, 0, 0, 0.45);
             }
             #title-options .title-panel-box label { color: #f6e7c8; }
-            #title-options .title-panel-box label.title-toggle { color: #eee4f4; }
+            #title-options .title-panel-box label.title-toggle,
+            #dev-popup .title-panel-box label.title-toggle { color: #eee4f4; }
+            #dev-popup #dev-popup-note { margin: 0; color: #d9cde6; font-size: 0.9rem; }
             /* Dev mode's options, opened under its switch. */
             #dev-options { display: flex; flex-direction: column; gap: inherit; align-items: inherit;
                 margin: -0.2em 0 0 0.5em; padding-left: 1em; border-left: 2px solid rgba(255, 210, 122, 0.55); }
             #dev-options[hidden] { display: none; }
+            #dev-controls { display: flex; flex-direction: column; gap: inherit; align-items: inherit; }
             #title-options input[type="range"] { accent-color: #ffd27a; }
             #title-options #caine-memory-note,
             #title-options #reset-progress-note { color: #d9cde6; opacity: 1; font-size: 0.82rem; line-height: 1.4; }
             #title-options .title-panel-box button,
+            #dev-popup .title-panel-box button,
             #level-select .title-panel-box button,
             #controls-card button {
                 position: relative;
@@ -1718,6 +1726,7 @@
                 transition: transform 0.12s ease, background-color 0.12s ease;
             }
             #title-options .title-panel-box button:hover,
+            #dev-popup .title-panel-box button:hover,
             #level-select .title-panel-box button:not(:disabled):hover,
             #controls-card button:hover {
                 transform: translateY(-2px);
@@ -1725,6 +1734,7 @@
             }
             #title-options #btn-options-back,
             #title-options #btn-new-game,
+            #dev-popup #btn-dev-popup-close,
             #level-select #btn-level-select-back {
                 color: #fff3d6;
                 background: #d8283c;
@@ -1732,6 +1742,7 @@
             }
             #title-options #btn-options-back:hover,
             #title-options #btn-new-game:hover,
+            #dev-popup #btn-dev-popup-close:hover,
             #level-select #btn-level-select-back:hover { background: #ec3b4f; }
             #level-select .title-panel-box button:disabled {
                 opacity: 0.45;
@@ -1740,6 +1751,7 @@
                 box-shadow: 0 4px 0 #a87523;
             }
             #title-options button:focus-visible,
+            #dev-popup button:focus-visible,
             #level-select button:focus-visible,
             #controls-card button:focus-visible {
                 outline: 3px solid #ffd27a;
@@ -2369,7 +2381,24 @@
                 </label>
                 <p id="caine-memory-note" role="status">Caine’s run/retry history stays in this browser, separately from saves. Off stops captions and new history.</p>
                 <button type="button" data-caine-clear>Clear Caine’s Memory</button>
-                <!-- Dev mode: one switch; ticked, it opens up what it offers. -->
+                <button id="btn-new-game">Select Level</button>
+                <button id="btn-load-game">Load Game</button>
+                <p id="reset-progress-note">Erases every save slot and unlocked level in this browser. Can&rsquo;t be undone.</p>
+                <button id="btn-reset-progress" type="button">Reset Progress</button>
+                <button id="btn-replay-intro">&#9654; Replay intro</button>
+                <button id="btn-options-credits">Credits</button>
+                <button id="btn-options-controls">Controls</button>
+                <button id="btn-options-back">Back</button>
+            </div>
+        </div>
+        <!-- Developer mode: hidden from players, opened by typing "xddcc" on the title screen (main.js). -->
+        <div id="dev-popup" class="title-panel" role="dialog" aria-modal="true" aria-labelledby="dev-popup-title" hidden>
+            <div class="title-panel-box">
+                <h2 id="dev-popup-title">Developer mode</h2>
+                <p id="dev-popup-note">You found the secret menu. Testing tools for the game.</p>
+                <!-- Ticked, it opens up what it offers. Once unlocked, main.js
+                     moves this into Options too (and back in here for the pop-up). -->
+                <div id="dev-controls">
                 <label class="title-toggle">
                     <input id="dev-mode" type="checkbox" aria-controls="dev-options" aria-expanded="false" />
                     <span>Dev mode</span>
@@ -2385,14 +2414,8 @@
                     </label>
                     <button id="btn-room-previews">Room previews</button>
                 </div>
-                <button id="btn-new-game">Select Level</button>
-                <button id="btn-load-game">Load Game</button>
-                <p id="reset-progress-note">Erases every save slot and unlocked level in this browser. Can&rsquo;t be undone.</p>
-                <button id="btn-reset-progress" type="button">Reset Progress</button>
-                <button id="btn-replay-intro">&#9654; Replay intro</button>
-                <button id="btn-options-credits">Credits</button>
-                <button id="btn-options-controls">Controls</button>
-                <button id="btn-options-back">Back</button>
+                </div>
+                <button id="btn-dev-popup-close" type="button">Close</button>
             </div>
         </div>
         <div id="level-select" class="title-panel" hidden>

@@ -708,7 +708,9 @@ function startTitleTheme() {
 }
 
 // Keys shouldn't drive the menu hidden behind an open panel.
-const titleMenuBlocked = () => !titleOptions.hidden || !titleQuit.hidden || !levelSelect.hidden || !creditsPanel.classList.contains('hidden');
+const devPopup = document.getElementById('dev-popup');
+const titleMenuBlocked = () => !titleOptions.hidden || !titleQuit.hidden || !levelSelect.hidden || !devPopup.hidden
+  || !creditsPanel.classList.contains('hidden');
 const titleScreen = createTitleScreen({
   renderer,
   onIntroStart: startTitleTheme,
@@ -904,7 +906,9 @@ function setDevSkipIntro(on) {
   if (on && !devModeInput.checked) setDevMode(true);
   refreshRoomPreviewsButton();
 }
-const devParam = new URLSearchParams(window.location.search).get('dev');
+// ?dev=1 / ?dev=0 only on the dev server: players get Dev mode only through
+// the secret menu (DEV_CODE below).
+const devParam = import.meta.env.DEV ? new URLSearchParams(window.location.search).get('dev') : null;
 // Development-only reproduction of a reported Level 3 layout. Normal loads
 // choose a new seed, available through getOpeningDiagnostics().mazeSeed.
 const devMazeSeed = (() => {
@@ -940,6 +944,67 @@ const devSkipCutscenesInput = document.getElementById('dev-skip-cutscenes');
 devSkipCutscenesInput.addEventListener('change', () => remember(DEV_SKIP_CUTSCENES_KEY, devSkipCutscenesInput.checked));
 restoreDevMode();
 
+// Dev mode isn't in Options for players: typing DEV_CODE on the title
+// screen opens it, in its own pop-up (#dev-popup), and unlocks it for good
+// in this browser, after which it's in Options as well. One set of
+// controls (#dev-controls), moved to wherever it's showing.
+const DEV_CODE = 'xddcc';
+const DEV_UNLOCKED_KEY = 'tadc.devUnlocked';
+const devControls = document.getElementById('dev-controls');
+const devPopupClose = document.getElementById('btn-dev-popup-close');
+let devCodeTyped = '';
+/** In Options (before Select Level) once unlocked; otherwise only ever in the pop-up. */
+function placeDevControls() {
+  if (!devPopup.hidden) devPopupClose.before(devControls);
+  else if (stored(DEV_UNLOCKED_KEY)) document.getElementById('btn-new-game').before(devControls);
+  else devPopupClose.before(devControls);
+}
+function openDevPopup() {
+  remember(DEV_UNLOCKED_KEY, true);
+  titleOptions.hidden = true;
+  devPopup.hidden = false;
+  placeDevControls();
+  devModeInput.focus({ preventScroll: true });
+}
+function closeDevPopup() {
+  devPopup.hidden = true;
+  placeDevControls();
+}
+placeDevControls();
+
+// A hard refresh puts it all back to normal: locked away again (out of
+// Options), and everything it had on, off. The page can't tell a hard
+// reload from a normal one once it's loading, but it does see the keys
+// first: Ctrl+Shift+R, Ctrl+F5, Shift+F5 (Cmd+Shift+R on a Mac). A normal
+// refresh (F5, Ctrl+R) keeps it.
+function isHardRefresh(event) {
+  const r = event.code === 'KeyR' && event.shiftKey && (event.ctrlKey || event.metaKey);
+  const f5 = event.code === 'F5' && (event.ctrlKey || event.shiftKey);
+  return r || f5;
+}
+window.addEventListener('keydown', (event) => {
+  if (!isHardRefresh(event)) return;
+  for (const key of [DEV_UNLOCKED_KEY, DEV_MODE_KEY, DEV_SKIP_INTRO_KEY, DEV_SKIP_CUTSCENES_KEY]) remember(key, false);
+}, true);
+window.addEventListener('keydown', (event) => {
+  if (!devPopup.hidden && event.code === 'Escape') {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    closeDevPopup();
+    return;
+  }
+  if (!titleScreen.active || event.repeat || event.ctrlKey || event.altKey || event.metaKey || event.key.length !== 1) return;
+  devCodeTyped = (devCodeTyped + event.key.toLowerCase()).slice(-DEV_CODE.length);
+  if (devCodeTyped === DEV_CODE) {
+    devCodeTyped = '';
+    openDevPopup();
+  }
+}, true);
+document.getElementById('btn-dev-popup-close').addEventListener('click', (event) => {
+  event.stopPropagation();
+  closeDevPopup();
+});
+
 document.getElementById('btn-replay-intro').addEventListener('click', () => {
   titleOptions.hidden = true;
   titleScreen.show({ playIntro: true });
@@ -952,6 +1017,7 @@ document.getElementById('btn-new-game').addEventListener('click', (event) => {
 });
 document.getElementById('btn-room-previews').addEventListener('click', () => {
   titleOptions.hidden = true;
+  devPopup.hidden = true;
   titleScreen.hide();
   showRoomPicker();
 });

@@ -111,19 +111,31 @@ export function retargetClip(source, clip, target, name, {
 /**
  * Turns each mapped target bone's rest (in `targetRest`, world terms) so it
  * points along its source bone's rest: the way from the bone to its first
- * mapped child bone, in each rig.
+ * mapped child bone, in each rig. A bone with no mapped child to point at
+ * (a hand whose fingers aren't animated) takes its parent's turn, so it
+ * carries on in line with the bone it hangs from rather than bending off
+ * at the old angle (a hand flopping at the wrist).
  */
 function alignRests(targetBones, targetRest, sourceBones, sourceBoneForTarget) {
   const at = (bone) => bone.getWorldPosition(new THREE.Vector3());
+  const turns = new Map();
+  // Parents come before children in traverse order, so a parent's turn is known.
   for (const bone of targetBones) {
     const match = sourceBoneForTarget(bone.name, sourceBones);
     if (!match) continue;
     const child = bone.children.find((candidate) => candidate.isBone && sourceBoneForTarget(candidate.name, sourceBones));
-    if (!child) continue;
-    const toward = at(child).sub(at(bone));
-    const sourceToward = at(sourceBoneForTarget(child.name, sourceBones)).sub(at(match));
-    if (toward.lengthSq() < 1e-12 || sourceToward.lengthSq() < 1e-12) continue;
-    const turn = new THREE.Quaternion().setFromUnitVectors(toward.normalize(), sourceToward.normalize());
+    let turn = null;
+    if (child) {
+      const toward = at(child).sub(at(bone));
+      const sourceToward = at(sourceBoneForTarget(child.name, sourceBones)).sub(at(match));
+      if (toward.lengthSq() > 1e-12 && sourceToward.lengthSq() > 1e-12) {
+        turn = new THREE.Quaternion().setFromUnitVectors(toward.normalize(), sourceToward.normalize());
+      }
+    } else {
+      turn = turns.get(bone.parent) ?? null;
+    }
+    if (!turn) continue;
+    turns.set(bone, turn);
     targetRest.get(bone).premultiply(turn);
   }
 }
