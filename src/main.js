@@ -2217,7 +2217,7 @@ function updateMazeSearch(deltaSeconds) {
 }
 
 function restartMazeSearch() {
-  return retryMaze('LEVEL 3 FAILED', 'Time’s up — find both keepsakes and reach Jax before the countdown ends.');
+  return retryMaze('LEVEL 3 FAILED', 'Time’s up — catch up to Jax before the countdown ends.');
 }
 
 /**
