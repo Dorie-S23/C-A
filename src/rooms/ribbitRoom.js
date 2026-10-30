@@ -26,12 +26,25 @@ const POINTS = {
   BEDSIDE: { x: 4.3, z: -1.0 },       // standing at the foot of the bed
   SEAT: { x: 4.75, z: -1.55 },        // the mattress edge beside Ribbit
   RIBBIT_ON_BED: { x: 5.6, z: -2.0 }, // her hips on the mattress, head to the pillows (-Z)
+  // Sitting up she comes to the edge of the round bed (centre ≈ (5.8, -2.5),
+  // rim ≈ 1.7 m out; she's 1.55 m out), a little round from Pomni's seat,
+  // facing out so her legs hang over the side: her sitting clip is a chair
+  // sit. Any further in and her shins brush the bed's side on the way down.
+  RIBBIT_SITTING: { x: 5.31, z: -1.02, yaw: -0.33 },
 };
+
+// The bed's pink flower cushion (Gear; Gear001 is its centre) lies right
+// where her head goes asleep and hid her face, and wherever else on the bed
+// it went it was in the way of a shot, so the room loads without it.
+const FLOWER_CUSHION = ['Gear', 'Gear001'];
 
 // Frame both characters from the open side of the bed, away from Pomni's hat.
 const SHOTS = {
   bedside: { position: [7.4, 2.1, 0.9], target: [5.1, 1.0, -1.9] },
   seated: { position: [7.1, 1.8, 0.4], target: [5.2, 1.0, -1.9] },
+  // Once she sits up on the edge she'd hide Pomni from `seated`: this is
+  // from in front of them both, Ribbit almost face on, Pomni turned to her.
+  sittingUp: { position: [4.3, 1.7, 1.5], target: [5.0, 0.9, -1.35] },
 };
 
 
@@ -79,16 +92,26 @@ export function loadRibbitRoom(onProgress, { from, ribbitStory, playDialogue } =
       }
     }
 
-    // Ribbit curled up on her bed, head on the pillows.
+    removeFlowerCushion(room);
+
+    // Ribbit asleep on her bed, head on the pillows; sitting, on the bed's
+    // edge with her feet on the rug in front of her.
     const mattressY = floorHeightAt(room.group, POINTS.RIBBIT_ON_BED.x, POINTS.RIBBIT_ON_BED.z) ?? 0.55;
     const seatY = floorHeightAt(room.group, POINTS.SEAT.x, POINTS.SEAT.z) ?? 0.45;
-    ribbit.position.set(POINTS.RIBBIT_ON_BED.x, mattressY, POINTS.RIBBIT_ON_BED.z);
+    const sitting = POINTS.RIBBIT_SITTING;
+    const feetY = floorHeightAt(room.group, sitting.x + Math.sin(sitting.yaw) * 0.6, sitting.z + Math.cos(sitting.yaw) * 0.6);
+    const PLACES = {
+      curled: { ...POINTS.RIBBIT_ON_BED, y: mattressY, yaw: 0 },
+      sitting: { ...sitting, y: feetY ?? room.spawn.y },
+    };
+    const poseHere = (name, options) => setPose(name, { ...options, at: PLACES[name] });
     const settled = ribbitStory?.complete() ?? false;
-    setPose(settled ? 'sitting' : 'curled', { immediate: true });
+    poseHere(settled ? 'sitting' : 'curled', { immediate: true });
     setDistress(settled && ribbitStory.points() >= 2 ? 0 : 1);
     room.group.add(ribbit);
     ribbit.updateMatrixWorld(true);
-    room.collisionMeshes.push({ mesh: collider, box: new THREE.Box3().setFromObject(collider) });
+    // Dynamic: she moves to the edge of the bed when she sits up.
+    room.collisionMeshes.push({ mesh: collider, box: new THREE.Box3().setFromObject(collider), dynamic: true });
 
     // Shut until Pomni opens it (Level 1 opens and closes it itself); her
     // face plate swings with it.
@@ -103,10 +126,10 @@ export function loadRibbitRoom(onProgress, { from, ribbitStory, playDialogue } =
         objects: [collider], anchor: ribbit, radius: 2.8,
         enabled: () => ribbitStory.complete(),
         prompt: () => 'Talk to Ribbit',
-        interact: () => playDialogue('ribbitFollowup', { lookAt: POINTS.RIBBIT_ON_BED }),
+        interact: () => playDialogue('ribbitFollowup', { lookAt: POINTS.RIBBIT_SITTING }),
       });
     }
-    room.ribbitScene = { door, setPose, setDistress, seatY, points: POINTS, shots: SHOTS };
+    room.ribbitScene = { door, setPose: poseHere, setDistress, seatY, points: POINTS, shots: SHOTS };
     room.update = (deltaSeconds) => {
       update(deltaSeconds);
       door.update(deltaSeconds);
@@ -124,6 +147,36 @@ function createAccentLights() {
     lights.add(light);
   }
   return lights;
+}
+
+/**
+ * Takes the flower cushion (see FLOWER_CUSHION) out of the room: out of the
+ * scene, out of collision (raycasts would still hit it hidden), and frees
+ * what only it used, since the room's teardown no longer reaches it.
+ */
+function removeFlowerCushion(room) {
+  const meshes = [];
+  for (const name of FLOWER_CUSHION) {
+    const part = room.group.getObjectByName(name);
+    if (!part) continue;
+    part.traverse((child) => { if (child.isMesh) meshes.push(child); });
+    part.removeFromParent();
+  }
+  if (!meshes.length) return;
+  // In place: the door code was handed this same array.
+  const kept = room.collisionMeshes.filter((entry) => !meshes.includes(entry.mesh));
+  room.collisionMeshes.splice(0, room.collisionMeshes.length, ...kept);
+
+  const stillUsed = new Set();
+  room.group.traverse((child) => {
+    if (child.isMesh) for (const material of [].concat(child.material)) stillUsed.add(material);
+  });
+  for (const mesh of meshes) {
+    mesh.geometry.dispose();
+    for (const material of [].concat(mesh.material)) {
+      if (!stillUsed.has(material)) material.dispose();
+    }
+  }
 }
 
 /** The top surface under (x, z): her feet go on the rug, not under it. */
