@@ -373,9 +373,20 @@ export function createAbstractionEffect(character, { colors = {} } = {}) {
     resolve(finished);
   }
 
+  // Once they're completely gone there's nothing of them left to see. The
+  // void is stretched upward (STRETCH), so on a tall, narrow body (Jax) it
+  // would rise off their own head and leave it showing beneath. Their own
+  // meshes come off every layer instead; the shells still draw, because
+  // three.js doesn't pass an object's layers down to its children.
+  const ownLayers = meshes.map((mesh) => mesh.layers.mask);
+  function showOwnMeshes(show) {
+    meshes.forEach((mesh, i) => { mesh.layers.mask = show ? ownLayers[i] : 0; });
+  }
+
   function sync() {
     const showing = distress > 0 || progress > 0;
     for (const shell of shells) shell.visible = showing;
+    showOwnMeshes(progress < 1);
     shared.uTime.value = time;
     shared.uDistress.value = distress;
     shared.uProgress.value = progress;

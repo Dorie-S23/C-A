@@ -2,7 +2,7 @@
 
 ## Player flow
 
-Explore and collect the bowling ball and hot chocolate mug in either order. The tracker moves from **Find Jax's missing objects** (0/2, 1/2) to **Find Jax** (2/2). The small digital enclosure disappears and its collisions are removed in the same synchronous update. Approach Jax within 2.35 m with clear line of sight to start the conversation automatically. Finish all six provisional lines to obtain **Reach the exit**. Only then can the existing exit complete the maze.
+Explore and collect the bowling ball and hot chocolate mug in either order. The tracker moves from **Find Jax's missing objects** (0/2, 1/2) to **Find Jax** (2/2). The small digital enclosure disappears and its collisions are removed in the same synchronous update. Approach Jax within 2.35 m with clear line of sight to start the conversation automatically: **Face to Face**, five graded choices that decide Jax's Fate (see below). Finishing it, whichever way it goes, gives **Reach the exit**. Only then can the existing exit complete the maze.
 
 ## Manual test on port 5174
 
@@ -37,7 +37,7 @@ The developer sprint multiplier can move across a thin panel in one frame. A swe
 
 ## Dialogue lifecycle and exit
 
-`level3JaxFinalDialogue` is a separate, easily revised provisional six-line script; the Lobby's `level3JaxDialogue` is untouched. The existing overlay, portraits, naming, input, pause behaviour and player camera are reused. No new cinematic camera is introduced.
+`level3JaxFinalDialogue` is the Face to Face script (below), separate from the Dorm Hall's `level3JaxDialogue`. The existing overlay, portraits, naming, input, pause behaviour and player camera are reused. No new cinematic camera is introduced.
 
 The approach controller checks both explicit required IDs, short range, same-floor proximity, line of sight and eligible gameplay. It cannot start during pause, another dialogue, cinematic or loading. It latches while active. Completion is recorded only by the normal `onComplete` event. Cancellation does not unlock the exit; leaving range and re-approaching resumes from the last seen line within that room. Reloading an incomplete checkpoint starts the short provisional conversation again. Completed encounters do not replay after re-entry or save restore. Generation/disposal guards reject stale callbacks.
 
@@ -117,3 +117,29 @@ The maintained real-keyboard pickup regression is `node tools/verify_maze_pickup
 ## PR validation summary
 
 The integrated tree passes 94 automated tests, all 25 standalone countdown/counter browser checks (including pause, timeout/retry, loading cancellation and room detours), the real-keyboard proximity pickup checker, real-model pose and seeded collision/navigation checks, and production packaging. The latest package includes 254 referenced files. Current gameplay screenshots above include the incoming countdown and numbered tracker. Existing large-bundle advisory remains.
+
+## Face to Face: Jax's Fate and the Jax-less endings
+
+`level3JaxFinalDialogue` now has five graded choices with three options each. The best answer is worth 1 point and the other two are worth 0, with a colder reply. Every branch rejoins the main line. **Jax's Fate** (`src/state/jaxFate.js`) is the second hidden meter from the storyline outline, kept separate from the Escape Threshold. It totals the choice points plus 1 per keepsake recovered (`KEEPSAKE_BONUS`). At the script's `jaxFate` beat, main.js (`faceToFace`, through DialogueUI's `nextFor`) checks the total once against `JAX_SAVE_MARK` = 4, the team plan's proposed mark:
+
+- **Enough:** `jaxSaved`. His static fades, and the exit plays the `saved` ending (`leaveMaze`/`playEnding` in main.js).
+- **Too many bad choices:** `jaxBreaks`. He abstracts on the `jaxAbstracts` beat using the shared abstraction effect (`jaxApi.abstraction`, made in `mazeRoom.js`). The dialogue waits while it plays. HUD: **Reach the exit**, with the hint "Jax is gone. Find your way out of the maze."
+
+Both keepsakes are currently required to reach Jax, so the bonus is always 2. In practice, two good answers out of five save him, and four or five bad ones lose him. Items alone never save him. Tune it with `JAX_SAVE_MARK` / `KEEPSAKE_BONUS`.
+
+His visible distress starts at 2 (glitching) and moves a step per answer, down for good and up for poor, capped at 3. It drives both the box shake on his lines and the effect's static, so bad choices visibly push him toward the edge. Answers are set per choice, not added, so a cancelled and resumed conversation can't stack points. The outcome latches once decided.
+
+`jaxOutcome()` in main.js reads the outcome for the ending (`storyProgress.ending`, see story-flow.md). On reaching the exit after he abstracted, `resolveEnding` (`src/game/endings.js`, a pure two-gate resolver) picks the ending:
+
+- **Escape Threshold cleared → Bittersweet.** The `abstracted` ending from `src/cutscenes/endingCutscene.js`: the Lobby talk (`endingLobbyAbstractedDialogue`), then the exit door (`exitDoorAbstractedDialogue`), the group leaving without him, then the **Level 3 Complete** card.
+- **Not cleared → No Way Out** card, Back to Title (`playNoEscapeEnding`).
+
+`endingBittersweetDialogue` (the earlier, Lobby-only take on the bittersweet ending) is kept as a dialogue preview but isn't played in the story.
+
+No checkpoints are taken while the No Way Out card is up, so a save still returns to the walk out of the maze. Checkpoints keep the outcome (`jaxFate` in the save, only once the encounter is complete), and reloading or re-entering the maze shows him still abstracted. The no-escape/saved combination still plays the `saved` ending.
+
+The raw maze review entry has no Escape points, so losing Jax there shows No Way Out. To see the bittersweet ending in it, set points from the console first: `(await import('/src/state/escapeThreshold.js')).restoreEscapeThreshold({ level1: 4, level2: 5 })`.
+
+The abstraction effect now takes the character's own meshes off every layer once progress reaches 1. Its void is stretched upward, and on Jax's tall, narrow body that left his real head showing beneath it. Kaufmo's scenes end on the card at that point, so nothing changes for him.
+
+Verification: `node --test test/_verify_jax_fate.mjs` (all 243 choice paths, the save mark with 0/1/2 keepsakes, latching, distress, saves, every gate combination) and, with Vite on 5174, `node tools/verify_jax_fate_browser.mjs`. The browser check plays the conversation with real number-key/Space input three times: bad choices with Escape cleared (abstraction, save/load, Lobby scene, Bittersweet card, Back to Title), bad choices with Escape missed (No Way Out), and good choices (static clears, Maze Complete). Screenshots go to `artifacts/jax-fate/`. `tools/verify_jax_encounter_browser.mjs` now answers the choices instead of pressing Space six times.

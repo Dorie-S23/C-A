@@ -165,6 +165,35 @@ test('cutting it short resolves false; reset() puts them back at once', async ()
   assert.ok(effect.shells.every((shell) => shell.visible));
 });
 
+test('once completely gone, only the void draws; anything less brings them back', async () => {
+  const { character, body, hat } = makeCharacter();
+  hat.layers.enable(3); // a mesh on more than the default layer gets all of them back
+  const hatLayers = hat.layers.mask;
+  const camera = new THREE.PerspectiveCamera();
+  const drawn = (object) => object.layers.test(camera.layers);
+  const effect = createAbstractionEffect(character);
+
+  effect.setDistress(1, { immediate: true });
+  effect.setProgress(0.99);
+  assert.ok(drawn(body) && drawn(hat), 'still partly themselves');
+  const done = effect.abstract(1);
+  effect.update(1);
+  assert.equal(await done, true);
+  assert.ok(!drawn(body) && !drawn(hat), 'their own meshes are off every layer');
+  assert.ok(effect.shells.every((shell) => shell.visible && drawn(shell)), 'the shells, their children, still draw');
+  // A raycast skips them too, now that nothing of them is left to hit.
+  const hits = new THREE.Raycaster(new THREE.Vector3(5, 0.5, 5), new THREE.Vector3(0, 0, -1)).intersectObject(character, true);
+  assert.ok(!hits.some(({ object }) => object === body || object === hat));
+
+  effect.setProgress(0.5);
+  assert.ok(drawn(body));
+  assert.equal(hat.layers.mask, hatLayers);
+  effect.setProgress(1);
+  effect.dispose();
+  assert.ok(drawn(body), 'dispose() puts them back');
+  assert.equal(hat.layers.mask, hatLayers);
+});
+
 test('dispose() takes every shell off and leaves the character as it was', () => {
   const { character, body } = makeCharacter();
   let geometryDisposed = false;

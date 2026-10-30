@@ -48,10 +48,10 @@ test('barrier visibility and exact matching collision boxes unlock together with
  gate.group.updateMatrixWorld(true);gate.group.children.slice(0,4).forEach((mesh,i)=>assert.ok(new THREE.Box3().setFromObject(mesh).equals(gate.colliders[i])));
  items.collect('bowling-ball');gate.sync();assert.equal(gate.locked,true);items.collect('hot-chocolate-mug');gate.sync();assert.equal(gate.group.visible,false);assert.deepEqual(colliders,[wall]);gate.sync();assert.deepEqual(colliders,[wall]);
 });
-test('provisional final dialogue is separate, linear and ends only after its sixth line',()=>{
+test('final dialogue is separate and terminates on the best answers (graded paths: _verify_jax_fate.mjs)',()=>{
  const engine=createDialogueEngine(level3JaxFinalDialogue);let count=0;
- while(!engine.done){count++;engine.advance();if(count>8)throw Error('dialogue does not terminate');}
- assert.equal(count,6);
+ while(!engine.done){count++;const node=engine.current;if(node.type==='choice')engine.choose(node.options.findIndex(o=>o.points===1));else engine.advance();if(count>200)throw Error('dialogue does not terminate');}
+ assert.ok(count>10);
 });
 
 test('boundary line resources are released once by normal mesh teardown',()=>{

@@ -27,7 +27,7 @@ import { createAmbience } from './audio/ambience.js';
 import { createMusic, DEFAULT_MUSIC_VOLUME } from './audio/music.js';
 import { createTitleScreen } from './ui/titleScreen.js';
 import { createIntroStory } from './ui/introStory.js';
-import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold } from './state/escapeThreshold.js';
+import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold, passesEscapeGate } from './state/escapeThreshold.js';
 import { createStoryProgress, ENDING_VARIANTS } from './game/storyProgress.js';
 import { createSaveSlots, parseSaveFile, saveFileContents, saveFileName } from './game/saveGame.js';
 import { createLoadingBackgrounds } from './ui/loadingBackgrounds.js';
@@ -39,6 +39,8 @@ import {createMazeObjectiveHUD} from './ui/mazeObjectiveHUD.js';
 import { createMazeHints } from './ui/mazeHints.js';
 import './ui/mazeHints.css';
 import { createMazeItems, createMazeSearch, MAZE_FINDABLES } from './state/mazeItems.js';
+import { createJaxFate } from './state/jaxFate.js';
+import { resolveEnding } from './game/endings.js';
 import { runLevel1 } from './levels/level1.js';
 import { runHallwayScene } from './levels/level3Hallway.js';
 import { runLobbyScene } from './levels/level3Lobby.js';
@@ -61,6 +63,7 @@ import {
   level2IdleDialogue, level2CompleteDialogue, level2ReturnAndSendoffDialogue, level2AbstractionDialogue,
   level2TimeUpDialogue, level3HallwayDialogue, level3JaxDialogue, level3JaxFinalDialogue,
   endingLobbySavedDialogue, endingLobbyAbstractedDialogue, exitDoorSavedDialogue, exitDoorAbstractedDialogue,
+  endingBittersweetDialogue,
   level2HallwayDialogue, level2RoomOpeningDialogue, ribbitFollowupDialogue,
 } from './data/dialogues.js';
 
@@ -94,6 +97,7 @@ const DIALOGUE_SCRIPTS = {
   endingLobbyAbstracted: { script: endingLobbyAbstractedDialogue, room: 'tadc' },
   exitDoorSaved: { script: exitDoorSavedDialogue, room: null },
   exitDoorAbstracted: { script: exitDoorAbstractedDialogue, room: null },
+  endingBittersweet: { script: endingBittersweetDialogue, room: 'tadc' },
 };
 
 const ROOM_LOADERS = {
@@ -1864,6 +1868,11 @@ const mazeItems = createMazeItems({
 });
 const mazeSearch = createMazeSearch();
 let mazeGloinkWarningPending = false;
+// Gate 2, scored in Face to Face (faceToFace below); same lifecycle.
+const jaxFate = createJaxFate();
+// The No Way Out card is up (playNoEscapeEnding): no checkpoints, so a
+// save still returns to the walk out of the maze.
+let endingPlaying = false;
 let mazeAttemptSeed = null;
 let mazeClockWasPlayable = false;
 document.addEventListener('visibilitychange', () => { mazeClockWasPlayable = false; });
@@ -1923,7 +1932,7 @@ function takeCheckpoint() {
   // Preserve story checkpoint rules; the raw maze review can also save its
   // own Level 3 progression without replaying the preceding story.
   const mazeCheckpoint=currentRoomKey==='maze';
-  if ((!preLevel1Session&&!mazeCheckpoint) || restoringSave || (!openingCompleted&&!mazeCheckpoint) || !ROOM_NAMES[currentRoomKey]) return;
+  if ((!preLevel1Session&&!mazeCheckpoint) || restoringSave || endingPlaying || (!openingCompleted&&!mazeCheckpoint) || !ROOM_NAMES[currentRoomKey]) return;
   checkpoint = {
     room: currentRoomKey,
     from: currentRoomFrom,
@@ -1932,6 +1941,8 @@ function takeCheckpoint() {
     items: itemState.snapshot(),
     maze: mazeItems.snapshot(),
     mazeHints: mazeHints.snapshot(),
+    // Only a finished conversation's outcome; an unfinished one starts over.
+    jaxFate: mazeItems.jaxComplete ? jaxFate.snapshot() : null,
     escape: snapshotEscapeThreshold(),
     morningDialoguePending,
     // Shown on the slot, so a save says what it was.
@@ -1956,6 +1967,7 @@ function loadGame(data) {
     itemState.restore(data.items);
     mazeItems.restore(data.maze);
     mazeHints.restore(data.mazeHints);
+    if (mazeItems.jaxComplete) jaxFate.restore(data.jaxFate);
     restoreEscapeThreshold(data.escape);
     morningDialoguePending = Boolean(data.morningDialoguePending);
     openingCompleted = true;
@@ -2132,6 +2144,8 @@ objectives.subscribe((active) => {
 
 function resetMazeAttempt(seed = null) {
   mazeHints.reset();
+  jaxFate.reset(); // before mazeItems.reset(), whose change takes the checkpoint
+  endingPlaying = false;
   mazeItems.reset();
   mazeSearch.clear();
   mazeAttemptSeed = seed;
@@ -2201,11 +2215,10 @@ async function retryMaze(title, subtitle) {
 
 /**
  * How Level 3 went for Jax, for the ending (see ENDING_VARIANTS in
- * storyProgress.js). The final conversation has no losing path yet
- * (KAN-67), so finishing it is the only way to the exit and he's saved.
+ * storyProgress.js): Jax's Fate, decided in Face to Face (faceToFace).
  */
 function jaxOutcome() {
-  return mazeItems.jaxComplete ? 'saved' : 'abstracted';
+  return jaxFate.outcome === 'abstracted' ? 'abstracted' : 'saved';
 }
 
 /** Fades the screen to black (true) or back (false); resolves once it's there. */
@@ -2538,7 +2551,7 @@ function updatePictureCounter() {
   // including the Dorm Hall and any detours. Hide the Level 2 HUD afterward.
   const searchActive = objectives.active?.id === 'collect-photos';
   const visible = (searchActive || currentRoomKey === 'tadc' || currentRoomKey === 'kaufmo')
-    && (!preLevel1Session || storyProgress.kaufmoIntroduced) && !itemState.isDone()
+    && (!preLevel1Session || storyProgress.kaufmoIntroduced) && !itemState.isDone() && !endingPlaying
     && isLocked && readyToPlay && !paused && !dialogueUI.isActive
     && !activeCutscene && !activeCinematic()?.active && !stageBusy() && !titleScreen.active
     && overlay.classList.contains('hidden') && controlsPanel.hidden
@@ -2754,7 +2767,7 @@ function applyLoadedRoom({
   currentRoomKey = roomKey;
   if(roomKey==='maze'){
     mazeEncounter=createMazeEncounter({items:mazeItems,
-      playDialogue:handlers=>playRoomDialogue('level3JaxFinal',handlers),
+      playDialogue:handlers=>playRoomDialogue('level3JaxFinal',faceToFace(handlers)),
       onEngage:()=>currentRoomInfo?.jaxApi.engageDistressed(player.position),
       onRelease:()=>currentRoomInfo?.jaxApi.engageDistressed(null),
     });
@@ -2846,6 +2859,11 @@ function applyLoadedRoom({
     }
     if(mazeItems.jaxComplete)mazeSearch.tick(0,{playable:true,allItems:true,atJax:true});
     foundJax = mazeSearch.status === 'reached';
+    // Back in after he abstracted (a load, or a fresh maze): still gone.
+    if (jaxFate.outcome === 'abstracted') {
+      currentRoomInfo.jaxApi?.abstraction?.setProgress(1);
+      currentRoomInfo.jaxApi?.abstraction?.setDistress(1, { immediate: true });
+    }
   }
   overlay.classList.remove('loading');
   if (activeOpening?.active) {
@@ -4444,8 +4462,64 @@ function checkTriggers(player) {
     }
     foundJax=true;
     reachedExit = true;
-    void leaveMaze(jaxOutcome());
+    const variant = jaxOutcome();
+    // Jax gone and the Escape Threshold short: no way out at all.
+    if (variant === 'abstracted' && resolveEnding({ escaped: passesEscapeGate(), jaxSaved: false }) === 'noEscape') {
+      void playNoEscapeEnding();
+      return;
+    }
+    void leaveMaze(variant);
   }
+}
+
+/**
+ * Face to Face (level3JaxFinal) on top of the encounter's own handlers:
+ * each graded choice goes to Jax's Fate, his static (the shared
+ * abstraction effect) and the box's shake follow its distress, and at the
+ * 'jaxFate' beat it's decided once: saved, or too many bad choices and the
+ * script goes to 'jaxBreaks', where he abstracts on 'jaxAbstracts' (awaited,
+ * so the box waits for him). See src/state/jaxFate.js.
+ */
+function faceToFace(handlers) {
+  const abstraction = currentRoomInfo?.jaxApi?.abstraction;
+  // A line's own level wins; otherwise wherever her answers have left him.
+  const distressAt = (node) => node.distress ?? jaxFate.distress;
+  return {
+    ...handlers,
+    onChoice(option) {
+      jaxFate.record(option);
+      abstraction?.setDistress(distressFromDialogue(jaxFate.distress));
+    },
+    distressFor: (line) => (line.speaker === 'jax' ? distressAt(line) : 0),
+    nextFor(node) {
+      if (node.id !== 'jaxFate') return undefined;
+      return jaxFate.decide(mazeItems.totalFound()) === 'saved' ? 'jaxSaved' : 'jaxBreaks';
+    },
+    onNode(node) {
+      handlers.onNode?.(node);
+      abstraction?.setDistress(distressFromDialogue(distressAt(node)));
+      if (node.id === 'jaxAbstracts') return abstraction?.abstract();
+    },
+    onComplete() {
+      handlers.onComplete?.();
+      if (mazeItems.jaxComplete && jaxFate.outcome === 'abstracted') {
+        showHint('Jax is gone. Find your way out of the maze.', 6000);
+      }
+    },
+  };
+}
+
+/**
+ * Pomni walks out of the maze after Jax abstracted with the Escape
+ * Threshold short (src/game/endings.js 'noEscape'): no way out at all, so
+ * no Lobby or exit door, just the card and back to the title. Cleared, the
+ * abstracted ending plays instead (leaveMaze).
+ */
+async function playNoEscapeEnding() {
+  endingPlaying = true;
+  const done = await showLevelComplete('No Way Out', 'Jax is gone, and Kaufmo’s exit never came together. The show goes on.',
+    { resume: false, chime: 'fail', buttonLabel: 'Back to title' });
+  if (done) returnToHome();
 }
 
 /** Automatic Last Act approach; no E press or broad found-Jax trigger. */

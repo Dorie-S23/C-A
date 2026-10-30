@@ -11,6 +11,7 @@ import { shapeMazeEnvironment } from '../maze/mazeEnvironmentLayout.js';
 import { createSeededRandom } from '../maze/seededRandom.js';
 import { findMazePath, getReachableCells, selectMazeCell } from '../maze/mazePlacements.js';
 import { loadJax } from '../characters/jax.js';
+import { createAbstractionEffect } from '../effects/abstraction.js';
 import { loadGloinks } from '../characters/gloink.js';
 import { createGloinkChase } from '../characters/gloinkChase.js';
 import { createBowlingBall, createHotChocolateMug, placeMazeFindable, pulseGlow } from '../props/mazeFindables.js';
@@ -213,6 +214,9 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
   group.add(jax);
   ownMazeShadowPass(jax);
   jaxApi.setDistressed(true);
+  // For Face to Face (main.js): his static follows the conversation, and
+  // if too many choices go wrong he abstracts. Hidden, and free, until then.
+  jaxApi.abstraction = createAbstractionEffect(jax);
   const jaxBoundary=createJaxStageBoundary({position:jaxCenter,colliders,isUnlocked:()=>Boolean(mazeItems?.hasAllRequired())});
   group.add(jaxBoundary.group);
 
@@ -368,6 +372,7 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
     jaxBoundary.sync();
     shaderEffects.update(deltaSeconds, playerPosition);
     jaxApi.update(deltaSeconds);
+    jaxApi.abstraction.update(deltaSeconds);
     const seen = playerActive ? playerPosition : null;
     for (const chase of gloinkChases) chase.update(deltaSeconds, seen);
     for (const gloink of gloinks) gloink.update(deltaSeconds);

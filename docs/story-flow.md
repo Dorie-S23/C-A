@@ -215,8 +215,11 @@ Leaving the maze (both keepsakes found, Jax's conversation finished) freezes
 Pomni, fades to black and records Level 3 as complete with its ending variant,
 `saved` or `abstracted` (`storyProgress.ending`, kept in saves). A save taken
 after that loads straight into the ending instead of the maze. `jaxOutcome()`
-in `main.js` decides the variant; until the final conversation can fail
-(KAN-67) it is always `saved`. `playEnding(variant)` plays the ending
+in `main.js` decides the variant from Jax's Fate (`src/state/jaxFate.js`,
+scored in Face to Face); if he abstracted and the Escape Threshold wasn't
+cleared, a **No Way Out** card plays instead of any ending scene (see
+[level3-last-act-encounter.md](level3-last-act-encounter.md)).
+`playEnding(variant)` plays the ending
 (`src/cutscenes/endingCutscene.js`, KAN-85, KAN-89, KAN-95) in two parts.
 First the real Circus Lobby, loaded with the maze door open: Pomni walks out
 of the portal, with Jax if he was saved, to Ribbit, Kaufmo and Ragatha
@@ -229,6 +232,9 @@ Zooble and Kinger aren't in it until their models exist (KAN-90). Escape
 skips the rest; developer cutscene skipping skips it all. Then the **Level 3
 Complete** card, then the title screen. The dev menu's two **Ending**
 buttons jump straight to it.
+
+Level 3 (the maze, Face to Face with Jax, his fate and the Jax-less
+endings) is described in [level3-last-act-encounter.md](level3-last-act-encounter.md).
 
 Developer cutscene skipping honours awaited actions and scores each choice once.
 Returning home or changing rooms cancels a pending completion card.

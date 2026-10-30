@@ -958,14 +958,162 @@ export const level2ReturnAndSendoffDialogue = [
   ...level2SendoffDialogue,
 ];
 
-// Provisional Last Act encounter; intentionally separate from the Lobby intro.
+// --- Level 3.2: "Face to Face" (the Last Act) ---------------------------
+// Starts by itself when Pomni reaches Jax with both keepsakes (main.js,
+// levels/mazeEncounter.js); intentionally separate from the Dorm Hall
+// intro. Five graded choices, three options each: the best answer earns
+// 1 point toward Jax's Fate (src/state/jaxFate.js), the other two earn 0
+// and get a colder reply. Every branch rejoins the main line, so every
+// playthrough answers all five. Nodes carry ids so an interrupted
+// conversation resumes where it was (mazeEncounter's resumeAt).
+//
+// At the 'jaxFate' beat main.js decides his fate once (nextFor): enough
+// points and it falls through to 'jaxSaved'; too many bad choices and it
+// goes to 'jaxBreaks', where he abstracts on the 'jaxAbstracts' beat (the
+// shared abstraction effect, awaited) and Pomni leaves the maze alone, on
+// to the bittersweet ending. Jax's static follows jaxFate's distress line
+// by line; a line's own `distress` overrides it.
 export const level3JaxFinalDialogue = [
-  {id:'jaxFinal1',type:'line',speaker:'pomni',side:'left',mood:'worried',text:"Jax? I've been looking everywhere for you."},
-  {id:'jaxFinal2',type:'line',speaker:'jax',side:'right',text:'...Well, congratulations. You found me.'},
-  {id:'jaxFinal3',type:'line',speaker:'pomni',side:'left',mood:'worried',text:'Are you okay?'},
-  {id:'jaxFinal4',type:'line',speaker:'jax',side:'right',text:'Do I look okay to you?'},
-  {id:'jaxFinal5',type:'line',speaker:'pomni',side:'left',mood:'neutral',text:'I found everything. We can leave now.'},
-  {id:'jaxFinal6',type:'line',speaker:'jax',side:'right',text:'...You really came all this way?',next:null},
+  { id: 'jf_open', type: 'beat', text: 'The Last Act. Pomni steps onto the stage. Jax is hunched at its centre, flickering like a bad signal.' },
+  { id: 'jf_found', type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'Jax? I’ve been looking everywhere for you.' },
+  { id: 'jf_congrats', type: 'line', speaker: 'jax', side: 'right', text: '…Well, congratulations. You found me. Want a prize? There’s a whole maze of them.' },
+  { id: 'jf_okay', type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'Are you okay?' },
+  { id: 'jf_look', type: 'line', speaker: 'jax', side: 'right', text: 'Do I look okay to you?' },
+  // CHOICE 1
+  {
+    id: 'jf_c1',
+    type: 'choice',
+    speaker: 'pomni',
+    options: [
+      { text: '“No. That’s why I came.”', next: 'jf_c1_a', points: 1 },
+      { text: '“You look fine”', next: 'jf_c1_b', points: 0 },
+      { text: '“Ribbit sent me”', next: 'jf_c1_c', points: 0 },
+    ],
+  },
+  { id: 'jf_c1_a', type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'No. You don’t. That’s why I came.' },
+  { type: 'line', speaker: 'jax', side: 'right', direction: 'caught off guard', text: '…Huh. Most people take the hint when I run.', next: 'jf_c1_done' },
+  { id: 'jf_c1_b', type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Honestly? You look fine. Kind of dramatic, but fine.' },
+  { type: 'line', speaker: 'jax', side: 'right', text: 'Great. Glad my breakdown’s entertaining.', next: 'jf_c1_done' },
+  { id: 'jf_c1_c', type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'Ribbit’s really worried. She asked me to find you.' },
+  { type: 'line', speaker: 'jax', side: 'right', text: 'Of course she did. Send someone in to tell me how much I hurt her feelings. Real subtle.', next: 'jf_c1_done' },
+  { id: 'jf_c1_done', type: 'line', speaker: 'jax', side: 'right', text: 'So what is this? An intervention? Did Caine make you little cue cards?' },
+  { id: 'jf_gifts', type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'I brought you something.' },
+  { id: 'jf_gifts_beat', type: 'beat', text: 'Pomni holds out the bowling ball and the mug of hot chocolate. Jax goes very still.' },
+  { id: 'jf_where', type: 'line', speaker: 'jax', side: 'right', text: '…Where did you get those?' },
+  // CHOICE 2
+  {
+    id: 'jf_c2',
+    type: 'choice',
+    speaker: 'pomni',
+    options: [
+      { text: '“I think they’re yours”', next: 'jf_c2_a', points: 1 },
+      { text: '“Take them and talk”', next: 'jf_c2_b', points: 0 },
+      { text: '“Proof you were wrong”', next: 'jf_c2_c', points: 0 },
+    ],
+  },
+  { id: 'jf_c2_a', type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'They were in here, in the maze. I think they’re yours. Bowling with Kaufmo. The café with Ribbit.' },
+  { type: 'line', speaker: 'jax', side: 'right', direction: 'quietly', text: 'Bowling nights. And hot chocolate after. …I thought I’d thrown all that out.', next: 'jf_c2_done' },
+  { id: 'jf_c2_b', type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: 'Doesn’t matter. Take them, and then you have to talk to me.' },
+  { type: 'line', speaker: 'jax', side: 'right', text: 'Oh, it’s a trade. Cool. Love being bribed with my own junk.', next: 'jf_c2_done' },
+  { id: 'jf_c2_c', type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Kaufmo and Ribbit still care about you. These prove you were wrong about them.' },
+  { type: 'line', speaker: 'jax', side: 'right', text: 'Wow. Okay. Thanks for keeping score.', next: 'jf_c2_done' },
+  { id: 'jf_c2_done', type: 'line', speaker: 'jax', side: 'right', text: 'You know what I said to them, right? To both of them.' },
+  { id: 'jf_heard', type: 'line', speaker: 'pomni', side: 'left', mood: 'sad', text: 'I heard.' },
+  { id: 'jf_bad_guy', type: 'line', speaker: 'jax', side: 'right', text: 'Then you know I’m the bad guy here. So why are you still standing there?' },
+  // CHOICE 3
+  {
+    id: 'jf_c3',
+    type: 'choice',
+    speaker: 'pomni',
+    options: [
+      { text: '“It was awful. You’re not.”', next: 'jf_c3_a', points: 1 },
+      { text: '“They had it coming”', next: 'jf_c3_b', points: 0 },
+      { text: '“So apologise”', next: 'jf_c3_c', points: 0 },
+    ],
+  },
+  { id: 'jf_c3_a', type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'What you said was awful. That doesn’t make you awful. People say things when they’re scared.' },
+  { type: 'line', speaker: 'jax', side: 'right', text: 'I’m not scared.' },
+  { type: 'beat', text: 'Pomni waits.' },
+  { type: 'line', speaker: 'jax', side: 'right', text: '…Okay. Maybe a little.', next: 'jf_c3_done' },
+  { id: 'jf_c3_b', type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: 'Honestly, Kaufmo can be a lot. Maybe they had some of it coming.' },
+  { type: 'line', speaker: 'jax', side: 'right', text: 'Don’t. Don’t do that. They didn’t.', next: 'jf_c3_done' },
+  { id: 'jf_c3_c', type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: 'So say sorry. Problem solved. Can we go now?' },
+  { type: 'line', speaker: 'jax', side: 'right', text: 'Yeah, sure. Just glue it all back together. Easy.', next: 'jf_c3_done' },
+  { id: 'jf_c3_done', type: 'line', speaker: 'jax', side: 'right', text: 'You want to know the real joke? Kaufmo keeps saying there’s a way out. And every time he says it, I want to believe him so badly it makes me sick.' },
+  { id: 'jf_hope', type: 'line', speaker: 'jax', side: 'right', text: 'Because what if he’s wrong? What if I let myself hope, and it’s just… more circus?' },
+  // CHOICE 4
+  {
+    id: 'jf_c4',
+    type: 'choice',
+    speaker: 'pomni',
+    options: [
+      { text: '“He’s close, Jax”', next: 'jf_c4_a', points: 1 },
+      { text: '“Maybe you’re right”', next: 'jf_c4_b', points: 0 },
+      { text: '“Stop being so negative”', next: 'jf_c4_c', points: 0 },
+    ],
+  },
+  { id: 'jf_c4_a', type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'He’s close, Jax. I found the pieces he needed. He really thinks there’s a way out this time.' },
+  { type: 'line', speaker: 'jax', side: 'right', text: '…You’re serious.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: 'I don’t joke. You’ve met me.' },
+  { type: 'line', speaker: 'jax', side: 'right', text: '…Yeah. You’re kind of a downer like that.', next: 'jf_c4_done' },
+  { id: 'jf_c4_b', type: 'line', speaker: 'pomni', side: 'left', mood: 'sad', text: 'Maybe you’re right. Maybe hoping just makes it worse.' },
+  { type: 'line', speaker: 'jax', side: 'right', text: '…Yeah. Thanks. That’s exactly what I needed to hear.', next: 'jf_c4_done' },
+  { id: 'jf_c4_c', type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: 'You can’t just decide it’s hopeless. Stop being so negative.' },
+  { type: 'line', speaker: 'jax', side: 'right', text: 'Oh, I can’t? Watch me.', next: 'jf_c4_done' },
+  { id: 'jf_c4_done', type: 'beat', text: 'The static flares. For a second, half of Jax isn’t there at all.' },
+  { id: 'jf_go_back', type: 'line', speaker: 'jax', side: 'right', text: 'I don’t know how to go back out there. I don’t know how to look at them.' },
+  // CHOICE 5
+  {
+    id: 'jf_c5',
+    type: 'choice',
+    speaker: 'pomni',
+    options: [
+      { text: '“Come back with me”', next: 'jf_c5_a', points: 1 },
+      { text: '“That’s on you”', next: 'jf_c5_b', points: 0 },
+      { text: '“Stay here, then”', next: 'jf_c5_c', points: 0 },
+    ],
+  },
+  { id: 'jf_c5_a', type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'You don’t have to know yet. Just come back with me. We’ll work out the rest together.' },
+  { type: 'line', speaker: 'jax', side: 'right', text: '…Together. Ugh. You sound like Ragatha.', next: 'jaxFate' },
+  { id: 'jf_c5_b', type: 'line', speaker: 'pomni', side: 'left', mood: 'annoyed', text: 'That’s kind of on you, isn’t it? You made the mess.' },
+  { type: 'line', speaker: 'jax', side: 'right', text: '…Right. Yeah. It is.', next: 'jaxFate' },
+  { id: 'jf_c5_c', type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'If you’re not ready, stay. I’ll tell them you’re fine.' },
+  { type: 'line', speaker: 'jax', side: 'right', text: 'Sure. Leave the problem in the maze. Everyone else does.', next: 'jaxFate' },
+  // Where his fate is decided (see above). Without main.js deciding it
+  // (a dialogue preview), it falls through to the saved ending.
+  { id: 'jaxFate', type: 'beat', text: 'Jax looks at the bowling ball, then the mug, then at Pomni.' },
+  { id: 'jaxSaved', type: 'beat', text: 'The static on him thins, then fades. He straightens up, just a little.' },
+  { id: 'jf_saved_come', type: 'line', speaker: 'jax', side: 'right', text: '…Okay. Okay. I’ll come. Don’t make it weird.' },
+  { id: 'jf_saved_weird', type: 'line', speaker: 'pomni', side: 'left', mood: 'happy', text: 'I would never make it weird.' },
+  { id: 'jf_saved_thanks', type: 'line', speaker: 'jax', side: 'right', text: 'You’re making it weird right now. …Thanks, Pomni. For coming after me.', next: null },
+  { id: 'jaxBreaks', type: 'line', speaker: 'jax', side: 'right', distress: 3, text: 'No. No, see, this is what I was saying. There’s nothing to go back to. There’s nothing, there’s no, there’s no—' },
+  { id: 'jf_breaks_stay', type: 'line', speaker: 'pomni', side: 'left', mood: 'shocked', text: 'Jax! Jax, look at me. Stay with me!' },
+  { id: 'jf_breaks_ribbit', type: 'line', speaker: 'jax', side: 'right', distress: 3, text: 'Tell Ribbit… tell her the mug was… tell her I…' },
+  { id: 'jaxAbstracts', type: 'beat', distress: 3, text: 'His colours drain. He stretches and tears until there’s nothing left of Jax, just a dark, churning shape at the centre of the stage.' },
+  { id: 'jf_gone_quiet', type: 'beat', text: 'The maze goes quiet. Pomni stands there for a long time, still holding the mug.' },
+  { id: 'jf_gone_sorry', type: 'line', speaker: 'pomni', side: 'left', mood: 'sad', text: '…I’m sorry, Jax. I’m so sorry.', next: null },
+];
+
+// --- Ending: "Way Out", the bittersweet variant --------------------------
+// Jax abstracted in Face to Face, but the Escape Threshold was cleared
+// (src/game/endings.js). Pomni walks out of the maze alone and main.js
+// plays this in the Circus Lobby, then the ending card.
+export const endingBittersweetDialogue = [
+  { type: 'beat', text: 'Pomni comes out of the maze alone. Caine is hovering by the entrance, waiting.' },
+  { type: 'line', speaker: 'caine', side: 'right', mood: 'happy', text: 'Pomni! You’re back! And you’re… alone. Where’s Jax?' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'sad', text: 'He didn’t make it, Caine. He abstracted.' },
+  { type: 'line', speaker: 'caine', side: 'right', direction: 'the showman voice gone', mood: 'sad', text: '…Oh. Oh, no. I really thought, if anyone could reach him…' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'sad', text: 'So did I.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'But Kaufmo was right. There’s a way out. Can you get everyone here? Everyone.' },
+  { type: 'beat', text: 'Caine snaps his fingers. With a pop, the whole circus is standing in the Lobby: Ragatha, Kinger, Gangle, Zooble, Ribbit and Kaufmo.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'happy', text: 'It’s real. The pieces fit. I can show you the way out, all of you.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', direction: 'looking past Pomni, at the maze', text: 'Pomni… where’s Jax?' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'sad', text: 'I’m sorry, Ribbit.' },
+  { type: 'beat', text: 'Ribbit doesn’t say anything. Kaufmo puts a hand on her shoulder.' },
+  { type: 'line', speaker: 'caine', side: 'right', mood: 'worried', text: 'And, ah, what about me? I’m not sure I can go anywhere. I’m sort of… the building.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Then we take you with us. On our phones. You’re not getting left behind.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'Nobody else gets left behind.' },
+  { type: 'beat', text: 'One by one, they step through the exit. Pomni goes last, and looks back once at the maze, where Jax should be.', next: null },
 ];
 
 // --- Ending (KAN-85, KAN-89, KAN-95) ---------------------------------------

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {chromium} from 'playwright';
+import {level3JaxFinalDialogue} from '../src/data/dialogues.js';
 const output='artifacts/jax-encounter';fs.mkdirSync(output,{recursive:true});
 const browser=await chromium.launch({channel:'msedge',headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']});
 const errors=[],report={screenshots:[],saves:[],seeds:[]};
@@ -47,9 +48,11 @@ try{
  await page.evaluate(()=>window.__lastAct.blockSight(false));await page.waitForFunction(()=>window.__lastAct.status().dialogue,null,{timeout:15000});await shot('05-final-dialogue');assert.equal((await status()).items.jaxComplete,false);
  await page.evaluate(()=>window.__lastAct.cancel());await page.waitForTimeout(250);assert.equal((await status()).items.jaxComplete,false);assert.equal((await status()).dialogue,false);
  await page.evaluate(()=>window.__lastAct.park(3.5));await page.waitForFunction(()=>window.__lastAct.status().armed,null,{timeout:15000});await page.evaluate(()=>window.__lastAct.park(2.1));await page.waitForFunction(()=>window.__lastAct.status().dialogue,null,{timeout:15000});
- // Real keyboard advancement through all six provisional lines. First press
- // reveals the typed line; second advances. Never use skipToEnd for completion.
- for(let i=0;i<6;i++){await page.keyboard.press('Space');await page.waitForTimeout(60);await page.keyboard.press('Space');await page.waitForTimeout(100);}
+ // Real keyboard advancement: Space reveals then advances each line, a number
+ // key picks each choice's best answer. Never use skipToEnd for completion.
+ // (Bad answers and Jax abstracting: tools/verify_jax_fate_browser.mjs.)
+ for(let guard=0;guard<600&&(await status()).dialogue;guard++){const options=await page.evaluate(()=>document.getElementById('dialogue-options').hidden?[]:[...document.querySelectorAll('#dialogue-options .dialogue-option')].map(b=>b.textContent));
+  if(options.length){const index=options.findIndex(text=>level3JaxFinalDialogue.some(n=>n.type==='choice'&&n.options.some(o=>o.text===text&&o.points===1)));await page.keyboard.press(`Digit${index+1}`);}else await page.keyboard.press('Space');await page.waitForTimeout(50);}
  await page.waitForFunction(()=>window.__lastAct.status().items.jaxComplete,null,{timeout:15000});await page.evaluate(()=>window.__lastAct.park(3.5));await shot('06-reach-exit');state=await status();assert.ok(state.hud.includes('Reach the exit'));assert.equal(state.dialogue,false);const savedDone=await page.evaluate(()=>window.__lastAct.checkpoint());
  const legacySave={...saved0};delete legacySave.maze;
  for(const saved of [saved0,saved1,saved2,legacySave,savedDone]){
