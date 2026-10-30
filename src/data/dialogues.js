@@ -68,10 +68,9 @@ export const preLevel1Dialogue = [
     text: 'Thrilling. Another one of his "brilliant" ideas for more adventures.',
   },
   {
-    // The hallway cutaway plays before this brief narrative beat.
+    // Silent sync point: the hallway cutaway plays here.
     id: 'jaxPassByText',
-    type: 'beat',
-    text: 'Jax storms past.',
+    type: 'cue',
   },
   {
     id: 'afterJaxPassBy',
@@ -924,6 +923,11 @@ export const level3HallwayDialogue = [
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Wait. Not yet.' },
   { type: 'line', speaker: 'ribbit', side: 'right', text: 'Pomni, he’s hurting. We can’t just stand here.' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'I know. But I barely got a few sentences out and he bolted. If we both go charging in, he’ll feel cornered. I don’t think he’s ready to be confronted by us yet.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', direction: 'quietly, after a pause', text: 'When he gets like this, he forgets us, Pomni. Not on purpose. Everything good just… slips away from him.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'Slips away?' },
+  { type: 'line', speaker: 'ribbit', side: 'right', text: 'He always held onto little things. Kaufmo’s bowling nights. Jax would moan the whole way there, then never miss one. He kept a ball in his room from them. And after every fight with me, he’d turn up at the café with two hot chocolates, like it was an accident.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', direction: 'softly', text: 'Maybe he needs something he can actually hold. Something that reminds him.' },
+  { type: 'line', speaker: 'pomni', side: 'left', direction: 'half to herself', mood: 'neutral', text: 'Something that reminds him…' },
   { type: 'line', speaker: 'ribbit', side: 'right', direction: 'after a pause', text: '…Okay. So what do you need me to do?' },
   { type: 'line', speaker: 'pomni', side: 'left', mood: 'neutral', text: 'Find the others. Gangle, Zooble, Ragatha, Kinger. Tell them what’s happening with Jax. And tell them about Kaufmo.' },
   { type: 'line', speaker: 'ribbit', side: 'right', text: 'Kaufmo? What about him?' },
@@ -967,4 +971,98 @@ export const level3JaxFinalDialogue = [
   {id:'jaxFinal4',type:'line',speaker:'jax',side:'right',text:'Do I look okay to you?'},
   {id:'jaxFinal5',type:'line',speaker:'pomni',side:'left',mood:'neutral',text:'I found everything. We can leave now.'},
   {id:'jaxFinal6',type:'line',speaker:'jax',side:'right',text:'...You really came all this way?',next:null},
+];
+
+// Level 3.1, the maze keepsakes (nothing on screen asks for them: Ribbit
+// planted the idea in level3HallwayDialogue). What Pomni says picking each up.
+export const mazePickupBowlingDialogue = [
+  { type: 'line', speaker: 'pomni', side: 'left', direction: 'picking up the ball, quietly', mood: 'neutral',
+    text: 'This feels… familiar. Like it’s been held a lot.', next: null },
+];
+export const mazePickupMugDialogue = [
+  { type: 'line', speaker: 'pomni', side: 'left', direction: 'picking up the mug', mood: 'shocked',
+    text: 'It’s still warm. How is it still warm?', next: null },
+];
+
+// Jax's glitch fragments: short stuttering lines over an audio crackle as he
+// flickers between the maze's walls, before he turns up (no dialogue box;
+// ui/glitchCaption.js). The bowling set before he first appears, the hot
+// chocolate set before he's next found, after he first runs.
+export const JAX_GLITCH_FRAGMENTS = {
+  bowling: ['…strike… every time… and nobody…', '…ten pins… all of them… down…', '…never missed one… never…'],
+  mug: ['…two cups… one’s always cold…', '…wasn’t an accident… it never was…', '…she always… waited…'],
+};
+
+// Level 3, in the maze: what Pomni overhears the first two times she finds
+// Jax (mazeJaxChase.js), before he spots her and bolts. Provisional lines.
+export const level3JaxMumble1Dialogue = [
+  {type:'line',speaker:'jax',side:'right',direction:'mumbling to himself, back turned',
+    text:"...Okay. Okay. Nobody comes down here. Nobody ever comes down here. Just... stay put.",next:null},
+];
+export const level3JaxMumble2Dialogue = [
+  {type:'line',speaker:'jax',side:'right',direction:'mumbling to himself, twitching',
+    text:"Stop glitching. Stop it. You're fine. Everything's fine. Totally, completely fine...",next:null},
+];
+
+// --- Ending (KAN-85, KAN-89, KAN-95) ---------------------------------------
+// After the maze exit (main.js leaveMaze/playEnding), in two parts, acted
+// out by cutscenes/endingCutscene.js (each `action`). First the Circus
+// Lobby, just outside the maze door: Pomni comes out, with Jax or alone,
+// the others are waiting, and they talk until Kaufmo says he's found the
+// exit. Then the exit door itself, where they leave one by one. One of each
+// per ENDING_VARIANTS entry. Gangle, Zooble and Kinger have no lines until
+// their models exist (KAN-90).
+export const endingLobbySavedDialogue = [
+  { type: 'beat', action: 'walkOut', text: 'Pomni and Jax step out of the maze door into the circus lobby. Everyone is waiting.' },
+  { type: 'line', action: 'groupReacts', speaker: 'ragatha', side: 'right', direction: 'rushing forward', text: 'Pomni! Jax! You’re both okay!' },
+  { type: 'line', speaker: 'jax', side: 'right', direction: 'hands in his pockets', text: 'Don’t make it weird.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'happy', text: 'You found him! I told you the pieces would lead somewhere!' },
+  { type: 'line', speaker: 'ribbit', side: 'right', direction: 'quietly', text: 'Welcome back, Jax.' },
+  { type: 'line', action: 'jaxLooksAway', speaker: 'jax', side: 'right', text: '…Yeah. Whatever. Thanks, I guess.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'happy', text: 'Nobody gave up on you. That’s the only reason I could find you.' },
+  { type: 'line', action: 'kaufmoExit', speaker: 'kaufmo', side: 'right', mood: 'happy', text: 'Speaking of finding things… I did it. I found the exit. The real one. Come on, everyone, let’s go!' },
+  { type: 'beat', text: 'Kaufmo leads them all across the circus.', next: null },
+];
+
+export const endingLobbyAbstractedDialogue = [
+  { type: 'beat', action: 'walkOut', text: 'Pomni steps out of the maze door alone, slowly, arms hanging at her sides.' },
+  { type: 'line', action: 'groupReacts', speaker: 'ragatha', side: 'right', mood: 'happy', text: 'Pomni! You made it out!' },
+  { type: 'line', action: 'groupRealises', speaker: 'ragatha', side: 'right', direction: 'her smile fading', text: '…Where’s Jax?' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'I’m sorry. I was too late. He was already… gone.' },
+  { type: 'beat', action: 'grief', text: 'Nobody says anything for a long moment.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'sad', text: 'No. No, he can’t be. He was the one who kept telling me I was crazy…' },
+  { type: 'line', speaker: 'ribbit', side: 'right', direction: 'barely above a whisper', text: 'He always acted like nothing could get to him.' },
+  { type: 'line', speaker: 'ragatha', side: 'right', direction: 'putting a hand on Pomni’s shoulder', text: 'You went in after him, Pomni. You did more than any of us did.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'Then why does it feel like my fault?' },
+  { type: 'line', action: 'kaufmoExit', speaker: 'kaufmo', side: 'right', mood: 'sad', direction: 'after a while', text: '…I found the exit. The real one. I don’t think he’d want us to stay here. Let’s go.' },
+  { type: 'beat', text: 'Kaufmo leads them all across the circus.', next: null },
+];
+
+// The exit door: the same for both until the last of them have gone.
+const exitDoorOpening = [
+  { type: 'beat', action: 'gathered', text: 'A plain door at the very edge of the circus, light pouring out around it. None of them had ever noticed it before.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'happy', text: 'This is it. I checked it a hundred times. It’s real.' },
+  { type: 'beat', action: 'caineArrives', text: 'Caine pops into the air beside them.' },
+  { type: 'line', speaker: 'caine', side: 'right', mood: 'shocked', text: 'Leaving? All of you? Well! I suppose every show has its final curtain.' },
+  { type: 'line', speaker: 'ragatha', side: 'right', text: 'Thank you for everything, Caine. Really.' },
+  { type: 'line', speaker: 'caine', side: 'right', mood: 'happy', text: 'Oh, stop it. Go on, go on! Before I get sentimental!' },
+  { type: 'beat', action: 'kaufmoLeaves', text: 'Kaufmo goes first, without looking back.' },
+  { type: 'beat', action: 'ribbitLeaves', text: 'Ribbit follows him through.' },
+  { type: 'beat', action: 'ragathaLeaves', text: 'Ragatha squeezes Pomni’s hand, and goes.' },
+];
+
+export const exitDoorSavedDialogue = [
+  ...exitDoorOpening,
+  { type: 'line', speaker: 'jax', side: 'right', direction: 'almost a smile', text: 'Don’t get sentimental on me, Pomni.' },
+  { type: 'beat', action: 'jaxLeaves', text: 'Jax shrugs, and strolls through like it’s nothing.' },
+  { type: 'line', speaker: 'caine', side: 'right', mood: 'happy', text: 'Goodbye, Pomni.' },
+  { type: 'beat', action: 'pomniLeaves', text: 'Pomni steps into the light.', next: null },
+];
+
+export const exitDoorAbstractedDialogue = [
+  ...exitDoorOpening,
+  { type: 'beat', action: 'pomniLooksBack', text: 'Pomni looks back at the circus one last time.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', text: 'I’m sorry, Jax.' },
+  { type: 'line', speaker: 'caine', side: 'right', mood: 'sad', text: 'Goodbye, Pomni.' },
+  { type: 'beat', action: 'pomniLeaves', text: 'Pomni steps into the light.', next: null },
 ];

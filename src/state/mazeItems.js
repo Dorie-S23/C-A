@@ -1,18 +1,31 @@
-/** Level 3 keepsakes and encounter checkpoint; independent of Escape Threshold. */
+/**
+ * Level 3's keepsakes, its score and the encounter checkpoint. The bowling
+ * ball and the hot chocolate are optional: each found is a point towards
+ * the Level 3 score (with the final conversation's choices, choicePoints),
+ * and nothing requires them. main.js feeds score into the Escape Threshold;
+ * jaxOutcome is what that total decided when the talk ended.
+ */
 export const MAZE_FINDABLES = [
   { id: 'bowling-ball', label: 'bowling ball' },
   { id: 'hot-chocolate-mug', label: 'mug of hot chocolate' },
 ];
+export const MAZE_ITEM_POINTS = 1; // each keepsake, whichever and however many
+const OUTCOMES = ['stays', 'abstracts'];
 const validSeed=value=>Number.isInteger(value)&&value>=0&&value<=0xffffffff;
 export function createMazeItems({ onCollect=()=>{}, onChange=()=>{} }={}) {
-  const collected=new Set();let seed=null,jaxComplete=false;
+  const collected=new Set();let seed=null,jaxComplete=false,choicePoints=0,jaxOutcome=null;
   const hasAllRequired=()=>MAZE_FINDABLES.every(item=>collected.has(item.id));
   return {
     hasCollected:id=>collected.has(id),
+    /** Both keepsakes found (a full score's worth; never a requirement). */
     hasAllRequired,
     totalFound:()=>collected.size,
     get seed(){return seed;},
     get jaxComplete(){return jaxComplete;},
+    get choicePoints(){return choicePoints;},
+    get jaxOutcome(){return jaxOutcome;},
+    /** Level 3's points: the keepsakes found and the conversation's choices. */
+    get score(){return collected.size*MAZE_ITEM_POINTS+choicePoints;},
     ensureSeed(preferred){
       if(seed===null){seed=validSeed(preferred)?preferred:Math.floor(Math.random()*0x100000000);onChange();}
       return seed;
@@ -21,18 +34,30 @@ export function createMazeItems({ onCollect=()=>{}, onChange=()=>{} }={}) {
       if(!MAZE_FINDABLES.some(item=>item.id===id)||collected.has(id))return false;
       collected.add(id);onCollect(id,collected.size,MAZE_FINDABLES.length);onChange();return true;
     },
-    completeJax(){if(!hasAllRequired()||jaxComplete)return false;jaxComplete=true;onChange();return true;},
-    snapshot(){return {collected:MAZE_FINDABLES.filter(item=>collected.has(item.id)).map(item=>item.id),seed,jaxComplete};},
+    /** The final conversation's choice points (replacing any from an earlier try at it). */
+    setChoicePoints(points){
+      const next=Number.isFinite(points)?Math.max(0,points):0;
+      if(next===choicePoints)return;choicePoints=next;onChange();
+    },
+    /** The talk with Jax is over, and the total decided this (`stays` / `abstracts`). */
+    completeJax(outcome=null){
+      if(jaxComplete)return false;
+      jaxComplete=true;jaxOutcome=OUTCOMES.includes(outcome)?outcome:null;onChange();return true;
+    },
+    snapshot(){return {collected:MAZE_FINDABLES.filter(item=>collected.has(item.id)).map(item=>item.id),seed,jaxComplete,choicePoints,jaxOutcome};},
     restore(saved={}){
       collected.clear();
       for(const id of Array.isArray(saved?.collected)?saved.collected:[])if(MAZE_FINDABLES.some(item=>item.id===id))collected.add(id);
-      seed=validSeed(saved?.seed)?saved.seed:null;jaxComplete=Boolean(saved?.jaxComplete)&&hasAllRequired();onChange();
+      seed=validSeed(saved?.seed)?saved.seed:null;jaxComplete=Boolean(saved?.jaxComplete);
+      choicePoints=Number.isFinite(saved?.choicePoints)?Math.max(0,saved.choicePoints):0;
+      jaxOutcome=jaxComplete&&OUTCOMES.includes(saved?.jaxOutcome)?saved.jaxOutcome:null;onChange();
     },
-    reset(){collected.clear();seed=null;jaxComplete=false;onChange();},
+    reset(){collected.clear();seed=null;jaxComplete=false;choicePoints=0;jaxOutcome=null;onChange();},
   };
 }
+/** On screen, only ever "Follow Jax" (then the way out): the keepsakes aren't asked for. */
 export function mazeObjective(items){
-  return {title:items.jaxComplete?'Reach the exit':items.hasAllRequired()?'Find Jax':"Find Jax's missing objects",count:MAZE_FINDABLES.filter(item=>items.hasCollected(item.id)).length,complete:items.jaxComplete};
+  return {title:items.jaxComplete?'Reach the exit':'Follow Jax',complete:items.jaxComplete};
 }
 
 export const MAZE_SEARCH_SECONDS = 300;
@@ -46,10 +71,11 @@ export function createMazeSearch() {
     get status() { return status; },
     start() { timeLeft = MAZE_SEARCH_SECONDS; status = 'searching'; },
     clear() { timeLeft = null; status = 'idle'; },
-    tick(deltaSeconds, { playable = false, allItems = false, atJax = false } = {}) {
+    // Reaching him stops the clock, keepsakes or not.
+    tick(deltaSeconds, { playable = false, atJax = false } = {}) {
       if (!playable || status !== 'searching') return null;
       if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) throw new RangeError('Maze clock delta must be finite and nonnegative.');
-      if (allItems && atJax) { status = 'reached'; return 'reached'; }
+      if (atJax) { status = 'reached'; return 'reached'; }
       timeLeft = Math.max(0, timeLeft - deltaSeconds);
       if (timeLeft === 0) { status = 'expired'; return 'expired'; }
       return null;

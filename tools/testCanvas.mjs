@@ -11,8 +11,9 @@ globalThis.document ??= {
       // the bowling ball's...): one missing here fails the whole maze load.
       return {
         createRadialGradient() { return { addColorStop() {} }; },
-        clearRect() {}, fillRect() {}, strokeRect() {}, fillText() {},
-        beginPath() {}, moveTo() {}, lineTo() {}, arc() {}, ellipse() {}, closePath() {}, fill() {}, stroke() {},
+        createLinearGradient() { return { addColorStop() {} }; },
+        clearRect() {}, fillRect() {}, strokeRect() {}, fillText() {}, strokeText() {},
+        beginPath() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {}, arc() {}, ellipse() {}, closePath() {}, fill() {}, stroke() {},
         save() {}, restore() {}, translate() {}, rotate() {},
       };
     } };

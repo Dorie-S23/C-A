@@ -9,7 +9,7 @@ import { createLevel2Items } from '../src/state/level2Items.js';
 import {
   getLevelPoints, resetEscapeThreshold, restoreEscapeThreshold, setLevelPoints, snapshotEscapeThreshold,
 } from '../src/state/escapeThreshold.js';
-import { createSaveSlots, SAVE_VERSION, SLOT_COUNT } from '../src/game/saveGame.js';
+import { createSaveSlots, parseSaveFile, saveFileContents, saveFileName, SAVE_FILE_FORMAT, SAVE_VERSION, SLOT_COUNT } from '../src/game/saveGame.js';
 
 function memoryStorage() {
   const data = new Map();
@@ -132,4 +132,32 @@ test('saving an unfinished Level 1 cannot grant eligibility for Kaufmo on load',
   assert.equal(b.story.hallwayPending, false);
   assert.equal(b.story.finishHallway(), false);
   assert.equal(b.objectives.active.id, 'find-ribbit');
+});
+
+test('a save file round-trips the checkpoint, and nothing else passes for one', () => {
+  const checkpoint = {
+    room: 'tadc', from: 'dorm',
+    objectives: { active: 'collect-photos', completed: ['find-caine', 'find-ribbit', 'find-kaufmo'] },
+    story: { ribbitPoints: 3, hallwaySeen: true, kaufmoIntroduced: true },
+    items: { collected: ['ca2'], presented: [], done: false },
+    escape: { level1: 3 }, objectiveTitle: 'Find and deliver the photos',
+  };
+  const text = saveFileContents(checkpoint);
+  const data = parseSaveFile(text);
+  assert.equal(data.format, SAVE_FILE_FORMAT);
+  assert.equal(data.version, SAVE_VERSION);
+  assert.ok(Date.parse(data.savedAt), 'stamped with when it was saved');
+  for (const [key, value] of Object.entries(checkpoint)) assert.deepEqual(data[key], value, `${key} survives the file`);
+
+  assert.equal(parseSaveFile('not json at all'), null, 'a damaged file');
+  assert.equal(parseSaveFile(JSON.stringify({ room: 'tadc', objectives: {} })), null, 'some other .json');
+  assert.equal(parseSaveFile(JSON.stringify({ format: SAVE_FILE_FORMAT, version: SAVE_VERSION, objectives: {} })), null, 'no room to load into');
+  assert.deepEqual(parseSaveFile(JSON.stringify({ format: SAVE_FILE_FORMAT, version: SAVE_VERSION + 1, savedAt: 'x', room: 'tadc', objectives: {} })),
+    { incompatible: true, savedAt: 'x' }, 'another version of the game');
+});
+
+test('a save file is named for what it is', () => {
+  const when = new Date('2026-10-30T12:00:00Z');
+  assert.equal(saveFileName({ objectives: { active: 'find-ribbit' } }, when), 'tadc-save-find-ribbit-2026-10-30.json');
+  assert.equal(saveFileName({ room: 'maze', objectives: { active: null } }, when), 'tadc-save-maze-2026-10-30.json');
 });

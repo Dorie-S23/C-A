@@ -12,13 +12,10 @@ const GLOW_COLOR = 0xfff2c0;
 const GLOW_PULSE_HZ = 0.6;
 const GLOW_EMISSIVE_BASE = 0.4;
 const GLOW_EMISSIVE_SWING = 0.5;
-// Metres from a keepsake that "close enough to pick up" means. Both are
-// tiny floor props at the back of a side pocket, too small to aim the
-// crosshair at, so being near one with it in sight is enough: this covers
-// the whole pocket from the corridor outside it (cells are 4.5 m, so the
-// pocket's mouth is 2.25 m away), and main.js's line-of-sight check keeps
-// it from reaching through a wall.
-const PICKUP_RADIUS = 3;
+// Metres from a keepsake that "close enough to pick up" means. Pickup also
+// needs the crosshair on the prop itself (aimOnly), so she has to walk up
+// to it and look at it rather than just pass the pocket.
+const PICKUP_RADIUS = 1.6;
 
 function glowMaterial(color, { roughness = 0.5, metalness = 0.1 } = {}) {
   return new THREE.MeshStandardMaterial({
@@ -45,8 +42,8 @@ const BALL_FRAGMENT_SHADER = `
   varying vec3 vNormal;
   varying vec3 vViewPosition;
   uniform float uGlow;
-  #include <tonemapping_pars_fragment>
-  #include <colorspace_pars_fragment>
+  // three.js prepends tonemapping_pars/colorspace_pars to every
+  // ShaderMaterial; including them again redefines them and fails to compile.
   float hash3(vec3 p) {
     p = fract(p * 0.1031);
     p += dot(p, p.yxz + 33.33);
@@ -155,47 +152,137 @@ export function createBowlingBall() {
   return group;
 }
 
+// The mug's outer silhouette (radius, height), bottom to lip: a small foot
+// under a round, bellied bowl that tucks back in at the mouth.
+const MUG_PROFILE = [
+  [0.001, 0], [0.105, 0], [0.118, 0.012], [0.15, 0.03], [0.2, 0.075],
+  [0.236, 0.14], [0.25, 0.215], [0.244, 0.285], [0.226, 0.345], [0.206, 0.39], [0.2, 0.405],
+].map(([x, y]) => new THREE.Vector2(x, y));
+const MUG_OUTLINE = new THREE.SplineCurve(MUG_PROFILE).getPoints(60);
+
+/** The outer radius of the mug at height `y`, read off its smoothed outline. */
+function mugRadiusAt(y) {
+  for (let i = 1; i < MUG_OUTLINE.length; i++) {
+    const a = MUG_OUTLINE[i - 1], b = MUG_OUTLINE[i];
+    if (y <= b.y) return THREE.MathUtils.lerp(a.x, b.x, (y - a.y) / Math.max(b.y - a.y, 1e-6));
+  }
+  return MUG_OUTLINE.at(-1).x;
+}
+
+/** A strip of the mug's own surface from y0 to y1, lifted off it by `lift`, for decals that hug the belly. */
+function mugShell(y0, y1, lift, phiStart, phiLength, rows = 24) {
+  const points = [];
+  for (let i = 0; i <= rows; i++) {
+    const y = THREE.MathUtils.lerp(y0, y1, i / rows);
+    points.push(new THREE.Vector2(mugRadiusAt(y) + lift, y));
+  }
+  return new THREE.LatheGeometry(points, 48, phiStart, phiLength);
+}
+
+function goldGradient(context, height) {
+  const gradient = context.createLinearGradient(0, 0, 0, height);
+  gradient.addColorStop(0, '#ffd27a');
+  gradient.addColorStop(0.45, '#e0892c');
+  gradient.addColorStop(0.6, '#ffc35c');
+  gradient.addColorStop(1, '#b85a17');
+  return gradient;
+}
+
+/** Gold brush-script "Café Cirque", the two words stepping down to the right. */
 function createMugLabel() {
   const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 256;
+  canvas.width = 1024;
+  canvas.height = 576;
   const context = canvas.getContext('2d');
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = '#bd7447';
+  context.fillStyle = context.strokeStyle = goldGradient(context, canvas.height);
+  context.lineWidth = 9;
+  context.lineJoin = 'round';
+  context.textBaseline = 'alphabetic';
+  context.font = 'italic 250px "Segoe Script", "Brush Script MT", "Lucida Handwriting", cursive';
+  context.save();
+  context.translate(512, 288);
+  context.rotate(-0.14);
   context.textAlign = 'center';
-  context.textBaseline = 'middle';
-  context.font = 'italic 54px Georgia, serif';
-  context.fillText('Café Circus', 256, 130);
-  context.font = '24px Georgia, serif';
-  context.fillText('✦  HOT CHOCOLATE  ✦', 256, 190);
+  for (const [word, x, y] of [['Café', -110, -20], ['Cirque', 50, 230]]) {
+    context.strokeText(word, x, y);
+    context.fillText(word, x, y);
+  }
+  context.restore();
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+/** The little gold Eiffel Tower on the back of the mug. */
+function createTowerDecal() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 512;
+  const context = canvas.getContext('2d');
+  context.fillStyle = goldGradient(context, canvas.height);
+  context.beginPath();
+  context.moveTo(128, 20);
+  context.lineTo(140, 150); context.lineTo(158, 280); context.lineTo(200, 480);
+  context.lineTo(160, 480); context.quadraticCurveTo(128, 380, 96, 480);
+  context.lineTo(56, 480); context.lineTo(98, 280); context.lineTo(116, 150);
+  context.closePath();
+  context.fill();
+  context.fillRect(88, 270, 80, 14); // the two viewing decks
+  context.fillRect(106, 150, 44, 10);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
 
+/** Cocoa powder dusted over the cream: a scatter of small brown flecks. */
+function createCocoaDust() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 256;
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, 256, 256);
+  let seed = 4127;
+  const random = () => { seed = (1664525 * seed + 1013904223) >>> 0; return seed / 4294967296; };
+  for (let i = 0; i < 900; i++) {
+    context.fillStyle = `rgba(${90 + random() * 40 | 0}, ${45 + random() * 20 | 0}, 25, ${0.25 + random() * 0.5})`;
+    context.beginPath();
+    context.arc(random() * 256, random() * 256, 0.6 + random() * 1.6, 0, Math.PI * 2);
+    context.fill();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  return texture;
+}
+
+/** A thick piped swirl: one fat tube spiralling in and up, its coils overlapping into soft-serve ridges. */
 function createWhippedCream() {
   const points = [];
-  for (let index = 0; index <= 64; index++) {
-    const t = index / 64;
-    const angle = t * Math.PI * 5.4;
-    const radius = 0.105 * (1 - t) + 0.002;
-    points.push(new THREE.Vector3(Math.cos(angle) * radius, 0.415 + t * 0.19, Math.sin(angle) * radius));
+  for (let index = 0; index <= 96; index++) {
+    const t = index / 96;
+    const angle = t * Math.PI * 2 * 3.2;
+    const radius = 0.128 * (1 - t) ** 0.9 + 0.004;
+    points.push(new THREE.Vector3(Math.cos(angle) * radius, 0.43 + t * 0.2, Math.sin(angle) * radius));
   }
   const curve = new THREE.CatmullRomCurve3(points);
-  const segments = 80;
-  const sides = 10;
+  const segments = 160;
+  const sides = 16;
   const frames = curve.computeFrenetFrames(segments, false);
   const positions = [];
+  const uvs = [];
   const indices = [];
   for (let i = 0; i <= segments; i++) {
     const t = i / segments;
     const center = curve.getPointAt(t);
-    const tubeRadius = 0.043 * (1 - t) + 0.003;
+    // Stays plump almost to the top, then rounds off into a soft peak.
+    const tubeRadius = 0.058 * (1 - t) ** 0.55 + 0.012;
     for (let j = 0; j <= sides; j++) {
       const angle = (j / sides) * Math.PI * 2;
       const normal = frames.normals[i].clone().multiplyScalar(Math.cos(angle))
         .addScaledVector(frames.binormals[i], Math.sin(angle));
       positions.push(center.x + normal.x * tubeRadius, center.y + normal.y * tubeRadius, center.z + normal.z * tubeRadius);
+      uvs.push(t * 8, j / sides);
       if (i < segments && j < sides) {
         const a = i * (sides + 1) + j;
         const b = a + sides + 1;
@@ -205,62 +292,137 @@ function createWhippedCream() {
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;
 }
 
-/** Large celadon Café Circus mug with a gold rim and whipped hot chocolate. */
+/**
+ * Jax's Café Cirque mug: a round sage-green bowl with a wide gold band at
+ * the lip, a flat ring handle edged in gold, gold script on the front and
+ * a tiny Eiffel Tower on the back, heaped with a mocha whipped-cream swirl,
+ * cocoa dust and marshmallows.
+ */
 export function createHotChocolateMug() {
   const group = new THREE.Group();
   group.name = 'MazeFindable';
-  const mugMaterial = glowMaterial(0xd8e4d8, { roughness: 0.22, metalness: 0.04 });
-  const profile = [
-    new THREE.Vector2(0.13, 0.015), new THREE.Vector2(0.18, 0.025),
-    new THREE.Vector2(0.225, 0.07), new THREE.Vector2(0.245, 0.15),
-    new THREE.Vector2(0.245, 0.29), new THREE.Vector2(0.225, 0.38),
-    new THREE.Vector2(0.21, 0.405),
-  ];
-  const body = new THREE.Mesh(new THREE.LatheGeometry(profile, 48), mugMaterial);
+  // Its own sage glow rather than the shared warm one, which reads as cream.
+  const mugMaterial = glowMaterial(0x9cc7a6, { roughness: 0.14, metalness: 0.03 });
+  mugMaterial.emissive.set(0x86b892);
+  mugMaterial.side = THREE.DoubleSide;
+  const gold = new THREE.MeshStandardMaterial({
+    color: 0xe9a446, roughness: 0.22, metalness: 0.85, emissive: 0x6b3a0c, emissiveIntensity: 0.6,
+  });
+
+  // The wall turns over the lip and runs a little way down inside.
+  const wall = [...MUG_OUTLINE, new THREE.Vector2(0.186, 0.405), new THREE.Vector2(0.184, 0.36)];
+  const body = new THREE.Mesh(new THREE.LatheGeometry(wall, 64), mugMaterial);
   body.castShadow = true;
   body.receiveShadow = true;
   group.add(body);
 
-  const handle = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.031, 12, 32), mugMaterial);
-  handle.position.set(0.275, 0.215, 0);
-  handle.castShadow = true;
-  group.add(handle);
+  // Wide gold band round the mouth, folding over the lip.
+  const bandPoints = [];
+  for (let i = 0; i <= 10; i++) {
+    const y = THREE.MathUtils.lerp(0.352, 0.405, i / 10);
+    bandPoints.push(new THREE.Vector2(mugRadiusAt(y) + 0.0025, y));
+  }
+  bandPoints.push(new THREE.Vector2(0.193, 0.409), new THREE.Vector2(0.185, 0.4));
+  group.add(new THREE.Mesh(new THREE.LatheGeometry(bandPoints, 64), gold));
+
+  // Flat ring handle: a short open band, sage outside, gold along both edges.
+  const handleY = 0.22, ringRadius = 0.078, ringDepth = 0.07;
+  const handleX = mugRadiusAt(handleY) + ringRadius - 0.012;
+  const ring = new THREE.Mesh(new THREE.CylinderGeometry(ringRadius, ringRadius, ringDepth, 40, 1, true), mugMaterial);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.set(handleX, handleY, 0);
+  ring.castShadow = true;
+  group.add(ring);
+  for (const side of [-1, 1]) {
+    const edge = new THREE.Mesh(new THREE.TorusGeometry(ringRadius, 0.0055, 8, 40), gold);
+    edge.position.set(handleX, handleY, side * ringDepth / 2);
+    group.add(edge);
+  }
 
   const chocolate = new THREE.Mesh(
-    new THREE.CircleGeometry(0.204, 48),
-    new THREE.MeshStandardMaterial({ color: 0x4a2118, roughness: 0.24, metalness: 0.02 }),
+    new THREE.CircleGeometry(0.186, 48),
+    new THREE.MeshStandardMaterial({ color: 0x5a2c1a, roughness: 0.3, metalness: 0.02 }),
   );
   chocolate.rotation.x = -Math.PI / 2;
-  chocolate.position.y = 0.397;
+  chocolate.position.y = 0.392;
   group.add(chocolate);
 
-  const rim = new THREE.Mesh(
-    new THREE.TorusGeometry(0.214, 0.019, 10, 48),
-    new THREE.MeshStandardMaterial({ color: 0xd89b45, roughness: 0.26, metalness: 0.72 }),
-  );
-  rim.rotation.x = Math.PI / 2;
-  rim.position.y = 0.4;
-  group.add(rim);
+  // Gold decals hug the belly; the script faces front (+z), handle to the right.
+  const decal = (map) => new THREE.MeshBasicMaterial({
+    map, transparent: true, depthWrite: false, toneMapped: false,
+    polygonOffset: true, polygonOffsetFactor: -2,
+  });
+  const scriptArc = 1.7;
+  group.add(new THREE.Mesh(mugShell(0.105, 0.335, 0.0015, -scriptArc / 2, scriptArc), decal(createMugLabel())));
+  const towerArc = 0.42;
+  group.add(new THREE.Mesh(mugShell(0.11, 0.31, 0.0015, Math.PI - towerArc / 2, towerArc), decal(createTowerDecal())));
 
-  const cream = new THREE.MeshStandardMaterial({ color: 0xf6e4c7, roughness: 0.64 });
+  // A low dome of cream fills the mouth under the piped swirl.
+  const dust = createCocoaDust();
+  const cream = new THREE.MeshStandardMaterial({ color: 0xe2bf9c, roughness: 0.7, map: dust });
+  const mound = new THREE.Mesh(new THREE.SphereGeometry(0.175, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), cream);
+  mound.scale.y = 0.45;
+  mound.position.y = 0.39;
+  group.add(mound);
   const topping = new THREE.Mesh(createWhippedCream(), cream);
   topping.castShadow = true;
   group.add(topping);
 
-  const label = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.22, 0.11),
-    new THREE.MeshBasicMaterial({ map: createMugLabel(), transparent: true, depthWrite: false, toneMapped: false }),
-  );
-  label.position.set(0, 0.22, 0.246);
-  group.add(label);
+  // Lying half-sunk in the lower coils, pointing round the swirl.
+  const marshmallow = new THREE.MeshStandardMaterial({ color: 0xd9c4ad, roughness: 0.9 });
+  for (const [angle, y] of [[0.6, 0.465], [2.5, 0.455], [4.3, 0.475]]) {
+    const piece = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.06, 16), marshmallow);
+    piece.position.set(Math.cos(angle) * 0.14, y, Math.sin(angle) * 0.14);
+    piece.rotation.set(0, -angle, Math.PI / 2 - 0.25);
+    group.add(piece);
+  }
 
   group.userData.glow = { material: mugMaterial };
+  group.userData.steam = addSteam(group, 0.56);
   return group;
+}
+
+// "Still warm": a thin curl of steam off the top, wisps rising and fading
+// in turn (animated by pulseGlow).
+const STEAM_WISPS = 4, STEAM_RISE = 0.42, STEAM_SECONDS = 2.4;
+function addSteam(group, top) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createRadialGradient?.(32, 32, 0, 32, 32, 32);
+  if (gradient) {
+    gradient.addColorStop(0, 'rgba(255,255,255,0.9)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  const wisps = [];
+  for (let i = 0; i < STEAM_WISPS; i++) {
+    const material = new THREE.SpriteMaterial({ map: texture, color: 0xf3ece4, transparent: true, opacity: 0, depthWrite: false });
+    const wisp = new THREE.Sprite(material);
+    wisp.name = 'MugSteam';
+    wisp.userData.phase = i / STEAM_WISPS;
+    group.add(wisp);
+    wisps.push(wisp);
+  }
+  return { wisps, top };
+}
+
+function animateSteam({ wisps, top }, elapsedSeconds) {
+  for (const wisp of wisps) {
+    const t = (elapsedSeconds / STEAM_SECONDS + wisp.userData.phase) % 1;
+    const sway = Math.sin((t + wisp.userData.phase) * Math.PI * 2) * 0.035;
+    wisp.position.set(sway, top + t * STEAM_RISE, sway * 0.6);
+    wisp.scale.setScalar(0.07 + t * 0.12);
+    wisp.material.opacity = 0.32 * Math.sin(Math.PI * t);
+  }
 }
 
 /** Advances every still-placed findable's glow, same contract as
@@ -275,6 +437,7 @@ export function pulseGlow(findables, elapsedSeconds) {
     const intensity = GLOW_EMISSIVE_BASE + GLOW_EMISSIVE_SWING * wave;
     if (material.emissive) material.emissiveIntensity = intensity;
     if (material.uniforms?.uGlow) material.uniforms.uGlow.value = intensity;
+    if (findable.userData.steam) animateSteam(findable.userData.steam, elapsedSeconds);
   }
 }
 
@@ -285,7 +448,7 @@ export function pulseGlow(findables, elapsedSeconds) {
  * state, and does nothing if it was already collected on a previous visit.
  * Anchored like an NPC, so it's offered within PICKUP_RADIUS without aiming.
  *
- * @param {{ group: THREE.Group, interactables?: Array }} room
+ * @param {{ group: THREE.Group, interactables?: Array, colliders?: THREE.Box3[] }} room
  * @param {{ hasCollected: (id: string) => boolean, collect: (id: string) => void }} items
  * @param {string} itemId
  * @param {string} label shown in the pickup prompt ("Pick up <label>")
@@ -307,20 +470,30 @@ export function placeMazeFindable(room, items, itemId, label, createMesh, positi
   const objects = [];
   mesh.traverse((child) => { if (child.isMesh) objects.push(child); });
 
+  // Solid until picked up. Raised well past STEP_HEIGHT so she can't step
+  // or hop onto a prop this small; the room's live collider list is what
+  // main.js checks each frame.
+  let collider = null;
+  if (room.colliders) {
+    collider = new THREE.Box3().setFromObject(mesh);
+    collider.max.y = Math.max(collider.max.y, collider.min.y + 2.5);
+    room.colliders.push(collider);
+  }
+
   const pickup = {
     objects,
     anchor: mesh,
     radius: PICKUP_RADIUS,
-    // The line-of-sight check's own default aims at head height above the
-    // anchor (right for an NPC, whose anchor is its feet) — for a prop
-    // already sitting right at that height, that reads as "blocked" under
-    // any overhang the prop itself is in plain view under.
-    sightHeight: 0.3,
+    aimOnly: true,
     enabled: () => Boolean(mesh.parent) && !items.hasCollected(itemId),
     prompt: () => `Pick up ${label}`,
     interact: () => {
       if (!mesh.parent || items.hasCollected(itemId)) return;
       mesh.removeFromParent();
+      if (collider) {
+        const at = room.colliders.indexOf(collider);
+        if (at !== -1) room.colliders.splice(at, 1);
+      }
       items.collect(itemId);
       const list = room.interactables;
       const index = list.indexOf(pickup);

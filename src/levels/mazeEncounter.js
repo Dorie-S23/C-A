@@ -1,20 +1,24 @@
-/** The dialogue lifecycle is separate from the broad legacy found-Jax box. */
-export function createMazeEncounter({items,playDialogue,onEngage=()=>{},onRelease=()=>{}}){
-  let active=false,rearm=true,resumeAt,disposed=false,generation=0;
+/**
+ * The dialogue lifecycle is separate from the broad legacy found-Jax box.
+ * It starts only when she asks to talk (E: `requested`), close enough to
+ * see him; walking away and back isn't needed to try again. The keepsakes
+ * aren't needed. Finishing it records `outcome()` (whether he abstracts).
+ */
+export function createMazeEncounter({items,playDialogue,outcome=()=>null,onEngage=()=>{},onRelease=()=>{}}){
+  let active=false,resumeAt,disposed=false,generation=0;
   return {
     get active(){return active;},
-    get armed(){return rearm;},
     get resumeAt(){return resumeAt;},
-    update({inRange,visible,eligible}){
-      if(!inRange)rearm=true;
-      if(disposed||active||!rearm||!eligible||!inRange||!visible||!items.hasAllRequired()||items.jaxComplete)return false;
-      active=true;rearm=false;const own=++generation;onEngage();
+    update({inRange,visible,eligible,requested=false}){
+      if(disposed||active||!requested||!eligible||!inRange||!visible||items.jaxComplete)return false;
+      active=true;const own=++generation;onEngage();
       const release=()=>{active=false;onRelease();};
       const started=playDialogue({startAt:resumeAt,onNode(node){if(own===generation&&node.id)resumeAt=node.id;},
-        onComplete(){if(disposed||own!==generation||!active)return;generation++;release();resumeAt=undefined;items.completeJax();},
+        // Completed before release, so onRelease can tell a finished talk from a cancelled one.
+        onComplete(){if(disposed||own!==generation||!active)return;generation++;resumeAt=undefined;items.completeJax(outcome());release();},
         onCancel(){if(disposed||own!==generation||!active)return;generation++;release();},
       });
-      if(!started){generation++;release();rearm=true;}
+      if(!started){generation++;release();}
       return Boolean(started);
     },
     dispose(){disposed=true;generation++;if(active){active=false;onRelease();}},

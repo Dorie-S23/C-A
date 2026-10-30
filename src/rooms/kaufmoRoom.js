@@ -10,6 +10,7 @@ import { findWallSpot } from '../props/officePicture.js';
 
 const DOOR_FRAME_NAME = 'Door_Frame';
 const DOOR_SLAB_NAME = 'Door_Slab';
+const ROOM_BOWLING_BALL = 'Bowling Ball.001';
 
 // Talking to Kaufmo is shot from above the bed's near edge, looking across
 // the room: the two of them a conversational step apart in the middle of
@@ -75,6 +76,7 @@ export function loadKaufmoRoom(onProgress, {
     woodenSkirting(room.group);
     seatOnShelf(room, SHELF_CROWN, BOOKSHELF);
     removeRockingHorse(room);
+    removeRoomBowlingBall(room);
     // Kaufmo always stands relative to the room's own default spawn, even
     // when `from` below moves the player's actual spawn to the doorway.
     const defaultSpawn = room.spawn;
@@ -255,6 +257,18 @@ function removeRockingHorse(room) {
   });
   for (const part of parts) part.removeFromParent();
   room.collisionMeshes = room.collisionMeshes.filter((entry) => !parts.includes(entry.mesh));
+}
+
+// This stray export copy belongs to the Level 3 maze keepsake, not Kaufmo's
+// bedroom. Remove its collision entry too so Pomni cannot stand on an
+// invisible bowling ball after it is hidden.
+function removeRoomBowlingBall(room) {
+  const ball = room.group.getObjectByName(ROOM_BOWLING_BALL);
+  if (!ball) return;
+  const meshes = [];
+  ball.traverse((child) => { if (child.isMesh) meshes.push(child); });
+  ball.removeFromParent();
+  room.collisionMeshes = room.collisionMeshes.filter((entry) => !meshes.includes(entry.mesh));
 }
 
 /**
