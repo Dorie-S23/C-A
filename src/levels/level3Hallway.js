@@ -92,6 +92,9 @@ export function runHallwayScene(game, room, { onDone } = {}) {
 
   function start() {
     phase = 'playing';
+    // Kaufmo's door swings shut behind her: his part's done, and it no
+    // longer stands open across the hall while Jax runs past.
+    room.hallDoors?.kaufmo?.control.close();
     // She's just seen him, down the hall.
     stage.place({ x: marks.pomni.x, z: marks.pomni.z, lookAt: marks.jax });
     const started = game.playDialogue('level3Hallway', {
@@ -140,9 +143,10 @@ export function runHallwayScene(game, room, { onDone } = {}) {
 /** The scene's camera shots, from where everyone stands. */
 function hallwayShots({ pomni, jax, ribbit }) {
   const at = (point, height) => point.clone().addScaledVector(UP, height).toArray();
-  // Over her shoulder from up the hall, down it at Jax: his run comes back
-  // past her on the left.
-  const overShoulder = pomni.clone().add(new THREE.Vector3(1.6, 1.8, 3.4));
+  // Over her left shoulder (by the wall) from up the hall, down it at Jax:
+  // his run comes back up the middle, past her right, so the camera isn't
+  // in his way.
+  const overShoulder = pomni.clone().add(new THREE.Vector3(-1, 1.8, 3.4));
   // Behind her, down the hall, looking up it after him.
   const behind = pomni.clone().add(new THREE.Vector3(-0.4, 1.9, -3.6));
   const upTheHall = pomni.clone().add(new THREE.Vector3(1.2, 1.4, 20));

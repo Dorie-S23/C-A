@@ -202,7 +202,10 @@ function addJaxHallway(room, [jaxApi, ribbitApi], outsideKaufmo) {
   const marks = {
     pomni: outsideKaufmo.clone(),
     jax,
-    jaxRun,
+    // From his mark, straight out into the middle of the hall and up it.
+    // The gathering's route hugs the left wall, brushing past every door,
+    // and the middle also keeps him clear of Pomni, who's by Kaufmo's door.
+    jaxRun: jaxRun.map((point, i) => (i ? point.clone().setX(HALL_CENTRE_X) : point)),
     ribbit: new THREE.Vector3(RIBBIT_MARK.x, outsideKaufmo.y, RIBBIT_MARK.z),
   };
   jaxApi.jax.position.copy(jax);
