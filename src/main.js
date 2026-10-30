@@ -41,6 +41,7 @@ import { createMazeItems, createMazeSearch, MAZE_FINDABLES } from './state/mazeI
 import { runLevel1 } from './levels/level1.js';
 import { runHallwayScene } from './levels/level3Hallway.js';
 import { runLobbyScene } from './levels/level3Lobby.js';
+import { loadEndingCast, createEndingScene } from './cutscenes/endingCutscene.js';
 import { kaufmoHallwayPlan, preloadKaufmoHallwayCutscene, playKaufmoHallwayCutscene } from './cutscenes/kaufmoHallwayCutscene.js';
 import { createMinimap } from './ui/minimap.js';
 import { nearestLandmark } from './rooms/lobbyLandmarks.js';
@@ -58,6 +59,7 @@ import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
   level2IdleDialogue, level2CompleteDialogue, level2ReturnAndSendoffDialogue, level2AbstractionDialogue,
   level2TimeUpDialogue, level3HallwayDialogue, level3JaxDialogue, level3JaxFinalDialogue,
+  endingSavedDialogue, endingAbstractedDialogue,
   level2HallwayDialogue, level2RoomOpeningDialogue, ribbitFollowupDialogue,
 } from './data/dialogues.js';
 
@@ -87,6 +89,8 @@ const DIALOGUE_SCRIPTS = {
   level3Hallway: { script: level3HallwayDialogue, room: 'dorm' },
   level3Jax: { script: level3JaxDialogue, room: 'tadc' },
   level3JaxFinal: {script:level3JaxFinalDialogue,room:'maze'},
+  endingSaved: { script: endingSavedDialogue, room: null },
+  endingAbstracted: { script: endingAbstractedDialogue, room: null },
 };
 
 const ROOM_LOADERS = {
@@ -2084,20 +2088,65 @@ async function leaveMaze(variant) {
   await playEnding(variant);
 }
 
-// What each ending variant opens on, until the ending itself is built:
-// the scene at the maze entrance (KAN-89, KAN-95) replaces these cards.
+// The card the ending closes on, after the scene at the maze entrance.
 const ENDING_CARDS = {
   saved: 'Pomni and Jax step out of the maze together.',
   abstracted: 'Pomni steps out of the maze alone.',
 };
+const ENDING_DIALOGUES = { saved: 'endingSaved', abstracted: 'endingAbstracted' };
 
-/** The end of the game for `variant` ('saved' or 'abstracted'); for now a card, then the title screen. */
+/**
+ * The end of the game for `variant` ('saved' or 'abstracted'): the scene
+ * outside the maze entrance (cutscenes/endingCutscene.js), its own set and
+ * camera, with the ending's conversation over it; then the card, then the
+ * title screen. Escape skips the conversation, like any other.
+ */
 async function playEnding(variant) {
   const token = loadToken;
   sceneFade.classList.add('on');
+  overlay.classList.add('hidden'); // the dev menu, when it's jumped here from there
+  if (!skippingCutscenes()) {
+    let ending = null;
+    try {
+      ending = createEndingScene(renderer, variant, await loadEndingCast(variant));
+    } catch (error) {
+      console.warn('Ending scene unavailable; showing its card.', error);
+    }
+    if (token !== loadToken) { ending?.dispose(); return; }
+    if (ending) {
+      await playEndingScene(ending, variant);
+      ending.dispose();
+      if (token !== loadToken) return;
+    }
+  }
   const done = await showLevelComplete('Level 3 Complete', ENDING_CARDS[variant], { resume: false, buttonLabel: 'Back to title' });
   if (!done || token !== loadToken) return;
   returnToHome();
+}
+
+/** Renders the ending's scene, fades it in, plays its dialogue and fades back out. */
+function playEndingScene(ending, variant) {
+  const token = loadToken;
+  return new Promise((resolve) => {
+    let finished = false;
+    const stop = () => { if (!finished) { finished = true; resolve(); } };
+    runCutscene({ update: (delta) => { ending.update(delta); return finished; }, cancel: stop }, stop);
+    music.setRoom(ENDING_DIALOGUES[variant]);
+    // A frame of the scene under the black before it fades up.
+    requestAnimationFrame(() => {
+      if (finished || token !== loadToken) return;
+      void fadeScreen(false, 1.6);
+      const close = async () => {
+        await fadeScreen(true, 1.4);
+        stop();
+      };
+      dialogueUI.play(DIALOGUE_SCRIPTS[ENDING_DIALOGUES[variant]].script, {
+        onNode: ending.onNode,
+        onComplete: close,
+        onCancel: close,
+      });
+    });
+  });
 }
 
 function updateSearchTimer(deltaSeconds) {

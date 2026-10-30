@@ -12,7 +12,7 @@ import {
   level2HallwayDialogue, ribbitFollowupDialogue,
   level2IdleDialogue, level2CompleteDialogue, level2ReturnDialogue, level2SendoffDialogue,
   level2ReturnAndSendoffDialogue, level2AbstractionDialogue, level2TimeUpDialogue,
-  level3HallwayDialogue, level3JaxDialogue,
+  level3HallwayDialogue, level3JaxDialogue, endingSavedDialogue, endingAbstractedDialogue,
 } from '../src/data/dialogues.js';
 import { SPRITES, MOODS } from '../src/ui/portraitSprites.js';
 
@@ -42,6 +42,7 @@ for (const [name, script] of [
   ['level2Return', level2ReturnDialogue], ['level2Sendoff', level2SendoffDialogue],
   ['level2ReturnAndSendoff', level2ReturnAndSendoffDialogue], ['level2Abstraction', level2AbstractionDialogue],
   ['level2TimeUp', level2TimeUpDialogue], ['level3Hallway', level3HallwayDialogue], ['level3Jax', level3JaxDialogue],
+  ['endingSaved', endingSavedDialogue], ['endingAbstracted', endingAbstractedDialogue],
 ]) {
   const seen = runLinear(script);
   check(`${name}: visits every node once, in order`, seen.length === script.length

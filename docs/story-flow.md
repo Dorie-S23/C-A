@@ -216,9 +216,17 @@ Pomni, fades to black and records Level 3 as complete with its ending variant,
 `saved` or `abstracted` (`storyProgress.ending`, kept in saves). A save taken
 after that loads straight into the ending instead of the maze. `jaxOutcome()`
 in `main.js` decides the variant; until the final conversation can fail
-(KAN-67) it is always `saved`. `playEnding(variant)` is where the ending
-starts: for now a **Level 3 Complete** card, then the title screen, until the
-maze entrance scene (KAN-89, KAN-95) replaces it.
+(KAN-67) it is always `saved`. `playEnding(variant)` plays the ending
+scene (`src/cutscenes/endingCutscene.js`, KAN-89 and KAN-95): its own set, a
+dusk clearing outside the maze's striped wall and gate, with Ribbit, Kaufmo
+and Ragatha waiting and Caine flying in a little apart. Pomni walks out of
+the gate with Jax (`endingSavedDialogue`) or alone, head bowed, to the
+group's grief (`endingAbstractedDialogue`). Each node's `action` drives the
+cast and each speaker picks the camera shot (`endingPlan().shots`). Gangle,
+Zooble and Kinger have reserved marks but no models yet (KAN-90). Escape skips
+the conversation; developer cutscene skipping skips the whole scene. Then the
+**Level 3 Complete** card, then the title screen. The dev menu's two
+**Ending** buttons jump straight to it.
 
 Developer cutscene skipping honours awaited actions and scores each choice once.
 Returning home or changing rooms cancels a pending completion card.
