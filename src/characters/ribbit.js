@@ -2,15 +2,18 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { bendBone, SIDEWAYS, UP } from './bendBone.js';
 
-// Built from the team's Ribbit model (characters/Ribbit/ribbit.glb) by
-// tools/blender/prepare_ribbit_model.py: her expressive head stood upright
-// on her neck, cut down to 30k triangles, already scaled to 2.2 m with her
-// feet at the origin facing +Z, and given a small skeleton with a looping
-// "Idle" clip (arms hanging, a withdrawn slouch, breathing, slow sway).
-// Re-run the script if the source model changes.
-const RIBBIT_URL = './models/characters/Ribbit/ribbit-rigged.glb';
-const RIBBIT_HEIGHT = 2.2; // must match the script's RIBBIT_HEIGHT
-const IDLE_CLIP = 'Idle';
+// Built by tools/buildRibbitMixamo.mjs from Adobe Mixamo's downloads in
+// assets-src/ribbit-mixamo/: the team's Ribbit (the cleaned-up, 2.2 m
+// ribbit-rigged.glb, exported for Mixamo by tools/exportRibbitForMixamo.mjs)
+// on Mixamo's auto-rigged skeleton, feet at the origin, facing +Z, with
+// three looping clips. Re-run the build after replacing a download.
+const RIBBIT_URL = './models/characters/Ribbit/ribbit-mixamo.glb';
+const RIBBIT_HEIGHT = 2.2; // the mesh Mixamo was given is this tall
+
+// Pose name (setPose) -> clip. 'curled' is Mixamo's sleeping loop: on her
+// side, knees bent, an arm under her head. 'sitting' is a chair sit, legs
+// hanging, so she sits on the edge of her bed with her feet on the floor.
+const CLIPS = { standing: 'SadIdle', curled: 'Sleeping', sitting: 'Sitting' };
 
 // Invisible cylinder the player collides with, as for Caine and Kaufmo: a
 // skinned mesh moves as it animates and its thin limbs slip between the
@@ -20,67 +23,55 @@ const COLLIDER_RADIUS = 0.4;
 // How quickly she turns to face someone talking to her.
 const TURN_SHARPNESS = 5;
 
-// Distress (setDistress, 0-3) is layered on top of the Idle clip: per
-// level she hunches further forward, drops her head lower and trembles
-// harder. It eases toward the target level, so being steadied reads as
-// her slowly straightening up rather than snapping.
+// Distress (setDistress, 0-3) is layered on top of the clips while she's
+// upright: per level she hunches further forward, drops her head lower and
+// trembles harder. It eases toward the target level, so being steadied
+// reads as her slowly straightening up rather than snapping.
 const DISTRESS_SHARPNESS = 3;
 const HUNCH_PER_LEVEL = 0.07;     // radians of extra spine bend
 const HEAD_DROP_PER_LEVEL = 0.1;  // radians of extra head bow
 const TREMBLE_PER_LEVEL = 0.012;  // radians of head shake amplitude
 const TREMBLE_SPEED = 28;         // radians per second
 
-// Poses (setPose), also layered on the Idle clip. On the bed ('curled',
-// 'sitting') her whole body is laid down along the outer group's -Z axis,
-// pelvis at the group's origin — so a caller places the group on the
-// mattress where her hips go, turned so -Z points at the pillow.
-//   roll:  turn onto her side (radians about her long axis; - faces +X,
-//          the open side of her bed, where Pomni comes in)
-//   spine: forward bend at the hips; π/2 brings her torso upright
-//   head:  extra bow of the head
-//   hip:   thighs drawn up toward her chest (radians of hip flexion)
-//   knee:  shins folded back under the thighs
-//   arms:  upper arms brought forward, in toward her knees
-// The exported rig has no leg bones; addLegBones gives her thighs and
-// shins at load time, so 'curled' is properly curled up asleep and sitting
-// up draws her knees up instead of leaving both legs sticking out stiff.
-const POSES = {
-  standing: { lying: false, roll: 0, spine: 0, head: 0, hip: 0, knee: 0, arms: 0 },
-  // On her side facing the room, knees drawn up, hands tucked by her face.
-  curled: { lying: true, roll: -Math.PI / 2, spine: 0.55, head: 0.4, hip: 1.65, knee: 2.1, arms: 0.8 },
-  // Passed through on the way from curled to sitting (see setPose): she
-  // rolls onto her back and her legs loosen before she pushes herself up.
-  // Arms back down at her sides: "forward" points them at the ceiling once
-  // she's on her back.
-  waking: { lying: true, roll: -0.2, spine: 0.35, head: 0.15, hip: 0.9, knee: 1.3, arms: 0 },
-  sitting: { lying: true, roll: 0, spine: Math.PI / 2, head: 0.12, hip: 0.85, knee: 1.55, arms: 0.55 },
-};
-const POSE_SHARPNESS = 1.4; // slow on purpose: "sits up slowly"
-// Her arms settle faster than her body, so they're already down at her
-// sides by the time rolling onto her back would swing them up.
-const ARM_SHARPNESS = 4;
-const WAKING_SECONDS = 1.1; // how long she lingers in 'waking' before sitting up
-const LYING_LIFT = 0.13;    // her body's half-thickness above the mattress
+// The sleeping clip lies her along her own -X (head) to +X (feet) on the
+// floor. Turned a quarter, her head points along the group's -Z and she
+// faces -X, so a caller places the group where her hips go on the
+// mattress, turned so -Z points at the pillow (as the procedural pose
+// before it did). Her hips are already their own height off the floor in
+// the clip: about a body's half-thickness above the mattress.
+const SLEEP_YAW = -Math.PI / 2;
 
-// Where addLegBones puts her joints, in the model's own (bind) space:
-// measured from ribbit-rigged.glb, whose legs are separate meshes-in-one
-// from the floor up to the crotch (≈0.88 m), centred at x ≈ ±0.105.
-const HIP_JOINT = { x: 0.105, y: 0.86, z: -0.04 };
-const KNEE_JOINT = { x: 0.105, y: 0.49, z: -0.03 };
-// Vertex weights blend between bones across these height bands, so the
-// skin bends smoothly at the hip and knee instead of creasing.
-const HIP_BLEND = [0.8, 0.93];   // [all thigh below, all hips above]
-const KNEE_BLEND = [0.42, 0.56]; // [all shin below, all thigh above]
-const LEG_TOP = 0.95;            // only vertices below this are legs
+// There's no Mixamo wake-up clip, so waking is staged from the two loops,
+// slow on purpose ("sits up slowly"). As fractions of the time: `turn` is
+// when she comes round and over to wherever `at` puts her (the edge of the
+// bed), still lying, legs out over the edge; `sitUp` when the sleeping loop
+// crossfades into sitting and she drops onto the edge, at the same rate as
+// her hips rise so they stay on the mattress. Crossfading while she was
+// still mid-bed swung her legs down through the mattress and the floor.
+// Other changes are quicker.
+const WAKE = { seconds: 2.8, turn: [0, 0.55], sitUp: [0.4, 1] };
+const SHIFT = { seconds: 0.6, turn: [0, 1], sitUp: [0, 1] };
+
+// Even so, part-way between lying and sitting the blend can swing her feet
+// below the floor she's sitting down onto, so while she moves (with `at`)
+// she's lifted just enough to keep them on it. Bone -> how far her sole is
+// below it, measured with her feet flat on the floor sitting.
+const SOLES = {
+  LeftFoot: 0.09, RightFoot: 0.09,
+  LeftToeBase: 0.006, RightToeBase: 0.006, LeftToe_End: 0.006, RightToe_End: 0.006,
+};
 
 /**
- * Loads Ribbit, idling. Callers only set position and rotation.y.
+ * Loads Ribbit, idling. Callers set position and rotation.y, or pass
+ * `at` to setPose to have her move there as she changes pose.
  *
  * @returns {Promise<{ ribbit: THREE.Group, collider: THREE.Mesh,
  *   update: (deltaSeconds: number) => void,
  *   faceTowards: (worldPoint: THREE.Vector3 | null) => void,
  *   setDistress: (level: number) => void,
- *   setPose: (name: 'standing' | 'curled' | 'sitting', options?: { immediate?: boolean }) => void }>}
+ *   setPose: (name: 'standing' | 'curled' | 'sitting', options?: {
+ *     immediate?: boolean,
+ *     at?: { x: number, y: number, z: number, yaw: number } }) => void }>}
  */
 export function loadRibbit() {
   return new GLTFLoader().loadAsync(RIBBIT_URL).then((gltf) => {
@@ -89,13 +80,11 @@ export function loadRibbit() {
       if (!child.isMesh) return;
       child.castShadow = true;
       child.receiveShadow = true;
-      // Laid down or bent over, the skin leaves its bind-pose bounds.
+      // Lying down or sitting, the skin leaves its T-pose bounds.
       if (child.isSkinnedMesh) child.frustumCulled = false;
     });
 
-    // ribbit (placed by the room) -> body (pose: standing / lying) -> model.
-    // Bends are written in the body's frame, so "forward" stays her forward
-    // whether she's standing or lying on her side.
+    // ribbit (placed by the room) -> body (lines the clip up with it) -> model.
     const ribbit = new THREE.Group();
     ribbit.name = 'Ribbit';
     const body = new THREE.Group();
@@ -103,14 +92,12 @@ export function loadRibbit() {
     ribbit.add(body);
     body.add(model);
 
-    // Start the loop at a random point so she isn't mid-identical-breath
-    // every time the room loads.
     const mixer = new THREE.AnimationMixer(model);
-    const clip = THREE.AnimationClip.findByName(gltf.animations, IDLE_CLIP) ?? gltf.animations[0];
-    if (clip) {
-      const idle = mixer.clipAction(clip);
-      idle.play();
-      idle.time = Math.random() * clip.duration;
+    const actions = {};
+    for (const [pose, clipName] of Object.entries(CLIPS)) {
+      const clip = THREE.AnimationClip.findByName(gltf.animations, clipName);
+      if (!clip) throw new Error(`ribbit-mixamo.glb has no ${clipName} clip`);
+      actions[pose] = mixer.clipAction(clip);
     }
 
     // Raycasts ignore `visible`, so the hidden cylinder still blocks.
@@ -123,14 +110,22 @@ export function loadRibbit() {
     collider.visible = false;
     ribbit.add(collider);
 
-    const spine = model.getObjectByName('spine');
-    const head = model.getObjectByName('head');
-    const legs = addLegBones(model);
-    // glTF names lose their '.' on import (upper_arm.L -> upper_armL).
-    const arms = ['upper_armL', 'upper_armR'].map((name) => model.getObjectByName(name));
-    // The spine bone starts at her pelvis: the point the bed poses pivot on.
-    model.updateMatrixWorld(true);
-    const pelvisHeight = spine ? spine.getWorldPosition(new THREE.Vector3()).y : RIBBIT_HEIGHT * 0.41;
+    const spine = model.getObjectByName('mixamorigSpine1');
+    const head = model.getObjectByName('mixamorigHead');
+    const feet = Object.entries(SOLES)
+      .map(([name, sole]) => ({ bone: model.getObjectByName(`mixamorig${name}`), sole }))
+      .filter(({ bone }) => bone);
+
+    // Where the body sits in the group for each pose. Asleep, her hips
+    // (wherever the clip leaves them, read from its first key) go on the
+    // group's origin.
+    const sleepHips = hipsAtStart(gltf.animations, CLIPS.curled, model);
+    sleepHips.applyAxisAngle(UP, SLEEP_YAW);
+    const BODY = {
+      standing: { x: 0, z: 0, yaw: 0 },
+      sitting: { x: 0, z: 0, yaw: 0 },
+      curled: { x: -sleepHips.x, z: -sleepHips.z, yaw: SLEEP_YAW },
+    };
 
     let targetYaw = null;
     const ownPosition = new THREE.Vector3();
@@ -138,63 +133,83 @@ export function loadRibbit() {
     let distressTarget = 0;
     let time = 0;
 
-    let pose = POSES.standing;
-    let queued = null; // { pose, in: seconds } — sitting, while passing through waking
-    const current = { roll: 0, spine: 0, head: 0, hip: 0, knee: 0, arms: 0 };
-    const POSE_KEYS = Object.keys(current);
-    const lieDown = new THREE.Quaternion().setFromAxisAngle(SIDEWAYS, -Math.PI / 2); // head to -Z, front up
-    const rollQ = new THREE.Quaternion();
-    const pelvis = new THREE.Vector3();
-    const LONG_AXIS = new THREE.Vector3(0, 0, 1);
+    // A pose change eases the body (and, given `at`, the whole group) from
+    // where it was to where the new pose wants it, and crossfades the clips,
+    // over `move.duration` on `move.timing` (WAKE or SHIFT).
+    let pose = null;
+    const move = {
+      elapsed: 0, duration: 0, timing: SHIFT,
+      fromBody: { x: 0, z: 0, yaw: 0 }, toBody: BODY.standing,
+      fromGroup: new THREE.Vector3(), toGroup: null, fromYaw: 0, toYaw: 0,
+      fadeFrom: null, fadeTo: null,
+    };
 
-    function placeBody() {
-      if (!pose.lying) {
-        body.position.set(0, 0, 0);
-        body.quaternion.identity();
-        return;
+    function lerpYaw(from, to, t) {
+      return from + (THREE.MathUtils.euclideanModulo(to - from + Math.PI, Math.PI * 2) - Math.PI) * t;
+    }
+
+    function applyMove() {
+      const { lerp, smoothstep } = THREE.MathUtils;
+      const t = move.duration > 0 ? move.elapsed / move.duration : 1;
+      const turn = smoothstep(t, ...move.timing.turn);
+      const sitUp = smoothstep(t, ...move.timing.sitUp);
+      // The body's own offset goes with the clips: asleep it's a quarter
+      // turn from sitting, so she lies with her legs pointing where her
+      // sitting legs will hang, and they swing down over the edge of the
+      // bed as she sits up rather than through it.
+      const { fromBody: a, toBody: b } = move;
+      body.position.set(lerp(a.x, b.x, sitUp), 0, lerp(a.z, b.z, sitUp));
+      body.rotation.y = lerpYaw(a.yaw, b.yaw, sitUp);
+      if (move.toGroup) {
+        const { fromGroup: from, toGroup: to } = move;
+        ribbit.position.set(lerp(from.x, to.x, turn), lerp(from.y, to.y, sitUp), lerp(from.z, to.z, turn));
+        ribbit.rotation.y = lerpYaw(move.fromYaw, move.toYaw, turn);
       }
-      // Lie her down, roll her about her long axis, then shift so her
-      // pelvis — not her feet — sits on the group's origin.
-      rollQ.setFromAxisAngle(LONG_AXIS, current.roll);
-      body.quaternion.copy(rollQ).multiply(lieDown);
-      pelvis.set(0, pelvisHeight, 0).applyQuaternion(body.quaternion);
-      body.position.set(-pelvis.x, LYING_LIFT - pelvis.y, -pelvis.z);
+      if (move.fadeFrom) {
+        move.fadeFrom.setEffectiveWeight(1 - sitUp);
+        move.fadeTo.setEffectiveWeight(sitUp);
+        if (t >= 1) {
+          move.fadeFrom.stop();
+          move.fadeFrom = null;
+        }
+      }
     }
 
     function update(deltaSeconds) {
       mixer.update(deltaSeconds);
       time += deltaSeconds;
 
-      if (queued && (queued.in -= deltaSeconds) <= 0) {
-        pose = queued.pose;
-        queued = null;
+      const moving = move.elapsed < move.duration;
+      if (moving) {
+        move.elapsed = Math.min(move.elapsed + deltaSeconds, move.duration);
+        applyMove();
+        if (move.toGroup) keepFeetAbove(move.toGroup.y);
       }
-      for (const key of POSE_KEYS) {
-        const sharpness = key === 'arms' ? ARM_SHARPNESS : POSE_SHARPNESS;
-        current[key] = THREE.MathUtils.damp(current[key], pose[key], sharpness, deltaSeconds);
-      }
-      placeBody();
 
+      // Hunching and trembling are written for an upright body; asleep
+      // (the sleeping clip's weight) they'd bend her the wrong way.
+      const upright = 1 - actions.curled.getEffectiveWeight();
       distress = THREE.MathUtils.damp(distress, distressTarget, DISTRESS_SHARPNESS, deltaSeconds);
-      bendBone(spine, body, SIDEWAYS, current.spine + HUNCH_PER_LEVEL * distress);
-      bendBone(head, body, SIDEWAYS, current.head + HEAD_DROP_PER_LEVEL * distress);
-      if (legs) {
-        // The Idle clip doesn't key these bones, so nothing resets them
-        // each frame the way the mixer does the others: start from rest.
-        for (const bone of legs.all) bone.quaternion.identity();
-        // A hanging leg swings forward with a negative angle (bendBone's guide).
-        for (const thigh of legs.thighs) bendBone(thigh, body, SIDEWAYS, -current.hip);
-        for (const shin of legs.shins) bendBone(shin, body, SIDEWAYS, current.knee);
-      }
-      for (const arm of arms) bendBone(arm, body, SIDEWAYS, -current.arms);
-      if (distress > 0.01) {
-        bendBone(head, body, UP, Math.sin(time * TREMBLE_SPEED) * TREMBLE_PER_LEVEL * distress);
+      const shaken = distress * upright;
+      bendBone(spine, body, SIDEWAYS, HUNCH_PER_LEVEL * shaken);
+      bendBone(head, body, SIDEWAYS, HEAD_DROP_PER_LEVEL * shaken);
+      if (shaken > 0.01) {
+        bendBone(head, body, UP, Math.sin(time * TREMBLE_SPEED) * TREMBLE_PER_LEVEL * shaken);
       }
 
-      if (targetYaw !== null) {
+      if (targetYaw !== null && !(moving && move.toGroup)) {
         const diff = THREE.MathUtils.euclideanModulo(targetYaw - ribbit.rotation.y + Math.PI, Math.PI * 2) - Math.PI;
         ribbit.rotation.y += diff * (1 - Math.exp(-TURN_SHARPNESS * deltaSeconds));
       }
+    }
+
+    /** Lifts her (applyMove set her height this frame) so no sole is below floorY. */
+    function keepFeetAbove(floorY) {
+      ribbit.updateMatrixWorld(true);
+      let lowest = Infinity;
+      // elements[13]: the bone's world height.
+      for (const { bone, sole } of feet) lowest = Math.min(lowest, bone.matrixWorld.elements[13] - sole);
+      if (lowest < floorY) ribbit.position.y += floorY - lowest;
     }
 
     /** Turns her (smoothly, in update) toward a world point; null stops turning. */
@@ -213,104 +228,63 @@ export function loadRibbit() {
     }
 
     /**
-     * Eases into a pose (see POSES); `immediate` snaps instead, for setting
-     * the scene up. Switching between standing and lying always snaps —
-     * there's no animation for lying down. Sitting up from curled goes by
-     * way of 'waking', so she stirs and rolls over before sitting up rather
-     * than levitating straight from asleep on her side to upright.
+     * Crossfades into a pose's clip; `immediate` snaps instead, for setting
+     * the scene up. `at` (the group's position and yaw in its parent) moves
+     * her there over the same time: sitting up from asleep is staged (WAKE)
+     * as she comes over to the edge of the bed and sits up on it.
      */
-    function setPose(name, { immediate = false } = {}) {
-      const next = POSES[name];
+    function setPose(name, { immediate = false, at = null } = {}) {
+      const next = actions[name];
       if (!next) throw new Error(`Unknown Ribbit pose: ${name}`);
-      const snap = immediate || next.lying !== pose.lying;
-      queued = null;
-      if (!snap && next === POSES.sitting && pose === POSES.curled) {
-        pose = POSES.waking;
-        queued = { pose: next, in: WAKING_SECONDS };
-        return;
+      const previous = pose && actions[pose];
+      move.timing = pose === 'curled' && name === 'sitting' ? WAKE : SHIFT;
+      const duration = immediate || !previous ? 0 : move.timing.seconds;
+
+      move.fromBody = { x: body.position.x, z: body.position.z, yaw: body.rotation.y };
+      move.toBody = BODY[name];
+      move.fromGroup.copy(ribbit.position);
+      move.fromYaw = ribbit.rotation.y;
+      move.toGroup = at ? new THREE.Vector3(at.x, at.y, at.z) : null;
+      move.toYaw = at ? at.yaw : ribbit.rotation.y;
+      move.elapsed = 0;
+      move.duration = duration;
+
+      if (next !== previous) {
+        // A change of mind mid-fade: the clip it was fading out goes now.
+        if (move.fadeFrom && move.fadeFrom !== next) move.fadeFrom.stop();
+        next.reset().play();
+        if (duration > 0) {
+          next.setEffectiveWeight(0);
+          move.fadeFrom = previous;
+          move.fadeTo = next;
+        } else {
+          next.setEffectiveWeight(1);
+          if (previous) previous.stop();
+          move.fadeFrom = null;
+          // Start a fresh loop at a random point so she isn't
+          // mid-identical-breath every time the room loads.
+          next.time = Math.random() * next.getClip().duration;
+        }
       }
-      pose = next;
-      if (snap) {
-        for (const key of POSE_KEYS) current[key] = next[key];
-        placeBody();
-      }
+      pose = name;
+      applyMove();
     }
 
+    setPose('standing', { immediate: true });
     return { ribbit, collider, update, faceTowards, setDistress, setPose };
   });
 }
 
-/**
- * Gives the rig thigh and shin bones and moves the leg vertices onto them,
- * blending across the hip and knee (HIP_BLEND, KNEE_BLEND), so her legs can
- * bend. All her skinned meshes share one skeleton; only the body mesh has
- * leg vertices. Returns null — straight legs, as before — if the model no
- * longer looks like the one these measurements came from.
- */
-function addLegBones(model) {
-  const meshes = [];
-  model.traverse((child) => { if (child.isSkinnedMesh) meshes.push(child); });
-  const skeleton = meshes[0]?.skeleton;
-  const hips = skeleton?.getBoneByName('hips');
-  const body = meshes.find((mesh) => {
-    const box = mesh.geometry.boundingBox ?? (mesh.geometry.computeBoundingBox(), mesh.geometry.boundingBox);
-    return box.min.y < 0.05;
-  });
-  if (!hips || !body || meshes.some((mesh) => mesh.skeleton !== skeleton)) return null;
-
-  const hipsIndex = skeleton.bones.indexOf(hips);
-  const hipsInverse = skeleton.boneInverses[hipsIndex];
-  // A point in the body mesh's geometry, in the hips bone's own frame at rest.
-  const inHips = (p) => new THREE.Vector3(p.x, p.y, p.z).applyMatrix4(body.bindMatrix).applyMatrix4(hipsInverse);
-
-  const bones = [...skeleton.bones];
-  const inverses = [...skeleton.boneInverses];
-  const sides = {};
-  for (const [side, sign] of [['L', 1], ['R', -1]]) {
-    const hip = inHips({ ...HIP_JOINT, x: HIP_JOINT.x * sign });
-    const knee = inHips({ ...KNEE_JOINT, x: KNEE_JOINT.x * sign });
-    const thigh = new THREE.Bone();
-    thigh.name = `thigh${side}`;
-    thigh.position.copy(hip);
-    hips.add(thigh);
-    const shin = new THREE.Bone();
-    shin.name = `shin${side}`;
-    shin.position.copy(knee).sub(hip);
-    thigh.add(shin);
-    // Each new bone, unrotated relative to the hips, sits at its joint: its
-    // inverse bind matrix is the hips' one moved to that joint, so at rest
-    // it skins every vertex to exactly where the hips would.
-    bones.push(thigh, shin);
-    inverses.push(
-      new THREE.Matrix4().makeTranslation(-hip.x, -hip.y, -hip.z).multiply(hipsInverse),
-      new THREE.Matrix4().makeTranslation(-knee.x, -knee.y, -knee.z).multiply(hipsInverse),
-    );
-    sides[side] = { thigh: bones.length - 2, shin: bones.length - 1, thighBone: thigh, shinBone: shin };
-  }
-
-  const position = body.geometry.attributes.position;
-  const skinIndex = body.geometry.attributes.skinIndex;
-  const skinWeight = body.geometry.attributes.skinWeight;
-  for (let i = 0; i < position.count; i++) {
-    const y = position.getY(i);
-    if (y >= LEG_TOP) continue;
-    let dominant = 0;
-    for (let k = 1; k < 4; k++) if (skinWeight.getComponent(i, k) > skinWeight.getComponent(i, dominant)) dominant = k;
-    if (skinIndex.getComponent(i, dominant) !== hipsIndex) continue;
-    const side = sides[position.getX(i) >= 0 ? 'L' : 'R'];
-    const toThigh = 1 - THREE.MathUtils.smoothstep(y, HIP_BLEND[0], HIP_BLEND[1]);
-    const toShin = 1 - THREE.MathUtils.smoothstep(y, KNEE_BLEND[0], KNEE_BLEND[1]);
-    skinIndex.setXYZW(i, hipsIndex, side.thigh, side.shin, 0);
-    skinWeight.setXYZW(i, 1 - toThigh, toThigh * (1 - toShin), toThigh * toShin, 0);
-  }
-  skinIndex.needsUpdate = true;
-  skinWeight.needsUpdate = true;
-
-  const extended = new THREE.Skeleton(bones, inverses);
-  for (const mesh of meshes) mesh.bind(extended, mesh.bindMatrix);
-  return {
-    thighs: [sides.L.thighBone, sides.R.thighBone],
-    shins: [sides.L.shinBone, sides.R.shinBone],
-    all: [sides.L.thighBone, sides.L.shinBone, sides.R.thighBone, sides.R.shinBone],
-  };
+/** The hips' position in the model's root at a clip's first key, in metres, on the floor plane. */
+function hipsAtStart(animations, clipName, model) {
+  const track = THREE.AnimationClip.findByName(animations, clipName)
+    ?.tracks.find((t) => t.name === 'mixamorigHips.position');
+  const hips = model.getObjectByName('mixamorigHips');
+  if (!track || !hips) return new THREE.Vector3();
+  // The track is in the hips' parent's units (Mixamo's centimetres, scaled
+  // down by the root node), so take it through that parent to the model.
+  const point = new THREE.Vector3(track.values[0], 0, track.values[2]);
+  model.updateMatrixWorld(true);
+  point.applyMatrix4(hips.parent.matrixWorld);
+  return point.applyMatrix4(model.matrixWorld.clone().invert()).setY(0);
 }
