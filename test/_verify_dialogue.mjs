@@ -11,7 +11,9 @@ import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
   level2HallwayDialogue, ribbitFollowupDialogue,
   level2IdleDialogue, level2CompleteDialogue, level2ReturnDialogue, level2SendoffDialogue,
-  level2ReturnAndSendoffDialogue, level2AbstractionDialogue, level2TimeUpDialogue, level3JaxDialogue,
+  level2ReturnAndSendoffDialogue, level2AbstractionDialogue, level2TimeUpDialogue,
+  level3HallwayDialogue, level3JaxDialogue, endingLobbySavedDialogue, endingLobbyAbstractedDialogue,
+  exitDoorSavedDialogue, exitDoorAbstractedDialogue,
 } from '../src/data/dialogues.js';
 import { SPRITES, MOODS } from '../src/ui/portraitSprites.js';
 
@@ -40,7 +42,9 @@ for (const [name, script] of [
   ['level2Idle', level2IdleDialogue], ['level2Complete', level2CompleteDialogue],
   ['level2Return', level2ReturnDialogue], ['level2Sendoff', level2SendoffDialogue],
   ['level2ReturnAndSendoff', level2ReturnAndSendoffDialogue], ['level2Abstraction', level2AbstractionDialogue],
-  ['level2TimeUp', level2TimeUpDialogue], ['level3Jax', level3JaxDialogue],
+  ['level2TimeUp', level2TimeUpDialogue], ['level3Hallway', level3HallwayDialogue], ['level3Jax', level3JaxDialogue],
+  ['endingLobbySaved', endingLobbySavedDialogue], ['endingLobbyAbstracted', endingLobbyAbstractedDialogue],
+  ['exitDoorSaved', exitDoorSavedDialogue], ['exitDoorAbstracted', exitDoorAbstractedDialogue],
 ]) {
   const seen = runLinear(script);
   check(`${name}: visits every node once, in order`, seen.length === script.length
@@ -63,6 +67,17 @@ for (const [name, script] of [
     && (!n.mood || !MOODS.includes(n.mood)));
   check(`${name}: every sprite-speaker line has a recognized mood`, !badMood,
     badMood ? `node text "${badMood.text.slice(0, 30)}..." has mood "${badMood.mood}"` : '');
+}
+
+// The way into Level 3: the stage directions levels/level3Hallway.js and
+// level3Lobby.js act out, each once; anything else would silently do nothing.
+for (const [name, script, known] of [
+  ['level3Hallway', level3HallwayDialogue, ['jaxBolts', 'ribbitArrives', 'pomniStopsRibbit', 'ribbitLeaves']],
+  ['level3Jax', level3JaxDialogue, ['jaxTurns', 'jaxGlitches', 'jaxRunsOff']],
+]) {
+  const actions = script.filter((n) => n.action).map((n) => n.action);
+  check(`${name}: every stage-direction action is one its scene plays, each used once`,
+    actions.length === known.length && known.every((a) => actions.includes(a)), actions.join());
 }
 
 // 1b) a branching real script (level2Opening): walk every path through its

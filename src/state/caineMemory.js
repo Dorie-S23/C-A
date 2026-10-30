@@ -2,6 +2,8 @@ export const CAINE_HISTORY_KEY = 'tadc.caineMemory.history.v1';
 export const CAINE_ENABLED_KEY = 'tadc.caineMemory.enabled';
 const MAX_COUNT = 9999;
 const SCENES = { level1: 'Ribbit’s scene', level2: 'the photo search', maze: 'the maze' };
+// His lines are little fourth-wall winks at whoever's playing: he knows
+// there's someone behind the screen, and he's keeping count.
 const emptyHistory = () => ({ version: 1, runs: 0, retries: { level1: 0, level2: 0, maze: 0 } });
 const count = value => Number.isInteger(value) && value >= 0 && value <= MAX_COUNT ? value : 0;
 
@@ -53,10 +55,10 @@ export function createCaineMemory({ storage } = {}) {
       if (!enabled) return;
       const retries = Object.values(history.retries).some(value => value > 0);
       caption = history.runs === 0 && !retries
-        ? 'Caine: A brand-new adventure! I have an excellent memory for entrances.'
+        ? 'Caine: Oh! Hello, you — yes, you, behind the screen. Don’t tell the others I can see you.'
         : retries
-          ? 'Caine: A fresh start! I remember a few rehearsals from last time.'
-          : 'Caine: Back for another opening act? I remember that entrance.';
+          ? 'Caine: Welcome back! Don’t worry, I won’t mention the retries. …Oops.'
+          : 'Caine: You came back! I saved your seat. Well, technically you did the saving, but still.';
       captionLeft = 6;
       history.runs = Math.min(MAX_COUNT, history.runs + 1);
       persist();
@@ -65,13 +67,15 @@ export function createCaineMemory({ storage } = {}) {
       if (!enabled || jokeShown) return null;
       jokeShown = true;
       persist();
-      return 'Caine: “Escape”? What a splendid name for a pause button!';
+      return 'Caine: Ooh, a pause! Everyone freeze… there we go. Take all the time you need!';
     },
     retryCaption(level) {
       if (!enabled || !Object.hasOwn(SCENES, level)) return null;
-      return history.retries[level] === 0
-        ? `Caine: Another take of ${SCENES[level]}? Let’s call it a rehearsal!`
-        : `Caine: Back to ${SCENES[level]}? I remember this encore. No extra tickets required!`;
+      const retries = history.retries[level];
+      if (retries === 0) return `Caine: Take two of ${SCENES[level]}! Don’t worry, the first try is just a warm-up.`;
+      if (retries < 3) return `Caine: Back to ${SCENES[level]}? I’m starting to know your moves by heart!`;
+      // This retry is attempt retries + 2: the first try plus every retry so far.
+      return `Caine: That’s try number ${retries + 2} at ${SCENES[level]}. Not that I’m counting. …I’m absolutely counting.`;
     },
     recordRetry(level, ticket) {
       if (!enabled || ticket !== revision || !Object.hasOwn(SCENES, level)) return false;

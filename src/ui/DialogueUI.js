@@ -47,7 +47,6 @@ export function createDialogueUI({ speakers, voice = null, escapeCancels = () =>
   const portraitLeft = document.getElementById('dialogue-portrait-left');
   const portraitRight = document.getElementById('dialogue-portrait-right');
   const nameEl = document.getElementById('dialogue-name');
-  const directionEl = document.getElementById('dialogue-direction');
   const textEl = document.getElementById('dialogue-text');
   const optionsEl = document.getElementById('dialogue-options');
   const continueEl = document.getElementById('dialogue-continue');
@@ -260,7 +259,6 @@ export function createDialogueUI({ speakers, voice = null, escapeCancels = () =>
 
     if (node.type === 'beat') {
       nameEl.textContent = '';
-      directionEl.textContent = '';
       startTyping(node.text);
       return;
     }
@@ -268,7 +266,6 @@ export function createDialogueUI({ speakers, voice = null, escapeCancels = () =>
     if (node.type === 'choice') {
       const speaker = node.speaker ? speakers[node.speaker] : null;
       nameEl.textContent = speaker ? speaker.name : '';
-      directionEl.textContent = '';
       stopTyping();
       textEl.textContent = node.text ?? '';
       continueEl.textContent = CHOICE_HINT;
@@ -280,7 +277,6 @@ export function createDialogueUI({ speakers, voice = null, escapeCancels = () =>
     // node.type === 'line'
     const speaker = speakers[node.speaker];
     nameEl.textContent = speaker ? speaker.name : '';
-    directionEl.textContent = node.direction ? `(${node.direction})` : '';
     startTyping(node.text, voiced);
   }
 

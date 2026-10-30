@@ -116,18 +116,36 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
   // the player against each frame, so geometry and collision can never
   // drift out of sync the way a hand-modeled mesh + separate collider would.
   const colliders = [];
-  const horizontalWallGeo = new THREE.BoxGeometry(cellSize + wallThickness, wallHeight, wallThickness);
-  const verticalWallGeo = new THREE.BoxGeometry(wallThickness, wallHeight, cellSize + wallThickness);
+  // Each wall runs between two grid corners, stopping short of them, and a
+  // post fills every corner a wall meets. Walls used to run a thickness
+  // past each corner instead, so neighbours overlapped: collinear walls'
+  // faces shared a strip, and a wall's end sat flush on the side of the one
+  // it met. Coplanar faces of different colours flicker (z-fight) as the
+  // camera moves; this way no two surfaces ever share a plane.
+  const horizontalWallGeo = new THREE.BoxGeometry(cellSize - wallThickness, wallHeight, wallThickness);
+  const verticalWallGeo = new THREE.BoxGeometry(wallThickness, wallHeight, cellSize - wallThickness);
+  const postGeo = new THREE.BoxGeometry(wallThickness, wallHeight, wallThickness);
+  const posts = new Map(); // "x,z" -> corner position
   let wallCount = 0;
 
+  function addBox(geometry, material, position) {
+    const box = new THREE.Mesh(geometry, material);
+    box.position.set(position.x, wallHeight / 2, position.z);
+    box.castShadow = true;
+    box.receiveShadow = true;
+    group.add(box);
+    colliders.push(new THREE.Box3().setFromObject(box));
+  }
+
   function addWall(geometry, position) {
-    const wall = new THREE.Mesh(geometry, wallCount % 2 === 0 ? wallMaterialA : wallMaterialB);
+    addBox(geometry, wallCount % 2 === 0 ? wallMaterialA : wallMaterialB, position);
     wallCount++;
-    wall.position.set(position.x, wallHeight / 2, position.z);
-    wall.castShadow = true;
-    wall.receiveShadow = true;
-    group.add(wall);
-    colliders.push(new THREE.Box3().setFromObject(wall));
+    // Its two ends' corners.
+    const along = geometry === horizontalWallGeo ? { x: cellSize / 2, z: 0 } : { x: 0, z: cellSize / 2 };
+    for (const sign of [-1, 1]) {
+      const corner = { x: position.x + sign * along.x, z: position.z + sign * along.z };
+      posts.set(`${corner.x.toFixed(3)},${corner.z.toFixed(3)}`, corner);
+    }
   }
 
   for (let r = 0; r < rows; r++) {
@@ -152,6 +170,8 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
       }
     }
   }
+
+  for (const corner of posts.values()) addBox(postGeo, wallMaterialB, corner);
 
   group.add(createMazeEnvironment({ maze, layout: environmentLayout, cellCenter, cellSize }));
   group.add(createMazeOverhead({ maze, layout: environmentLayout, cellCenter }));
@@ -217,65 +237,77 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
     new THREE.Vector3(jaxNeighborCenter.x, 0.8, jaxNeighborCenter.z),
   ];
 
-  // Two patrolling Gloink enemies walk stretches of the start->exit route,
-  // replacing the previous placeholder floating sphere hazard.
-  // Gloink 1 (bowling pin shape) patrols earlier (~30% of the path),
-  // Gloink 2 (star shape) patrols deeper (~65% of the path), so reaching
-  // the exit means timing a pass around them.
-  const pathLen = maze.path.length;
-  const idx1 = Math.floor(pathLen * 0.3);
-  const idx2 = Math.floor(pathLen * 0.65);
-
-  const patrolCells1 = pathLen >= 4
-    ? maze.path.slice(Math.max(1, idx1 - 1), Math.min(pathLen - 1, idx1 + 2))
+  // Gloinks keep to the maze's common areas rather than its corridors:
+  // one circling each planned loop (environmentLayout.loops: 3x3 rings
+  // where several routes cross, signposted overhead), and one pacing the
+  // last stretch of the way into Jax's chamber, so reaching him means
+  // dodging it. The main route and side branches are otherwise clear.
+  // Placed before the keepsakes so those stay off every Gloink's cells.
+  const FINAL_STRETCH_CELLS = 3;
+  const toJax = findMazePath(maze, maze.start, maze.jax) ?? [];
+  const chamberEntry = toJax.findIndex((cell) => environmentLayout.chamber.includes(cell));
+  const finalStretch = chamberEntry > 1
+    ? toJax.slice(Math.max(1, chamberEntry - FINAL_STRETCH_CELLS), chamberEntry)
     : [];
-  const minIdx2 = patrolCells1.length ? Math.max(idx1 + 3, idx2) : idx2;
-  const patrolCells2 = pathLen >= 6
-    ? maze.path.slice(Math.max(1, Math.min(pathLen - 3, minIdx2 - 1)), Math.min(pathLen - 1, Math.max(minIdx2 + 2, minIdx2 + 1)))
-    : [];
-
-  const gloinkWaypoints1 = patrolCells1.map((cell) => {
-    const c = cellCenter(cell.r, cell.c);
-    return new THREE.Vector3(c.x, 0, c.z);
-  });
-  const gloinkWaypoints2 = patrolCells2.map((cell) => {
-    const c = cellCenter(cell.r, cell.c);
-    return new THREE.Vector3(c.x, 0, c.z);
-  });
-
-  const gloink1 = (gloinkWaypoints1.length >= 2 && gloinkApi)
-    ? gloinkApi.createInstance('pin')
-    : null;
-  const gloink2 = (gloinkWaypoints2.length >= 2 && gloinkApi)
-    ? gloinkApi.createInstance('star')
-    : null;
-
-  if (gloink1) {
-    gloink1.group.position.copy(gloinkWaypoints1[0]);
-    if (gloinkWaypoints1.length >= 2) gloink1.setFacing(gloinkWaypoints1[1]);
-    group.add(gloink1.group);
+  // No Gloink patrols within this many steps of the start, where she'd be
+  // spotted the moment she arrives. A loop that close (or a maze with too
+  // few loops) gets a busy junction instead: a cell with three or four ways
+  // out, at least JUNCTION_MIN_DISTANCE away and clear of the other
+  // patrols, which its Gloink paces straight across.
+  const LOOP_MIN_DISTANCE = 5;
+  const JUNCTION_MIN_DISTANCE = 8;
+  const fromStart = new Map(getReachableCells(maze, maze.start).map(({ cell, distance }) => [cell, distance]));
+  const loopRoutes = environmentLayout.loops
+    .filter((loop) => loop.every((cell) => fromStart.get(cell) >= LOOP_MIN_DISTANCE));
+  const crowded = new Set([
+    ...finalStretch, ...loopRoutes.flat(), ...environmentLayout.chamber, ...environmentLayout.entrance,
+    ...environmentLayout.alcoves, maze.exit,
+  ]);
+  const near = (cell) => getReachableCells(maze, cell).filter(({ distance }) => distance <= 2).map(({ cell: other }) => other);
+  const ways = (cell) => Object.values(cell.walls).filter((wall) => !wall).length;
+  const openNeighbours = (cell) => [[-1, 0, 'top'], [0, 1, 'right'], [1, 0, 'bottom'], [0, -1, 'left']]
+    .filter(([, , wall]) => !cell.walls[wall]).map(([dr, dc]) => maze.cells[cell.r + dr][cell.c + dc]);
+  const junctionRoutes = [];
+  const junctions = [...fromStart]
+    .filter(([cell, distance]) => ways(cell) >= 3 && distance >= JUNCTION_MIN_DISTANCE)
+    .sort(([a, da], [b, db]) => ways(b) - ways(a) || db - da || a.r - b.r || a.c - b.c);
+  for (const [cell] of junctions) {
+    if (loopRoutes.length + junctionRoutes.length >= 3) break;
+    if (near(cell).some((other) => crowded.has(other))) continue;
+    // In one side, through the junction, out another (opposite sides when it can).
+    const [a, ...others] = openNeighbours(cell);
+    const out = others.find((other) => other.r === 2 * cell.r - a.r && other.c === 2 * cell.c - a.c) ?? others[0];
+    const route = [a, cell, out];
+    junctionRoutes.push(route);
+    route.forEach((other) => crowded.add(other));
+    near(cell).forEach((other) => crowded.add(other));
   }
-  if (gloink2) {
-    gloink2.group.position.copy(gloinkWaypoints2[0]);
-    if (gloinkWaypoints2.length >= 2) gloink2.setFacing(gloinkWaypoints2[1]);
-    group.add(gloink2.group);
-  }
+  const commonAreas = [
+    ...loopRoutes.map((cells) => ({ cells, circuit: true })),
+    ...junctionRoutes.map((cells) => ({ cells, circuit: false })),
+  ];
+  const gloinkPlans = [
+    { type: 'pin', cells: finalStretch, circuit: false, speed: 1.4, chaseSpeed: 3.0 },
+    ...[['star', 1.6, 3.3], ['cube', 1.3, 3.0], ['circle', 1.5, 3.2]]
+      .map(([type, speed, chaseSpeed], i) => ({ type, ...(commonAreas[i] ?? { cells: [] }), speed, chaseSpeed })),
+  ].filter(({ cells }) => cells.length >= 2);
+  const gloinkPatrolCells = gloinkPlans.flatMap(({ cells }) => cells);
 
   const shaderEffects = createMazeShaderEffects({
-    patrolCells: [...patrolCells1, ...patrolCells2], cellCenter, cellSize, jaxPosition: jaxCenter,
+    patrolCells: gloinkPatrolCells, cellCenter, cellSize, jaxPosition: jaxCenter,
     backdrop: group.getObjectByName('JaxTheatreBackdrop'),
   });
   group.add(shaderEffects.group);
 
   // The two hidden keepsakes (see src/state/mazeItems.js) go in random
   // cells away from the start, Jax's own spot and approach, the exit, and
-  // the gloinks' patrol segments — so finding them never means walking
+  // the gloinks' patrols — so finding them never means walking
   // into immediate danger or them sitting right where the player already
   // has to go anyway.
   const reservedCells = [
     ...environmentLayout.entrance, ...environmentLayout.chamber,
     maze.start, maze.jax, maze.jaxNeighbor, maze.exit,
-    ...patrolCells1, ...patrolCells2,
+    ...gloinkPatrolCells,
   ];
   const itemCells = [];
   // Bound to this room's final corridor graph and seeded stream. Future search
@@ -300,7 +332,7 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
     },
   };
 
-  const findableRoom = { group, interactables: [] };
+  const findableRoom = { group, interactables: [], colliders };
   const placedFindables = [];
   if (mazeItems) {
     const findables = [
@@ -323,43 +355,6 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
       const mesh = placeMazeFindable(findableRoom, mazeItems, id, label, createMesh, selected.position, () => rotationRandom);
       if (mesh) placedFindables.push(mesh);
     });
-  }
-
-  // Two more Gloinks roam side branches off the start->exit route, which
-  // the first two already guard. Each walks a short stretch (two cells
-  // either way) at least ROAMER_MIN_DISTANCE corridor steps from the start,
-  // a cell clear of Jax, the exit, the keepsakes and every other Gloink's
-  // stretch. Placed after the keepsakes so a seed's keepsake cells don't
-  // move. A seed with no room for one simply goes without it.
-  const ROAMER_MIN_DISTANCE = 5;
-  const roamers = [];
-  if (gloinkApi) {
-    const withNeighbours = (cells) => cells.flatMap((cell) =>
-      getReachableCells(maze, cell).filter(({ distance }) => distance <= 1).map(({ cell: near }) => near));
-    const taken = [...reservedCells, ...itemCells];
-    for (const [type, speed, chaseSpeed] of [['cube', 1.3, 3.0], ['circle', 1.5, 3.2]]) {
-      const excluded = new Set([...withNeighbours(taken), ...maze.path.map(({ r, c }) => maze.cells[r][c])]);
-      // Only cells with somewhere free to walk to, so a pick never comes up empty.
-      const candidates = getReachableCells(maze, maze.start)
-        .filter(({ cell, distance }) => distance >= ROAMER_MIN_DISTANCE && !excluded.has(cell))
-        .map(({ cell }) => ({
-          cell,
-          end: getReachableCells(maze, cell)
-            .filter(({ cell: other, distance }) => distance >= 1 && distance <= 2 && !excluded.has(other))
-            .sort((a, b) => b.distance - a.distance)[0]?.cell,
-        }))
-        .filter(({ end }) => end);
-      if (!candidates.length) continue;
-      const pick = candidates[Math.floor(rng() * candidates.length)];
-      const patrolCells = findMazePath(maze, pick.cell, pick.end);
-      taken.push(...patrolCells);
-      const patrol = patrolCells.map(({ r, c }) => cellCenter(r, c));
-      const gloink = gloinkApi.createInstance(type);
-      gloink.group.position.copy(patrol[0]);
-      gloink.setFacing(patrol[1]);
-      group.add(gloink.group);
-      roamers.push({ gloink, patrol, speed, chaseSpeed });
-    }
   }
 
   // Maze-only distress keeps a lowered head and fixed waiting orientation.
@@ -395,27 +390,31 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
     exit: makeTrigger(exitCenter),
   };
 
-  // Each Gloink patrols its stretch until it sees her, then follows her
-  // through the corridors for as long as it can see her (gloinkChase.js),
-  // so they aren't on main.js's generic movers. Chasing, they're still
-  // slower than her walk (4.2 m/s): breaking line of sight loses them.
+  // Each Gloink patrols (gloinkPlans above) until it sees her, then
+  // follows her through the corridors for as long as it can see her
+  // (gloinkChase.js), so they aren't on main.js's generic movers. Chasing,
+  // they're still slower than her walk: breaking line of sight loses them.
   const movers = [];
   const hazards = [];
   const gloinkChases = [];
+  const gloinkPatrols = [];
   const GLOINK_CATCH_RADIUS = 1.0; // sized to the scaled-up Gloinks (gloink.js)
   const gloinks = [];
-  for (const { gloink, patrol, speed, chaseSpeed } of [
-    { gloink: gloink1, patrol: gloinkWaypoints1, speed: 1.4, chaseSpeed: 3.0 },
-    { gloink: gloink2, patrol: gloinkWaypoints2, speed: 1.6, chaseSpeed: 3.3 },
-    ...roamers,
-  ]) {
-    if (!gloink || patrol.length < 2) continue;
-    gloinks.push(gloink);
-    gloinkChases.push(createGloinkChase({
-      mesh: gloink.group, patrol, speed, chaseSpeed,
-      maze, cellCenter, cellOf: (position) => mazePlacement.cellAt(position), walls: colliders,
-    }));
-    hazards.push({ mesh: gloink.group, radius: GLOINK_CATCH_RADIUS });
+  if (gloinkApi) {
+    for (const { type, cells, circuit, speed, chaseSpeed } of gloinkPlans) {
+      const patrol = cells.map(({ r, c }) => cellCenter(r, c));
+      const gloink = gloinkApi.createInstance(type);
+      gloink.group.position.copy(patrol[0]);
+      gloink.setFacing(patrol[1]);
+      group.add(gloink.group);
+      gloinks.push(gloink);
+      gloinkChases.push(createGloinkChase({
+        mesh: gloink.group, patrol, circuit, speed, chaseSpeed,
+        maze, cellCenter, cellOf: (position) => mazePlacement.cellAt(position), walls: colliders,
+      }));
+      gloinkPatrols.push({ type, cells, circuit });
+      hazards.push({ mesh: gloink.group, radius: GLOINK_CATCH_RADIUS });
+    }
   }
 
   const bounds = new THREE.Box3(
@@ -430,7 +429,7 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
   return {
     mazeSeed: seed, maze, mazePlacement, jaxEncounter, environmentLayout, shaderEffects,
     jaxBoundary, jaxAnchor:jaxCenter, jaxApi,
-    group, bounds, spawn, spawnFacing, colliders, triggers, movers, hazards, update, gloinkChases,
+    group, bounds, spawn, spawnFacing, colliders, triggers, movers, hazards, update, gloinkChases, gloinkPatrols,
     interactables: findableRoom.interactables,
   };
 }

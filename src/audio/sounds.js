@@ -49,6 +49,18 @@ export async function loadSound(context, id, { peak, rms, trimStart = false }) {
   }
 }
 
+/** Loads an audio file from the sounds folder without requiring a manifest entry. */
+export async function loadSoundFile(context, fileName, { peak, rms, trimStart = false } = {}) {
+  try {
+    const response = await fetch(`${SOUNDS_DIR}${encodeURIComponent(fileName)}`);
+    if (!response.ok) return null;
+    const decoded = await context.decodeAudioData(await response.arrayBuffer());
+    return reshape(context, decoded, { peak, rms }, trimStart);
+  } catch {
+    return null;
+  }
+}
+
 function reshape(context, buffer, target, trimStart) {
   const channels = Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i));
   let max = 0;

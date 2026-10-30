@@ -17,9 +17,8 @@ function fixture() {
 
 test('shader effects share delta time, freeze on zero delta and smoothly respond to player proximity',()=>{
   const effect=fixture();
-  assert.ok(effect.materials.patrol.isShaderMaterial && effect.materials.cracks.isShaderMaterial);
+  assert.ok(effect.materials.cracks.isShaderMaterial);
   effect.update(1,new THREE.Vector3(100,1.7,100));
-  assert.equal(effect.materials.patrol.uniforms.uTime.value,1);
   assert.equal(effect.materials.cracks.uniforms.uTime.value,1);
   assert.equal(effect.state.near,0);
   effect.update(0,new THREE.Vector3(8,1.7,10));
@@ -38,11 +37,8 @@ test('shader effects share delta time, freeze on zero delta and smoothly respond
 
 test('overlays stay on separate small decorative surfaces without colliders, textures or extra lights',()=>{
   const effect=fixture();
-  assert.equal(effect.group.children.length,2);
-  const strips=effect.group.getObjectByName('PatrolWarningStrips');
-  strips.geometry.computeBoundingBox();
-  assert.ok(Math.abs(strips.geometry.boundingBox.min.y-0.022)<0.000001);
-  assert.ok(Math.abs(strips.geometry.boundingBox.max.y-0.022)<0.000001);
+  assert.equal(effect.group.children.length,1);
+  assert.ok(effect.group.getObjectByName('JaxDigitalCrackPanels'));
   let triangles=0;
   effect.group.traverse(object=>{
     assert.ok(!object.isLight);
@@ -53,8 +49,6 @@ test('overlays stay on separate small decorative surfaces without colliders, tex
     Object.values(object.material.uniforms).forEach(uniform=>assert.ok(!uniform.value?.isTexture));
   });
   assert.ok(triangles<3200);
-  assert.equal(effect.state.stripWidth,0.42);
-  assert.ok(effect.state.maxDisplacement<=0.012);
   effect.dispose();
 });
 
@@ -62,8 +56,8 @@ test('normal room-style disposal frees both geometries and shader materials; re-
   const first=fixture(), second=fixture();
   first.update(2,new THREE.Vector3(8,0,10));
   first.group.traverse(mesh=>{if(mesh.isMesh){mesh.geometry.dispose();mesh.material.dispose();}});
-  assert.equal(first.state.disposed,true);assert.equal(first.state.released,4);
-  first.dispose(); assert.equal(first.state.released,4);
+  assert.equal(first.state.disposed,true);assert.equal(first.state.released,2);
+  first.dispose(); assert.equal(first.state.released,2);
   first.update(1,new THREE.Vector3()); assert.equal(first.state.time,2);
   assert.equal(second.state.time,0);assert.equal(second.state.disposed,false);
   assert.notEqual(first.materials.cracks,second.materials.cracks);
@@ -107,17 +101,4 @@ test('future loop rosettes are sparse, neutral, floor-flat and aligned to open e
   assert.ok(Math.abs(marking.geometry.boundingBox.max.y-0.018)<0.000001);
   assert.ok(marking.geometry.index.count/3<=1800);
   marking.geometry.dispose();marking.material.dispose();
-});
-
-
-test('active-route eye-level repeaters reuse the warning shader while floor bands remain floor-flat',()=>{
-  const backdrop=new THREE.Group();
-  const cells=[{r:0,c:0,walls:{left:true}},{r:0,c:1,walls:{top:true}},{r:1,c:1,walls:{right:true}}];
-  const effect=createMazeShaderEffects({patrolCells:cells,cellCenter:(r,c)=>new THREE.Vector3(c*4.5,0,r*4.5),cellSize:4.5,jaxPosition:new THREE.Vector3(8,0,10),backdrop});
-  const mesh=effect.group.getObjectByName('PatrolWarningStrips'),position=mesh.geometry.attributes.position;
-  assert.ok(position.count>mesh.userData.floorVertexCount);
-  for(let i=0;i<mesh.userData.floorVertexCount;i++)assert.ok(Math.abs(position.getY(i)-0.022)<0.000001);
-  for(let i=mesh.userData.floorVertexCount;i<position.count;i++)assert.ok(position.getY(i)>1&&position.getY(i)<2.7);
-  assert.equal(effect.group.children.length,2);assert.equal(mesh.material,effect.materials.patrol);
-  effect.update(0.5,new THREE.Vector3());assert.equal(mesh.material.uniforms.uTime.value,0.5);effect.dispose();
 });

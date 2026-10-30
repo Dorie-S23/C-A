@@ -8,6 +8,7 @@
 //   npm run voices -- --check            # no network, no credits: list what's missing
 //   npm run voices -- --force            # re-record everything (spends credits for all lines)
 //   npm run voices -- --provider=edge    # free Edge voices instead (re-records everything)
+//   npm run voices -- --check-key        # no credits: does this key/account have the cast?
 //
 // Re-run it after editing any line's text, mood or direction, or the casting
 // below — the manifest stores what each clip was recorded with, so only the
@@ -36,18 +37,21 @@ const ELEVEN_CREDITS_PER_CHAR = 0.5;
 const ELEVEN_SEED = 3006;
 
 // One voice per character, deliberately not imitations of the show's
-// actors. ElevenLabs voices are matched by name against the account's voices
-// (its own plus the default ones — free plans can't use Voice Library voices
-// through the API); `speed` is 0.7–1.2, lower `stability` = more emotive.
+// actors. The ElevenLabs ones are its default voices, pinned by ID (the same
+// on every account that has them) since a Voice Library voice can share the
+// name: "Callum - Husky Trickster" isn't Kaufmo's Callum. Only accounts made
+// before March 2026 have the defaults, they go away on 31 December 2026, and
+// free plans can't use Voice Library voices through the API, so check a new
+// key with --check-key. `speed` is 0.7–1.2, lower `stability` = more emotive.
 const CAST = {
   elevenlabs: {
-    pomni: { voice: 'Jessica', speed: 1, stability: 0.45 },   // anxious, deadpan
-    ragatha: { voice: 'Sarah', speed: 1, stability: 0.5 },    // warm, strained
-    caine: { voice: 'Liam', speed: 1.1, stability: 0.3 },     // manic ringmaster
-    kaufmo: { voice: 'Callum', speed: 1.08, stability: 0.3 }, // jittery clown
-    ribbit: { voice: 'Lily', speed: 0.92, stability: 0.55 },  // withdrawn
-    jax: { voice: 'Chris', speed: 1, stability: 0.35 },       // sarcastic, cutting
-    narrator: { voice: 'George', speed: 0.95, stability: 0.6 }, // the intro story: calm storyteller
+    pomni: { voice: 'Jessica', id: 'cgSgspJ2msm6clMCkdW9', speed: 1, stability: 0.45 },   // anxious, deadpan
+    ragatha: { voice: 'Sarah', id: 'EXAVITQu4vr4xnSDxMaL', speed: 1, stability: 0.5 },    // warm, strained
+    caine: { voice: 'Liam', id: 'TX3LPaxmHKxFdv7VOQHJ', speed: 1.1, stability: 0.3 },     // manic ringmaster
+    kaufmo: { voice: 'Callum', id: 'N2lVS1w4EtoT3dr4eOWO', speed: 1.08, stability: 0.3 }, // jittery clown
+    ribbit: { voice: 'Lily', id: 'pFZP5JQG7iQjIQuC4Bku', speed: 0.92, stability: 0.55 },  // withdrawn
+    jax: { voice: 'Chris', id: 'iP95p4xoKVk53GoZ742B', speed: 1, stability: 0.35 },       // sarcastic, cutting
+    narrator: { voice: 'George', id: 'JBFqnCBsd6RMkjVDRZzb', speed: 0.95, stability: 0.6 }, // the intro story: calm storyteller
   },
   edge: {
     pomni: { voice: 'en-US-AvaNeural', pitch: 4, rate: 0 },
@@ -79,6 +83,7 @@ const args = process.argv.slice(2);
 const force = args.includes('--force');
 const checkOnly = args.includes('--check');
 const overBudget = args.includes('--over-budget');
+const checkKey = args.includes('--check-key');
 const provider = args.find((arg) => arg.startsWith('--provider='))?.split('=')[1] ?? 'elevenlabs';
 if (!CAST[provider]) {
   console.error(`Unknown provider "${provider}" — use elevenlabs or edge.`);
@@ -86,6 +91,7 @@ if (!CAST[provider]) {
 }
 
 async function main() {
+  if (checkKey) return checkAccount();
   const lines = await collectLines();
   const manifest = readManifest();
   const todo = lines.filter((line) => force || manifest.clips[line.key]?.signature !== line.signature
@@ -223,18 +229,14 @@ async function openElevenLabs(todo, cost) {
         return null;
       }
     }
-    const voices = await eleven.listVoices();
-    const ids = new Map();
-    for (const name of new Set(todo.map((line) => line.voice))) {
-      const voice = voices.find((v) => v.name.split(/\s+-\s+/)[0].trim().toLowerCase() === name.toLowerCase());
-      if (!voice) {
-        console.error(`No voice named "${name}" on this account. Available: ${voices.map((v) => v.name).join(', ')}`);
-        process.exitCode = 1;
-        return null;
-      }
-      ids.set(name, voice.voice_id);
+    const missing = missingVoices(await eleven.listVoices(), new Set(todo.map((line) => line.speaker)));
+    if (missing.length) {
+      console.error(`This account doesn't have ${missing.map(castName).join(', ')}. They're ElevenLabs' default `
+        + 'voices, which only accounts created before March 2026 have; nothing was recorded.');
+      process.exitCode = 1;
+      return null;
     }
-    const synthesize = (line) => eleven.textToSpeech(ids.get(line.voice), {
+    const synthesize = (line) => eleven.textToSpeech(CAST.elevenlabs[line.speaker].id, {
       text: line.text,
       modelId: line.settings.model,
       voiceSettings: { stability: line.settings.stability, similarity_boost: 0.75, speed: line.settings.speed },
@@ -246,6 +248,40 @@ async function openElevenLabs(todo, cost) {
     console.error(`Stopped: ${error.message}`);
     process.exitCode = 1;
     return null;
+  }
+}
+
+/** The speakers whose ElevenLabs voice isn't among this account's `voices`. */
+function missingVoices(voices, speakers = Object.keys(CAST.elevenlabs)) {
+  const ids = new Set(voices.map((voice) => voice.voice_id));
+  return [...speakers].filter((speaker) => !ids.has(CAST.elevenlabs[speaker].id));
+}
+
+function castName(speaker) {
+  return `${speaker}'s voice ${CAST.elevenlabs[speaker].voice} (${CAST.elevenlabs[speaker].id})`;
+}
+
+/** --check-key: whether this key works and its account has the whole cast, spending no credits. */
+async function checkAccount() {
+  try {
+    const left = await eleven.creditsRemaining();
+    const missing = missingVoices(await eleven.listVoices());
+    for (const [speaker, { voice, id }] of Object.entries(CAST.elevenlabs)) {
+      console.log(`  ${missing.includes(speaker) ? 'MISSING' : 'ok     '}  ${speaker.padEnd(8)} ${voice.padEnd(8)} ${id}`);
+    }
+    console.log(left === null
+      ? '  credits: this key can\'t read them (User: Read is off), so check them on elevenlabs.io'
+      : `  credits left this month: ${left}`);
+    if (missing.length) {
+      console.error('This account is missing cast voices: only accounts created before March 2026 have '
+        + 'ElevenLabs\' default voices. Don\'t record with it, and don\'t change the cast to make it work.');
+      process.exitCode = 1;
+    } else {
+      console.log('Key works and the account has every cast voice.');
+    }
+  } catch (error) {
+    console.error(`Stopped: ${error.message}`);
+    process.exitCode = 1;
   }
 }
 

@@ -96,8 +96,13 @@ try {
   await until(async () => (await state()).entrancePhase === 'entering');
   await page.evaluate(() => window.__storyReview.skipPart());
   await until(async () => (await state()).entrancePhase === 'dialogue');
-  await progress();
-  await until(async () => { const s = await state(); return s.objective?.id === 'find-caine' && s.ready; });
+  // The morning conversation stops while Jax walks past the bedroom door
+  // (jaxBedroomPass.js), then carries on: keep advancing until it's over.
+  await until(async () => {
+    await progress();
+    const s = await state();
+    return s.objective?.id === 'find-caine' && s.ready;
+  });
   check('Opening, real Jax cutaway and Ragatha completion enable Find Caine', () => assert.equal(report.errors.length, 0));
   const hall = await travel('dorm');
   await page.evaluate(() => { window.__storyReview.lock(); window.__storyReview.arriveCaine(); });

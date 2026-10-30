@@ -10,42 +10,42 @@ export const GLOINK_CONFIGS = {
     meshes: ['Object_2', 'Object_3', 'Object_4', 'Object_5'],
     height: 1.4,
     lightColor: 0xff5533,
-    lightIntensity: 1.8,
+    lightIntensity: 3.2,
     speed: 1.4,
   },
   star: {
     meshes: ['Object_10', 'Object_11', 'Object_12', 'Object_13'],
     height: 1.4,
     lightColor: 0xffcc33,
-    lightIntensity: 1.8,
+    lightIntensity: 3.2,
     speed: 1.6,
   },
   cube: {
     meshes: ['Object_6', 'Object_7', 'Object_8', 'Object_9'],
     height: 1.25,
     lightColor: 0x33aaff,
-    lightIntensity: 1.8,
+    lightIntensity: 3.2,
     speed: 1.3,
   },
   circle: {
     meshes: ['Object_14', 'Object_15', 'Object_16', 'Object_17'],
     height: 1.35,
     lightColor: 0x33ff88,
-    lightIntensity: 1.8,
+    lightIntensity: 3.2,
     speed: 1.5,
   },
   diamond: {
     meshes: ['Object_18', 'Object_19', 'Object_20', 'Object_21'],
     height: 1.35,
     lightColor: 0xaa33ff,
-    lightIntensity: 1.8,
+    lightIntensity: 3.2,
     speed: 1.5,
   },
   crescent: {
     meshes: ['Object_22', 'Object_23', 'Object_24', 'Object_25'],
     height: 1.35,
     lightColor: 0xff33aa,
-    lightIntensity: 1.8,
+    lightIntensity: 3.2,
     speed: 1.4,
   },
 };
@@ -273,31 +273,31 @@ function createGloinkInstance(sourceModel, type = 'pin') {
   return { group, modelWrapper, light, setFacing, update };
 }
 
-let cachedPromise = null;
-
 /**
  * Loads the gloinks asset and returns an API to create gloink enemy instances.
+ *
+ * A fresh load per call (per maze), never a cached one: instances share
+ * the loaded materials and textures, and leaving a room frees them for
+ * good (releaseTextures closes the decoded images). A copy kept between
+ * mazes came back from a retry with closed images and rendered pitch
+ * black. The browser's HTTP cache still saves the download.
  * @returns {Promise<{ createInstance: (type?: string) => object }>}
  */
 export function loadGloinks() {
-  if (!cachedPromise) {
-    const loader = new GLTFLoader();
-    cachedPromise = loader.loadAsync(GLOINKS_URL).then((gltf) => {
-      const sourceModel = gltf.scene;
-      sourceModel.updateMatrixWorld(true);
-      return {
-        createInstance(type = 'pin') {
-          return createGloinkInstance(sourceModel, type);
-        },
-      };
-    }).catch((err) => {
-      console.warn('Could not load gloinks glb, using procedural fallback:', err);
-      return {
-        createInstance(type = 'pin') {
-          return createFallbackGloink(type);
-        },
-      };
-    });
-  }
-  return cachedPromise;
+  return new GLTFLoader().loadAsync(GLOINKS_URL).then((gltf) => {
+    const sourceModel = gltf.scene;
+    sourceModel.updateMatrixWorld(true);
+    return {
+      createInstance(type = 'pin') {
+        return createGloinkInstance(sourceModel, type);
+      },
+    };
+  }).catch((err) => {
+    console.warn('Could not load gloinks glb, using procedural fallback:', err);
+    return {
+      createInstance(type = 'pin') {
+        return createFallbackGloink(type);
+      },
+    };
+  });
 }

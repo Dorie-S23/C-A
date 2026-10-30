@@ -1,9 +1,17 @@
 # Story progression through Ribbit and Kaufmo
 
 Start **Play** or **New Game** for a story session. Both clear objectives,
-encounter milestones, Escape points, photos and cinematic state. Options →
-Room previews and the developer mission buttons remain separate from story
-progression.
+encounter milestones, Escape points, photos and cinematic state. Free roam of
+a room from the developer screen stays separate from story progression.
+
+The developer screen (Options → Room previews, or `?dev=1`) jumps straight into
+any level or the cutscene between two of them: pre-story, Level 1, Level 1 → 2,
+Level 2, Level 2 → 3 and Level 3, with free roam of each room separate. Each
+jump is a story checkpoint like a save (`DEV_JUMPS` in `main.js`), holding what
+the story would have by then (done objectives, Ribbit's points, the photos, the
+keepsakes), so a level plays exactly as it does in the story. Jumps that begin
+with an action (the knock on Ribbit's door, talking to Kaufmo, his hallway pass)
+start it as the player clicks in.
 
 The playable sequence is:
 
@@ -46,10 +54,8 @@ The playable sequence is:
    the remaining time continues without resetting. E hands Kaufmo every held
    photo at once, which stops the clock, even with one second left. With at
    least 4 (`PHOTO_THRESHOLD`) he plays his success scene and send-off, then
-   **Level 2 Complete**, then the Dorm Hall gathering: Pomni, Ribbit and Kaufmo
-   between their doors find Jax down the hall (`level3JaxDialogue`, staged by
-   `src/cutscenes/hallwayGatheringCutscene.js`); he bolts past them toward the
-   Lobby, and the scene ends in the maze. With fewer he abstracts and the attempt ends on a
+   **Level 2 Complete** and the way into Level 3 (steps 8 to 11). With fewer
+   he abstracts and the attempt ends on a
    **Retry Level 2** card. Early pickups are retained but do not bypass his
    introduction. Expiring before the hand-in fails even if all photos have been
    found: the game cuts to Kaufmo alone in his room (`level2TimeUpDialogue`),
@@ -78,6 +84,36 @@ The playable sequence is:
    (`kaufmoTalk.js`, `pomniSpeaking.js`). Kaufmo also nods along while Pomni
    talks. `tools/kaufmo-animation-preview.html` shows his poses outside the
    game.
+8. The successful hand-in completes **Hear Kaufmo’s Theory** and enables
+   **Find Jax** before the Level 2 card, so a save made after it resumes from
+   there. Continue hands control back in Kaufmo's room, and Pomni walks out
+   into the Dorm Hall herself.
+9. Outside his door, Dorsa's transition script plays (`level3Hallway`,
+   staged by `src/levels/level3Hallway.js`; `dormHallRoom.js` loads Jax and
+   Ribbit for it). It waits until the player has control. Jax is down the
+   hall by Ribbit's door, back turned, and bolts back up it past her and out
+   of sight, on the route and at the speed of the hall gathering
+   (`hallwayGatheringPlan` and `JAX_RUN_SPEED` in
+   `src/cutscenes/hallwayGatheringCutscene.js`). Ribbit walks up, and when she
+   steps to follow him Pomni stops her with her arm out and sends her for the
+   others. Its end completes **Find Jax** and enables **Follow Jax**.
+10. In the Lobby, Jax is alone in the corner the toy blocks make with the
+    north end of the long wall of bedroom doors, back turned, his idle
+    glitching (`src/levels/level3Lobby.js`). Coming within 6 m of him starts
+    `level3Jax` on staged shots. Its `action`s play the stage directions: he
+    turns, a glitch tears across him, and he runs off along the doors. The
+    camera cuts to Pomni before he reaches them. Escape before he runs resets
+    the talk until Pomni steps back and approaches again; once he has run,
+    the scene counts as finished.
+11. The talk completes **Follow Jax** and enables **Find the Door to the
+    Maze**. One of the five doors round the middle of that wall (`MAZE_DOORS`
+    in `tadcRoom.js`, Plane119 to Plane124) leads into the maze, picked afresh
+    each time the game runs (`lobbyMazeDoor.js`). It looks and opens like the
+    rest, onto the same black void, until Jax has run through it; from then on
+    opening it twists the `mazePortal.js` portal open in its doorway, including
+    after a load, and walking into it loads the maze and completes the
+    objective. It's left off the minimap. `tools/verify_jax_chase_browser.mjs`
+    plays steps 8–11 for real.
 
 `src/game/storyProgress.js` owns the post-Caine milestones. Objectives and
 milestones survive room changes. Ribbit's completed pose and an unscored
@@ -175,8 +211,24 @@ actual embedded-image blob URLs after decoding, working around the r169
 GLTFLoader cleanup path. The browser regression tracks those URLs and checks
 that none remain at the end of loading.
 
-The maze remains the existing prototype. This change does not implement its
-planned memory searches, final Jax dialogue or branching ending cinematics.
+Leaving the maze (both keepsakes found, Jax's conversation finished) freezes
+Pomni, fades to black and records Level 3 as complete with its ending variant,
+`saved` or `abstracted` (`storyProgress.ending`, kept in saves). A save taken
+after that loads straight into the ending instead of the maze. `jaxOutcome()`
+in `main.js` decides the variant; until the final conversation can fail
+(KAN-67) it is always `saved`. `playEnding(variant)` plays the ending
+(`src/cutscenes/endingCutscene.js`, KAN-85, KAN-89, KAN-95) in two parts.
+First the real Circus Lobby, loaded with the maze door open: Pomni walks out
+of the portal, with Jax if he was saved, to Ribbit, Kaufmo and Ragatha
+waiting there (`endingLobby*Dialogue`), and they talk until Kaufmo says he's
+found the exit. Then a set of its own: a door at the edge of the circus with
+light pouring through it (`exitDoor*Dialogue`). Caine pops in to say goodbye
+and they leave one by one, Pomni last; the other side is never shown. Each
+node's `action` drives the cast and each speaker picks the shot. Gangle,
+Zooble and Kinger aren't in it until their models exist (KAN-90). Escape
+skips the rest; developer cutscene skipping skips it all. Then the **Level 3
+Complete** card, then the title screen. The dev menu's two **Ending**
+buttons jump straight to it.
 
 Developer cutscene skipping honours awaited actions and scores each choice once.
 Returning home or changing rooms cancels a pending completion card.

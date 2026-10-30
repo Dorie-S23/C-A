@@ -7,7 +7,15 @@ globalThis.document ??= {
   createElement(tag) {
     if (tag !== 'canvas') throw new Error(`Unexpected test element: ${tag}`);
     return { width: 0, height: 0, getContext() {
-      return { createRadialGradient() { return { addColorStop() {} }; }, fillRect() {}, strokeRect() {}, fillText() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {} };
+      // Every 2D call the props' drawn textures make (the maze mug's label,
+      // the bowling ball's...): one missing here fails the whole maze load.
+      return {
+        createRadialGradient() { return { addColorStop() {} }; },
+        createLinearGradient() { return { addColorStop() {} }; },
+        clearRect() {}, fillRect() {}, strokeRect() {}, fillText() {}, strokeText() {},
+        beginPath() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {}, arc() {}, ellipse() {}, closePath() {}, fill() {}, stroke() {},
+        save() {}, restore() {}, translate() {}, rotate() {},
+      };
     } };
   },
 };

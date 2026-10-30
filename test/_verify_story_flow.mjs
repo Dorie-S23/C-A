@@ -74,6 +74,56 @@ test('Kaufmo pass-by is unavailable before a win and can be claimed only once', 
   assert.equal(progress.ribbitPoints, 2);
 });
 
+// The scenes themselves (the hall, Jax's corner, the door search): tools/verify_jax_chase_browser.mjs.
+test('Level 2 hand-in → find Jax → follow him → the maze door, each step once and in order', () => {
+  const { objectives, progress } = fixture();
+  objectives.activate('find-ribbit'); progress.finishRibbit(4); progress.finishKaufmoIntro();
+  assert.equal(progress.finishLevel2(), false, 'not before the photos are in');
+  assert.equal(progress.sawJaxBolt(), false);
+  assert.equal(progress.caughtUpWithJax(), false);
+  progress.presentedPhotos(4);
+  assert.equal(progress.findingJax, false);
+  assert.equal(progress.finishLevel2(), true);
+  assert.equal(objectives.active.id, 'find-jax');
+  assert.equal(progress.findingJax, true);
+  assert.equal(progress.chasingJax, false);
+  assert.equal(progress.finishLevel2(), false);
+  assert.equal(progress.caughtUpWithJax(), false, 'the Lobby talk waits for the hall scene');
+  assert.equal(progress.sawJaxBolt(), true);
+  assert.equal(objectives.active.id, 'follow-jax');
+  assert.equal(progress.findingJax, false);
+  assert.equal(progress.chasingJax, true);
+  assert.equal(progress.mazeOpen, false);
+  assert.equal(progress.sawJaxBolt(), false);
+  assert.equal(progress.enteredMaze(), false, 'the maze waits for the Lobby talk');
+  assert.equal(progress.caughtUpWithJax(), true);
+  assert.equal(objectives.active.id, 'enter-maze');
+  assert.equal(progress.chasingJax, false);
+  assert.equal(progress.mazeOpen, true);
+  assert.equal(progress.caughtUpWithJax(), false);
+  assert.equal(progress.enteredMaze(), true);
+  assert.equal(objectives.active, null);
+  assert.equal(progress.mazeOpen, true, 'the maze door stays open once used');
+  assert.equal(progress.enteredMaze(), false);
+});
+
+test('a save before the hall scene restores it, and previews never start it', () => {
+  const { objectives, progress, preview } = fixture();
+  objectives.activate('find-ribbit'); progress.finishRibbit(4); progress.finishKaufmoIntro();
+  progress.presentedPhotos(5); progress.finishLevel2();
+  const saved = objectives.snapshot();
+  const restored = fixture();
+  restored.objectives.restore(saved);
+  assert.equal(restored.progress.findingJax, true);
+  assert.equal(restored.progress.sawJaxBolt(), true);
+  assert.equal(restored.progress.chasingJax, true, 'and on from there to the Lobby');
+  preview();
+  assert.equal(progress.findingJax, false);
+  assert.equal(progress.sawJaxBolt(), false);
+  assert.equal(progress.caughtUpWithJax(), false);
+  assert.equal(objectives.active.id, 'find-jax');
+});
+
 test('Level 2 restarts from Kaufmo hurrying past, keeping Ribbit and her points', () => {
   const { objectives, progress } = fixture();
   assert.equal(progress.restartLevel2(), false, 'nothing to restart before Ribbit is done');
@@ -92,4 +142,28 @@ test('Level 2 restarts from Kaufmo hurrying past, keeping Ribbit and her points'
   assert.equal(progress.finishHallway(), true);
   assert.equal(progress.finishKaufmoIntro(), true);
   assert.equal(objectives.active.id, 'collect-photos');
+});
+
+test('leaving the maze records Level 3 and its ending variant once, through saves and new runs', () => {
+  const { progress, preview } = fixture();
+  assert.equal(progress.level3Complete, false);
+  assert.equal(progress.ending, null);
+  assert.equal(progress.finishLevel3('escaped'), false);
+  assert.equal(progress.finishLevel3('saved'), true);
+  assert.equal(progress.level3Complete, true);
+  assert.equal(progress.finishLevel3('abstracted'), false);
+  assert.equal(progress.ending, 'saved');
+
+  const saved = JSON.parse(JSON.stringify(progress.snapshot()));
+  progress.reset();
+  assert.equal(progress.level3Complete, false);
+  progress.restore(saved);
+  assert.equal(progress.ending, 'saved');
+  progress.restore({});
+  assert.equal(progress.level3Complete, false, 'saves from before Level 3 had an ending load without one');
+  progress.restore({ ending: 'bogus' });
+  assert.equal(progress.ending, null);
+
+  preview();
+  assert.equal(progress.finishLevel3('abstracted'), false, 'the raw maze review never records story progress');
 });

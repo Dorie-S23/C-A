@@ -15,13 +15,13 @@ test('only explicit new runs count; new runs retain retry history and vary capti
   assert.equal(memory.snapshot().runs, 0);
   assert.equal(storage.entries.size, 0);
   memory.beginRun();
-  assert.match(memory.updateCaption(0, { playable: true }), /brand-new adventure/);
+  assert.match(memory.updateCaption(0, { playable: true }), /behind the screen/);
   assert.equal(memory.snapshot().runs, 1);
   memory.beginRun();
-  assert.match(memory.updateCaption(0, { playable: true }), /another opening act/);
+  assert.match(memory.updateCaption(0, { playable: true }), /saved your seat/);
   memory.recordRetry('maze', memory.revision);
   memory.beginRun();
-  assert.match(memory.updateCaption(0, { playable: true }), /rehearsals from last time/);
+  assert.match(memory.updateCaption(0, { playable: true }), /won’t mention the retries/);
   assert.deepEqual(memory.snapshot().retries, { level1: 0, level2: 0, maze: 1 });
   const reopened = createCaineMemory({ storage });
   assert.equal(reopened.snapshot().runs, 3, 'Opening a page or loading history is not a new run');
@@ -29,7 +29,7 @@ test('only explicit new runs count; new runs retain retry history and vary capti
 
 test('pause joke is consumed once per run, not rearmed by caption cancellation or clear', () => {
   const memory = createCaineMemory({ storage: null });
-  assert.match(memory.takePauseJoke(), /Escape.*pause button/);
+  assert.match(memory.takePauseJoke(), /a pause!/);
   assert.equal(memory.takePauseJoke(), null);
   memory.cancelCaption(); // Home/save-load session teardown only cancels captions.
   memory.clear();
@@ -69,10 +69,10 @@ test('retry captions use independent whitelisted scene counts; previews never co
   const memory = createCaineMemory({ storage: null });
   for (const [level, text] of [['level1', 'Ribbit'], ['level2', 'photo search'], ['maze', 'maze']]) {
     assert.ok(memory.retryCaption(level).includes(text));
-    assert.match(memory.retryCaption(level), /rehearsal/);
+    assert.match(memory.retryCaption(level), /Take two/);
     assert.equal(memory.snapshot().retries[level], 0);
     assert.equal(memory.recordRetry(level, memory.revision), true);
-    assert.match(memory.retryCaption(level), /remember this encore/);
+    assert.match(memory.retryCaption(level), /know your moves by heart/);
   }
   assert.equal(memory.retryCaption('escape'), null);
   assert.equal(memory.recordRetry('__proto__', memory.revision), false);
@@ -110,7 +110,7 @@ test('clear removes only history, invalidates pending retries, and does not rest
   assert.equal(memory.updateCaption(0, { playable: true }), null);
   assert.deepEqual(memory.snapshot(), { version: 1, runs: 0, retries: { level1: 0, level2: 0, maze: 0 } });
   memory.beginRun();
-  assert.match(memory.updateCaption(0, { playable: true }), /brand-new adventure/);
+  assert.match(memory.updateCaption(0, { playable: true }), /behind the screen/);
 });
 
 test('campaign save/load has no memory fields and cannot roll local memory back', () => {
@@ -159,4 +159,14 @@ test('blocked storage uses session-only memory without breaking gameplay', () =>
     memory.setEnabled(false); memory.clear(); memory.setEnabled(true);
   });
   assert.equal(memory.snapshot().runs, 0);
+});
+
+test('from the fourth retry of a scene, Caine counts the attempts out loud', () => {
+  const memory = createCaineMemory({ storage: null });
+  for (let i = 0; i < 3; i++) memory.recordRetry('maze', memory.revision);
+  // Three retries recorded: this next one is the fifth try at the maze.
+  assert.match(memory.retryCaption('maze'), /try number 5 at the maze.*absolutely counting/);
+  memory.recordRetry('maze', memory.revision);
+  assert.match(memory.retryCaption('maze'), /try number 6/);
+  assert.match(memory.retryCaption('level2'), /Take two of the photo search/, 'each scene keeps its own count');
 });
