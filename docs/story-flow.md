@@ -138,6 +138,7 @@ Verification:
 ```sh
 npm test
 node tools/verify_level1_browser.mjs # Vite on 5173; installed Chrome
+node tools/verify_ending_browser.mjs # Vite on 5174; installed Edge
 node test/_verify_objectives.mjs
 node test/_verify_caine_interaction.mjs
 npm run build
@@ -219,16 +220,29 @@ in `main.js` decides the variant; until the final conversation can fail
 (KAN-67) it is always `saved`. `playEnding(variant)` plays the ending
 (`src/cutscenes/endingCutscene.js`, KAN-85, KAN-89, KAN-95) in two parts.
 First the real Circus Lobby, loaded with the maze door open: Pomni walks out
-of the portal, with Jax if he was saved, to Ribbit, Kaufmo and Ragatha
-waiting there (`endingLobby*Dialogue`), and they talk until Kaufmo says he's
-found the exit. Then a set of its own: a door at the edge of the circus with
-light pouring through it (`exitDoor*Dialogue`). Caine pops in to say goodbye
-and they leave one by one, Pomni last; the other side is never shown. Each
-node's `action` drives the cast and each speaker picks the shot. Gangle,
-Zooble and Kinger aren't in it until their models exist (KAN-90). Escape
-skips the rest; developer cutscene skipping skips it all. Then the **Level 3
-Complete** card, then the title screen. The dev menu's two **Ending**
-buttons jump straight to it.
+of the portal, with Jax if he was saved, to Ribbit, Kaufmo, Ragatha, Gangle,
+Zooble and Kinger waiting there (`endingLobby*Dialogue`). The last three use
+their procedural rigs and the shared character-performance actions. They talk
+until Kaufmo says he's found the exit. Then a set of its own: a door at the
+edge of the circus with light pouring through it (`exitDoor*Dialogue`). Caine
+pops in to say goodbye and they leave one by one, Pomni last; the other side
+is never shown. Each node's `action` drives the cast and each speaker picks
+the shot. Escape skips the rest; developer cutscene skipping skips it all.
+Home invalidates pending asset loads, dialogue, fades and completion cards,
+and disposes the active scene. Then the **Level 3 Complete** card, then the
+title screen. The dev menu's two **Ending** buttons jump straight to it and
+create restorable ending checkpoints.
+
+With Vite on port 5174, `node tools/verify_ending_browser.mjs` checks the
+ordinary maze exit and both developer-launched variants through the real Lobby
+and exit-door controllers. It verifies story state, full cast membership,
+Jax's saved-only presence, dialogue action order, checkpoint restoration,
+Escape skipping, Home during loading and both scenes, and browser/WebGL errors.
+Review instrumentation advances the real dialogue and suppresses continuous
+drawing, but renders representative frames on demand; it does not replace the
+scene controllers. Reports and screenshots go to ignored
+`artifacts/live-ending/`. The former cast browser command delegates to this
+same live suite.
 
 Developer cutscene skipping honours awaited actions and scores each choice once.
 Returning home or changing rooms cancels a pending completion card.

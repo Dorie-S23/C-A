@@ -3,19 +3,12 @@ import { test } from 'node:test';
 import { createObjectiveController } from '../src/game/objectives.js';
 import { createStoryProgress, wayOutVariantForJaxFate } from '../src/game/storyProgress.js';
 import { parseSaveFile, saveFileContents } from '../src/game/saveGame.js';
-import { createWayOutEnding } from '../src/levels/wayOutEnding.js';
 
 function fixture() {
   const objectives = createObjectiveController();
   let storySession = true;
   const story = createStoryProgress({ objectives, isStorySession: () => storySession });
   return { objectives, story, preview: () => { storySession = false; } };
-}
-
-function deferred() {
-  let resolve;
-  const promise = new Promise(resolvePromise => { resolve = resolvePromise; });
-  return { promise, resolve };
 }
 
 test('Jax fate explicitly selects saved or bittersweet, never visibility', () => {
@@ -53,7 +46,7 @@ test('ending state survives JSON and save-file restoration', () => {
   const original = fixture();
   original.story.finishLevel3('abstracted');
   const checkpoint = {
-    room: 'ending', objectives: original.objectives.snapshot(), story: original.story.snapshot(),
+    room: 'maze', objectives: original.objectives.snapshot(), story: original.story.snapshot(),
   };
   const restoredFile = parseSaveFile(saveFileContents(checkpoint));
   const restored = fixture();
@@ -79,83 +72,11 @@ test('legacy story snapshots restore without an ending and reset clears fate', (
   assert.equal(story.endingVariant, null);
 });
 
-test('duplicate starts share one active sequence and cannot restart a completed one', async () => {
-  const entrance = deferred();
-  let plays = 0;
-  let completions = 0;
-  const controller = createWayOutEnding({
-    variant: 'saved',
-    play: () => { plays++; return entrance.promise; },
-    onComplete: () => { completions++; },
-  });
-  const first = controller.start();
-  assert.equal(await controller.start(), false);
-  assert.equal(controller.diagnostics.starts, 1);
-  await Promise.resolve();
-  assert.equal(plays, 1);
-  entrance.resolve(true);
-  assert.equal(await first, true);
-  assert.equal(completions, 1);
-  assert.equal(controller.phase, 'complete');
-  assert.equal(await controller.start(), false);
-  assert.equal(plays, 1);
-});
-
-test('cancellation cleans up and suppresses stale animation, dialogue, audio and room-load callbacks', async () => {
-  const entrance = deferred();
-  const calls = [];
-  let context;
-  let cleaned = 0;
-  const controller = createWayOutEnding({
-    variant: 'bittersweet',
-    play: value => { context = value; return entrance.promise; },
-    update: () => calls.push('animation'),
-    cleanup: () => { cleaned++; },
-    onComplete: () => calls.push('complete'),
-  });
-  const starting = controller.start();
-  await Promise.resolve();
-  const callbacks = ['dialogue', 'audio', 'room-load'].map(name => context.guard(() => calls.push(name)));
-  controller.update(1 / 60);
-  assert.deepEqual(calls, ['animation']);
-  assert.equal(controller.cancel(), true);
-  controller.update(1 / 60);
-  callbacks.forEach(callback => callback());
-  entrance.resolve(true);
-  assert.equal(await starting, false);
-  assert.deepEqual(calls, ['animation']);
-  assert.equal(cleaned, 1);
-  assert.equal(controller.phase, 'cancelled');
-  assert.equal(controller.cancel(), false);
-});
-
-test('cancelling before the first microtask prevents the performance from starting', async () => {
-  let plays = 0;
-  let cleaned = 0;
-  const controller = createWayOutEnding({
-    variant: 'saved',
-    play: () => { plays++; },
-    cleanup: () => { cleaned++; },
-  });
-  const starting = controller.start();
-  controller.cancel();
-  assert.equal(await starting, false);
-  assert.equal(plays, 0);
-  assert.equal(cleaned, 1);
-});
-
-test('a stale room token cannot complete an active ending', async () => {
-  let live = true;
-  let completions = 0;
-  const controller = createWayOutEnding({
-    variant: 'saved', isLive: () => live,
-    play: () => true,
-    onComplete: () => { completions++; },
-  });
-  const starting = controller.start();
-  live = false;
-  assert.equal(await starting, false);
-  assert.equal(completions, 0);
-  assert.equal(controller.phase, 'playing', 'room teardown remains responsible for cancellation');
-  controller.cancel();
+test('legacy completed-story saves restore the live abstracted ending route', () => {
+  const { story } = fixture();
+  story.restore({ level3Complete: true, jaxFate: 'abstracted' });
+  assert.equal(story.level3Complete, true);
+  assert.equal(story.ending, 'abstracted');
+  assert.equal(story.jaxFate, 'abstracted');
+  assert.equal(story.endingVariant, 'bittersweet');
 });

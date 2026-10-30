@@ -142,8 +142,9 @@ export function stageLobbyEnding(room, stage, variant, cast, plan) {
       const [from, to] = plan.jaxWalk;
       jaxApi.playPassBy(from, to, from.distanceTo(to) / POMNI_WALK[variant] * 1.08, { style: 'sly', stay: true });
     }
-    await stage.walkTo([pomniAt], { speed: POMNI_WALK[variant] });
-    await stage.wait(0.6);
+    const arrived = await stage.walkTo([pomniAt], { speed: POMNI_WALK[variant] });
+    if (!arrived) return false;
+    return stage.wait(0.6);
   }
 
   function onNode(node) {
@@ -468,6 +469,7 @@ function stagePomni({ pomni: model, animations }) {
       if (neck) neck.rotation.x += droop * 0.25;
       if (head) head.rotation.x += droop * 0.35;
     },
+    dispose() { mixer.stopAllAction(); mixer.uncacheRoot(model); },
   };
 }
 
@@ -488,6 +490,7 @@ export function createExitDoorScene(renderer, variant, cast) {
   const { jaxApi, ribbitApi, ragathaApi, kaufmoApi, caineApi, extras } = cast;
   const pomni = stagePomni(cast.pomni);
   const sad = variant === 'abstracted';
+  let disposed = false;
   const door = v(0, 0, GATE_Z);
 
   // Everyone on their marks, facing the door.
@@ -501,6 +504,8 @@ export function createExitDoorScene(renderer, variant, cast) {
   pomni.play('idle');
   pomni.setDroop(sad ? 0.5 : 0);
   place(ribbitApi.ribbit, plan.ribbit);
+  // Her Lobby rush may still own a world-space target from the previous room.
+  ragathaApi.stopMovement();
   place(ragathaApi.ragatha, plan.ragatha);
   place(kaufmoApi.kaufmo, plan.kaufmo);
   ribbitApi.setDistress(sad ? 1 : 0);
@@ -538,17 +543,22 @@ export function createExitDoorScene(renderer, variant, cast) {
 
   // --- beats the dialogue waits on
   let timer = null; // { left, resolve }
+  let caineArrival = null;
+  let jaxDeparture = null;
   function wait(seconds) {
+    if (disposed) return Promise.resolve(false);
     return new Promise((resolve) => { timer = { left: seconds, resolve }; });
   }
 
   // Walking up to the door and on into the light, where they're gone.
   const walkers = new Set(); // { object, points, speed, onStep, resolve }
   function walkThrough(object, { speed = LEAVE_SPEED, onStep } = {}) {
+    if (disposed) return Promise.resolve(false);
     const points = [plan.approach, plan.through];
     return new Promise((resolve) => {
       walkers.add({ object, points, speed, onStep, resolve });
-    }).then(() => {
+    }).then((completed) => {
+      if (!completed || disposed) return false;
       object.visible = false;
       return wait(0.5);
     });
@@ -575,26 +585,33 @@ export function createExitDoorScene(renderer, variant, cast) {
       walker.onStep?.(deltaSeconds);
       if (!points.length) {
         walkers.delete(walker);
-        walker.resolve();
+        walker.resolve(true);
       }
     }
   }
 
   function caineArrives() {
+    if (disposed) return Promise.resolve(false);
     caineApi.caine.visible = true;
     caineApi.setPose(sad ? 'worried' : 'shocked');
     for (const api of [ragathaApi, kaufmoApi, ribbitApi, jaxApi]) api?.faceTowards(plan.caine);
     for (const extra of extras) void extra.performance.turnTowards(plan.caine);
     return new Promise((resolve) => {
+      caineArrival = resolve;
       caineApi.flyTo(plan.caine, CAINE_FLIGHT_SECONDS, () => {
+        if (disposed) return;
         caineApi.faceTowards(plan.pomni);
-        setTimeout(resolve, 300);
+        void wait(0.3).then((completed) => {
+          if (caineArrival === resolve) caineArrival = null;
+          resolve(completed);
+        });
       });
     });
   }
 
   let ribbitStep = 0;
   function onNode(node) {
+    if (disposed) return Promise.resolve(false);
     const speaker = node.type === 'line' ? node.speaker : null;
     ragathaApi.setSpeaking(speaker === 'ragatha');
     kaufmoApi.setSpeaking(speaker === 'kaufmo');
@@ -634,7 +651,8 @@ export function createExitDoorScene(renderer, variant, cast) {
         if (!extra) return undefined;
         cut('leaving');
         return extra.performance.walkTo(plan.approach, { speed: LEAVE_SPEED * 0.9 })
-          .then(() => walkThrough(extra.root, { speed: LEAVE_SPEED * 0.75 }));
+          .then(completed => completed && !disposed
+            ? walkThrough(extra.root, { speed: LEAVE_SPEED * 0.75 }) : false);
       }
       case 'jaxLeaves': {
         if (!jaxApi) return undefined;
@@ -642,10 +660,8 @@ export function createExitDoorScene(renderer, variant, cast) {
         // His own stroll, which hides him at the end of it.
         const from = jaxApi.jax.position.clone();
         jaxApi.playPassBy(from, plan.through, from.distanceTo(plan.through) / LEAVE_SPEED, { style: 'sly' });
-        return new Promise((resolve) => {
-          const check = () => (jaxApi.isRunning() ? setTimeout(check, 100) : resolve());
-          check();
-        }).then(() => wait(0.5));
+        return new Promise((resolve) => { jaxDeparture = resolve; })
+          .then(completed => completed ? wait(0.5) : false);
       }
       case 'pomniLooksBack':
         cut('faces');
@@ -664,15 +680,21 @@ export function createExitDoorScene(renderer, variant, cast) {
   }
 
   function update(deltaSeconds) {
+    if (disposed) return;
     shotTime += deltaSeconds;
     stepWalkers(deltaSeconds);
     if (timer && (timer.left -= deltaSeconds) <= 0) {
       const { resolve } = timer;
       timer = null;
-      resolve();
+      resolve(true);
     }
     pomni.update(deltaSeconds);
     jaxApi?.update(deltaSeconds);
+    if (jaxDeparture && !jaxApi.isRunning()) {
+      const resolve = jaxDeparture;
+      jaxDeparture = null;
+      resolve(true);
+    }
     ribbitApi.update(deltaSeconds);
     ragathaApi.update(deltaSeconds);
     kaufmoApi.update(deltaSeconds);
@@ -689,8 +711,17 @@ export function createExitDoorScene(renderer, variant, cast) {
   }
 
   function dispose() {
+    if (disposed) return;
+    disposed = true;
+    for (const walker of walkers) walker.resolve(false);
     walkers.clear();
+    timer?.resolve(false);
     timer = null;
+    caineArrival?.(false);
+    caineArrival = null;
+    jaxDeparture?.(false);
+    jaxDeparture = null;
+    pomni.dispose();
     for (const extra of extras) extra.performance.dispose();
     scene.traverse((child) => {
       child.geometry?.dispose();
