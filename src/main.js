@@ -521,7 +521,9 @@ dialoguePicker.querySelectorAll('button[data-jump]').forEach((button) => {
 for (const variant of ENDING_VARIANTS) {
   document.getElementById(`btn-ending-${variant}`).addEventListener('click', (event) => {
     event.stopPropagation();
-    if (currentRoom) returnToHome();
+    // Also invalidate an earlier ending whose cast is still loading, before
+    // it has a room or dialogue for returnToHome's usual cleanup to find.
+    returnToHome();
     resetObjectiveSession(true);
     titleScreen.hide();
     void leaveMaze(variant);
@@ -1995,11 +1997,15 @@ const ROOM_NAMES = {
 
 function takeCheckpoint() {
   // Preserve story checkpoint rules; the raw maze review can also save its
-  // own Level 3 progression without replaying the preceding story.
-  const mazeCheckpoint=currentRoomKey==='maze';
-  if ((!preLevel1Session&&!mazeCheckpoint) || restoringSave || (!openingCompleted&&!mazeCheckpoint) || !ROOM_NAMES[currentRoomKey]) return;
+  // own Level 3 progression without replaying the preceding story. An ending
+  // jump has already torn its room down, so use the maze as its restore label;
+  // loadGame routes the completed story straight back into the ending.
+  const endingCheckpoint = storyProgress.level3Complete;
+  const mazeCheckpoint = currentRoomKey === 'maze' || endingCheckpoint;
+  if ((!preLevel1Session&&!mazeCheckpoint) || restoringSave || (!openingCompleted&&!mazeCheckpoint)
+    || (!ROOM_NAMES[currentRoomKey] && !endingCheckpoint)) return;
   checkpoint = {
-    room: currentRoomKey,
+    room: ROOM_NAMES[currentRoomKey] ? currentRoomKey : 'maze',
     from: currentRoomFrom,
     objectives: objectives.snapshot(),
     story: storyProgress.snapshot(),
@@ -2017,7 +2023,8 @@ objectives.subscribe(() => takeCheckpoint());
 /** Starts the story from a save, from the title screen or mid-game. */
 function loadGame(data) {
   if (!data || data.incompatible) return;
-  if (currentRoom) returnToHome(); // tears the current run down cleanly
+  // A cast load can still be in flight with no current room to tear down.
+  if (!titleScreen.active) returnToHome();
   restoringSave = true;
   try {
     skipIntroRequested = false;
@@ -2374,6 +2381,7 @@ const ENDING_PARTS = {
  * Escape skips what's left; developer cutscene skipping skips it all.
  */
 async function playEnding(variant) {
+  const loadingToken = loadToken;
   sceneFade.classList.add('on');
   overlay.classList.add('hidden'); // the dev menu, when it's jumped here from there
   if (!skippingCutscenes()) {
@@ -2381,21 +2389,33 @@ async function playEnding(variant) {
     try {
       cast = await loadEndingCast(variant);
     } catch (error) {
-      console.warn('Ending cast unavailable; showing its card.', error);
+      if (loadingToken === loadToken) console.warn('Ending cast unavailable; showing its card.', error);
     }
-    if (cast && await playEndingLobby(variant, cast)) {
-      const token = loadToken;
-      let door = null;
-      try {
-        door = createExitDoorScene(renderer, variant, cast);
-      } catch (error) {
-        console.warn('Exit door scene unavailable; showing its card.', error);
+    if (loadingToken !== loadToken) {
+      if (cast) disposeEndingCast(cast);
+      return;
+    }
+    if (cast) {
+      const finished = await playEndingLobby(variant, cast);
+      if (finished === null) return; // Home or a newer room superseded it
+      if (finished) {
+        const token = loadToken;
+        let door = null;
+        try {
+          door = createExitDoorScene(renderer, variant, cast);
+        } catch (error) {
+          console.warn('Exit door scene unavailable; showing its card.', error);
+        }
+        if (door) {
+          await playEndingScene(door, ENDING_PARTS[variant].door);
+          door.dispose();
+        }
+        if (token !== loadToken) return;
+      } else {
+        // Escape or a missing Lobby ends this ending before the exit-door
+        // scene can take ownership of the separately loaded Pomni and Caine.
+        disposeEndingCast(cast);
       }
-      if (door) {
-        await playEndingScene(door, ENDING_PARTS[variant].door);
-        door.dispose();
-      }
-      if (token !== loadToken) return;
     }
   }
   const token = loadToken;
@@ -2405,18 +2425,35 @@ async function playEnding(variant) {
   returnToHome();
 }
 
+/** Releases a cast whose assets finished loading after its ending was cancelled. */
+function disposeEndingCast(cast) {
+  const roots = [
+    cast.pomni?.pomni, cast.jaxApi?.jax, cast.ribbitApi?.ribbit,
+    cast.ragathaApi?.ragatha, cast.kaufmoApi?.kaufmo, cast.caineApi?.caine,
+    ...(cast.extras ?? []).map(extra => extra.root),
+  ];
+  for (const root of roots) if (root) disposeObject3D(root);
+}
+
 /**
  * The ending's first part, in the loaded Lobby outside the maze door.
  * Resolves true once Kaufmo's led them off (the screen black again),
- * false if it was skipped or the game moved on.
+ * false if it was skipped or unavailable, or null if the game moved on.
  */
 async function playEndingLobby(variant, cast) {
-  const room = await selectRoom('tadc', {
+  const loading = selectRoom('tadc', {
     from: 'maze',
     onReady() { overlay.classList.add('hidden'); btnTitle.hidden = true; },
   });
-  if (!room || room !== currentRoomInfo) return false;
+  // selectRoom invalidates the maze synchronously; this is the Lobby's token.
   const token = loadToken;
+  const room = await loading;
+  if (token !== loadToken) {
+    // The load was superseded before any cast member entered the room.
+    disposeEndingCast(cast);
+    return null;
+  }
+  if (!room || room !== currentRoomInfo) return false;
   resetMoveState();
   stage.hold(true);
   music.setRoom(ENDING_PARTS[variant].music);
@@ -2437,9 +2474,21 @@ async function playEndingLobby(variant, cast) {
     });
     if (!started) resolve(false);
   });
-  if (token !== loadToken) return false;
+  if (token !== loadToken) {
+    // Room teardown owns everyone staged in the Lobby; these two roots were
+    // never parented there and need their own cleanup after detaching actors.
+    lobby.detach();
+    disposeObject3D(cast.pomni.pomni);
+    disposeObject3D(cast.caineApi.caine);
+    return null;
+  }
   await fadeScreen(true, 1.2);
-  if (token !== loadToken) return false;
+  if (token !== loadToken) {
+    lobby.detach();
+    disposeObject3D(cast.pomni.pomni);
+    disposeObject3D(cast.caineApi.caine);
+    return null;
+  }
   lobby.detach();
   stage.releaseCamera();
   stage.lookWithHead(null);
@@ -2459,6 +2508,9 @@ function playEndingScene(ending, dialogueKey) {
       void fadeScreen(false, 1.6);
       // The script's last direction: cut to white.
       const close = async () => {
+        // Home cancels the cutscene before it cancels this dialogue. In that
+        // case the old conversation must not fade the new title back to black.
+        if (finished || token !== loadToken) { stop(); return; }
         sceneFade.classList.add('white');
         await fadeScreen(true, 2);
         stop();

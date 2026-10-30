@@ -177,6 +177,7 @@ export function stageLobbyEnding(room, stage, variant, cast, plan) {
     stage.frame({ position: shot.position.toArray(), target: shot.target.toArray() });
   };
   const runCentre = new THREE.Vector3();
+  let detached = false;
   // Pomni just inside the doorway, out of sight until she walks out.
   stage.place({ x: plan.pomniWalk[0].x, z: plan.pomniWalk[0].z, lookAt: pomniAt });
   frameAround(plan.gatherCentre);
@@ -188,10 +189,11 @@ export function stageLobbyEnding(room, stage, variant, cast, plan) {
       const [from, to] = plan.jaxWalk;
       jaxApi.playPassBy(from, to, from.distanceTo(to) / POMNI_WALK[variant] * 1.08, { style: 'sly', stay: true });
     }
-    await stage.walkTo([pomniAt], { speed: POMNI_WALK[variant] });
+    const arrived = await stage.walkTo([pomniAt], { speed: POMNI_WALK[variant] });
+    if (!arrived) return false;
     for (const api of [ribbitApi, ragathaApi, kaufmoApi]) api.faceTowards(pomniAt);
     for (const entry of extras) void entry.performance.turnTowards(pomniAt);
-    await stage.wait(0.6);
+    return stage.wait(0.6);
   }
 
   // Everyone after Kaufmo, out across the Lobby. Resolves once they're there.
@@ -201,7 +203,7 @@ export function stageLobbyEnding(room, stage, variant, cast, plan) {
     if (sad) {
       // She lingers a second, looking back at the maze entrance.
       stage.lookAt(plan.door);
-      await stage.wait(1.2);
+      if (!await stage.wait(1.2) || detached) return false;
     }
     stage.lookWithHead(null);
     stage.lowerArms?.(false);
@@ -243,7 +245,9 @@ export function stageLobbyEnding(room, stage, variant, cast, plan) {
     }
     if (!moving) {
       runners = null;
-      runDone?.();
+      const finish = runDone;
+      runDone = null;
+      finish?.(true);
     }
   }
 
@@ -269,17 +273,29 @@ export function stageLobbyEnding(room, stage, variant, cast, plan) {
         break;
       case 'kaufmoSteps':
         kaufmoApi.setActivity('walk');
-        return stage.wait(0.1).then(() => new Promise((resolve) => {
-          runners = [{ object: kaufmo, to: plan.kaufmoForward, speed: 1.2 }];
-          runDone = () => { kaufmoApi.setActivity(null); kaufmoApi.faceTowards(pomniAt); resolve(); };
-        }));
+        return stage.wait(0.1).then(completed => {
+          if (!completed || detached) return false;
+          return new Promise((resolve) => {
+            runners = [{ object: kaufmo, to: plan.kaufmoForward, speed: 1.2 }];
+            runDone = completed => {
+              runDone = null;
+              kaufmoApi.setActivity(null);
+              kaufmoApi.faceTowards(pomniAt);
+              resolve(completed);
+            };
+          });
+        });
       case 'jaxToKaufmo':
         jaxApi?.faceTowards(plan.kaufmoForward);
         kaufmoApi.faceTowards(plan.jaxWalk[1]);
         break;
       case 'ribbitLooks':
         ribbitApi.faceTowards(plan.door);
-        return stage.wait(1.4).then(() => ribbitApi.faceTowards(pomniAt));
+        return stage.wait(1.4).then(completed => {
+          if (!completed || detached) return false;
+          ribbitApi.faceTowards(pomniAt);
+          return true;
+        });
       case 'grief':
         ribbitApi.setDistress(2);
         kaufmoApi.setPose('sad');
@@ -294,7 +310,9 @@ export function stageLobbyEnding(room, stage, variant, cast, plan) {
         kaufmoApi.faceTowards(plan.door);
         return stage.wait(1.6);
       case 'caineDrifts':
-        caineApi.flyTo(plan.caineCloser, CAINE_DRIFT_SECONDS, () => caineApi.faceTowards(pomniAt));
+        caineApi.flyTo(plan.caineCloser, CAINE_DRIFT_SECONDS, () => {
+          if (!detached) caineApi.faceTowards(pomniAt);
+        });
         return stage.wait(CAINE_DRIFT_SECONDS + 0.3);
       case 'run':
         return run();
@@ -329,10 +347,15 @@ export function stageLobbyEnding(room, stage, variant, cast, plan) {
     plan,
     onNode,
     detach() {
+      if (detached) return;
+      detached = true;
       room.storyUpdate = null;
       runners = null;
+      runDone?.(false);
+      runDone = null;
       castSpeaks(cast, null);
       kaufmoApi.setActivity(null);
+      ragathaApi.stopMovement();
       stage.lowerArms?.(false);
       for (const object of [ribbit, ragatha, kaufmo, caine, jaxApi?.jax]) object?.removeFromParent();
       for (const entry of extras) {
@@ -561,6 +584,7 @@ function stagePomni({ pomni: model, animations }) {
       if (neck) neck.rotation.x += droop * 0.25;
       if (head) head.rotation.x += droop * 0.35;
     },
+    dispose() { mixer.stopAllAction(); mixer.uncacheRoot(model); },
   };
 }
 
@@ -582,6 +606,7 @@ export function createExitDoorScene(renderer, variant, cast) {
   const { jaxApi, ribbitApi, ragathaApi, kaufmoApi, caineApi, extras } = cast;
   const pomni = stagePomni(cast.pomni);
   const sad = variant === 'abstracted';
+  let disposed = false;
   const doorAt = v(0, 0, GATE_Z);
 
   // Everyone on their marks, slowing to a stop in front of the door.
@@ -595,6 +620,8 @@ export function createExitDoorScene(renderer, variant, cast) {
   pomni.play('idle');
   pomni.setDroop(sad ? 0.4 : 0);
   place(ribbitApi.ribbit, plan.ribbit);
+  // Her Lobby rush may still own a world-space target from the previous room.
+  ragathaApi.stopMovement();
   place(ragathaApi.ragatha, plan.ragatha);
   place(kaufmoApi.kaufmo, plan.kaufmo);
   ribbitApi.setDistress(sad ? 1 : 0);
@@ -624,20 +651,24 @@ export function createExitDoorScene(renderer, variant, cast) {
 
   // --- beats the dialogue waits on
   let timer = null; // { left, resolve }
+  let jaxDeparture = null;
   function wait(seconds) {
+    if (disposed) return Promise.resolve(false);
     return new Promise((resolve) => { timer = { left: seconds, resolve }; });
   }
 
   // Walking up to the door and on into the light, where they're gone.
   const walkers = new Set(); // { object, points, speed, onStep, resolve }
   function walkTo(object, points, { speed = LEAVE_SPEED, onStep } = {}) {
+    if (disposed) return Promise.resolve(false);
     return new Promise((resolve) => {
       walkers.add({ object, points: [...points], speed, onStep, resolve });
     });
   }
-  const walkThrough = (object, options) => walkTo(object, [plan.approach, plan.through], options).then(() => {
-    object.visible = false;
-    return wait(0.4);
+  const walkThrough = (object, options) => walkTo(object, [plan.approach, plan.through], options).then((completed) => {
+      if (!completed || disposed) return false;
+      object.visible = false;
+      return wait(0.5);
   });
   function stepWalkers(deltaSeconds) {
     for (const walker of walkers) {
@@ -661,7 +692,7 @@ export function createExitDoorScene(renderer, variant, cast) {
       walker.onStep?.(deltaSeconds);
       if (!points.length) {
         walkers.delete(walker);
-        walker.resolve();
+        walker.resolve(true);
       }
     }
   }
@@ -673,6 +704,7 @@ export function createExitDoorScene(renderer, variant, cast) {
   let ribbitStep = 0;
 
   function onNode(node) {
+    if (disposed) return Promise.resolve(false);
     const speaker = node.type === 'line' ? node.speaker : null;
     castSpeaks(cast, speaker, plan.pomni);
     if (speaker === 'caine' && node.mood) caineApi.setPose(node.mood);
@@ -707,20 +739,19 @@ export function createExitDoorScene(renderer, variant, cast) {
         const extra = extras.find(entry => entry.key === node.action.replace('Leaves', '').toLowerCase());
         if (!extra) return undefined;
         return extra.performance.walkTo(plan.approach, { speed: LEAVE_SPEED * 0.9 })
-          .then(() => walkThrough(extra.root, { speed: LEAVE_SPEED * 0.75 }));
+          .then(completed => completed && !disposed
+            ? walkThrough(extra.root, { speed: LEAVE_SPEED * 0.75 }) : false);
       }
       case 'jaxLeaves': {
         if (!jaxApi) return undefined;
         // He pauses to nod at her, then strolls through, and is gone.
         jaxApi.faceTowards(plan.pomni);
-        return wait(1.2).then(() => {
+        return wait(1.2).then(completed => {
+          if (!completed || disposed) return false;
           const from = jaxApi.jax.position.clone();
           jaxApi.playPassBy(from, plan.through, from.distanceTo(plan.through) / LEAVE_SPEED, { style: 'sly' });
-          return new Promise((resolve) => {
-            const check = () => (jaxApi.isRunning() ? setTimeout(check, 100) : resolve());
-            check();
-          });
-        }).then(() => wait(0.4));
+          return new Promise(resolve => { jaxDeparture = resolve; }).then(done => done ? wait(0.4) : false);
+        });
       }
       case 'pomniStops':
         // The door swings shut behind the last of them; she walks up to it,
@@ -728,7 +759,8 @@ export function createExitDoorScene(renderer, variant, cast) {
         door.setOpen(false);
         pomni.setDroop(0);
         pomni.play('walk', 0.8);
-        return walkTo(pomni.model, [plan.pomniAtDoor], { speed: 1.1 }).then(() => {
+        return walkTo(pomni.model, [plan.pomniAtDoor], { speed: 1.1 }).then(completed => {
+          if (!completed || disposed) return false;
           pomni.play('idle');
           pomni.model.rotation.y = yawTo(plan.pomniAtDoor, doorAt);
           caine.visible = true;
@@ -746,10 +778,12 @@ export function createExitDoorScene(renderer, variant, cast) {
         // She turns, opens the door, steps into the light; it closes behind her.
         pomni.model.rotation.y = yawTo(plan.pomniAtDoor, doorAt);
         door.setOpen(true);
-        return wait(DOOR_SWING_SECONDS).then(() => {
+        return wait(DOOR_SWING_SECONDS).then(completed => {
+          if (!completed || disposed) return false;
           pomni.play('walk', 0.8);
           return walkTo(pomni.model, [plan.through], { speed: 1.0 });
-        }).then(() => {
+        }).then(completed => {
+          if (!completed || disposed) return false;
           pomni.model.visible = false;
           door.setOpen(false);
           return wait(DOOR_SWING_SECONDS + 0.3);
@@ -762,15 +796,21 @@ export function createExitDoorScene(renderer, variant, cast) {
   }
 
   function update(deltaSeconds) {
+    if (disposed) return;
     stepWalkers(deltaSeconds);
     door.update(deltaSeconds);
     if (timer && (timer.left -= deltaSeconds) <= 0) {
       const { resolve } = timer;
       timer = null;
-      resolve();
+      resolve(true);
     }
     pomni.update(deltaSeconds);
     jaxApi?.update(deltaSeconds);
+    if (jaxDeparture && !jaxApi.isRunning()) {
+      const resolve = jaxDeparture;
+      jaxDeparture = null;
+      resolve(true);
+    }
     ribbitApi.update(deltaSeconds);
     ragathaApi.update(deltaSeconds);
     kaufmoApi.update(deltaSeconds);
@@ -789,9 +829,16 @@ export function createExitDoorScene(renderer, variant, cast) {
   }
 
   function dispose() {
+    if (disposed) return;
+    disposed = true;
+    for (const walker of walkers) walker.resolve(false);
     walkers.clear();
+    timer?.resolve(false);
     timer = null;
-    for (const entry of extras) entry.performance.dispose();
+    jaxDeparture?.(false);
+    jaxDeparture = null;
+    pomni.dispose();
+    for (const extra of extras) extra.performance.dispose();
     scene.traverse((child) => {
       child.geometry?.dispose();
       for (const material of [child.material].flat()) {

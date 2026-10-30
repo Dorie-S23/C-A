@@ -138,6 +138,7 @@ Verification:
 ```sh
 npm test
 node tools/verify_level1_browser.mjs # Vite on 5173; installed Chrome
+node tools/verify_ending_browser.mjs # Vite on 5174; installed Edge
 node test/_verify_objectives.mjs
 node test/_verify_caine_interaction.mjs
 npm run build
@@ -215,29 +216,34 @@ Leaving the maze (both keepsakes found, Jax's conversation finished) freezes
 Pomni, fades to black and records Level 3 as complete with its ending variant,
 `saved` or `abstracted` (`storyProgress.ending`, kept in saves). A save taken
 after that loads straight into the ending instead of the maze. `jaxOutcome()`
-in `main.js` decides the variant; until the final conversation can fail
-(KAN-67) it is always `saved`. Jax's final maze conversation (`level3JaxFinalDialogue`) is Dorsa's
-five-round script: each round has one answer that reaches him
-(`points: 1`), scored into Level 3 with the keepsakes. After round 5 the Jax
-gate (`passesJaxGate`) sends it to Ending A (he steadies) or Ending B (he
-unravels, the clearing flashes white and he's gone); `main.js`
-`jaxFinalScene` acts it out.
+in `main.js` uses the result of `level3JaxFinalDialogue`: five rounds score
+into Level 3 with the keepsakes, and the Jax gate (`passesJaxGate`) selects
+whether he stays or abstracts. `jaxFinalScene` acts out that resolution.
 
 `playEnding(variant)` plays Dorsa's ending (`src/cutscenes/endingCutscene.js`)
 in two parts. First the maze entrance: the real Circus Lobby, loaded with the
 maze door open. Pomni walks out of the portal, with Jax if he was won over,
-to everyone waiting there, Caine a little apart (`endingLobby*Dialogue`).
-They talk, then Kaufmo leads them off at a run across the Lobby (with a short
-montage in the saved version). Then a set of its own: a quiet corridor at
-the far edge of the circus with a single red door at its end
-(`exitDoor*Dialogue`). They go through one by one, Jax last before Pomni if
-he's there; then Pomni and Caine say goodbye, Caine bows (his hat is part of
-his head mesh, so he can't take it off), Pomni steps through, the door shuts
-behind her, and it cuts to white. Each scene keeps one steady wide camera on
-everyone. Gangle, Zooble and Kinger are procedural rigs (KAN-90). Escape
-skips the rest; developer cutscene skipping skips it all. Then the **Level 3
-Complete** card, then the title screen. The dev menu's two **Ending**
-buttons jump straight to it.
+to Ribbit, Kaufmo, Ragatha, Gangle, Zooble and Kinger, with Caine a little
+apart (`endingLobby*Dialogue`). The last three use procedural rigs and the
+shared character-performance actions. In the abstracted route, the group
+grieves before Kaufmo leads them onward; in the saved route they share a short
+running montage. Then a set of its own: a quiet corridor at the far edge of
+the circus with a single red door at its end (`exitDoor*Dialogue`). They go
+through one by one, Jax last before Pomni if he's there; then Pomni and Caine
+say goodbye, Caine bows, Pomni steps through, the door shuts behind her, and
+it cuts to white. Caine's hat is part of his head mesh, so the current model
+does not support removing it. Escape skips the rest; developer cutscene
+skipping skips it all. Then the **Level 3 Complete** card, then the title
+screen. The dev menu's two **Ending** buttons jump straight to it.
+
+With Vite on port 5174, `node tools/verify_ending_browser.mjs` checks the
+ordinary maze exit and both developer-launched variants through the live Lobby
+and exit-door controllers. It verifies story state, cast membership, Jax's
+saved-only presence, dialogue action order, checkpoint restoration, Escape,
+Home during loading and both scenes, and browser/WebGL errors. Review
+instrumentation advances dialogue and suppresses continuous drawing while
+rendering representative frames; it does not replace the scene controllers.
+Reports and screenshots go to ignored `artifacts/live-ending/`.
 
 Developer cutscene skipping honours awaited actions and scores each choice once.
 Returning home or changing rooms cancels a pending completion card.
