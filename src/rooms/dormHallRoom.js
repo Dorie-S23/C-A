@@ -133,9 +133,11 @@ export function loadDormHallRoom(onProgress, { from, items, travel, jaxHallway }
       // Pomni's has its marker and arrival below (createDoorConnection).
       if (doorway || (walkIn && to !== 'pomni')) {
         const intoHall = new THREE.Vector3(Math.sign(HALL_CENTRE_X - centre.x), 0, 0);
+        // Where she stands on stepping out of Kaufmo's room: Level 3's hall
+        // scene starts there (addJaxHallway).
+        if (to === 'kaufmo') outsideKaufmo = sill(door.frameBox).addScaledVector(intoHall, ARRIVAL_DISTANCE);
         if (doorway) joins.push({ guest, control, hostDoor: { frameBox: door.frameBox, intoRoom: intoHall }, doorway });
         room.mapMarkers.push({ to, box: door.frameBox });
-        if (to === 'kaufmo') outsideKaufmo = sill(door.frameBox).addScaledVector(intoHall, ARRIVAL_DISTANCE);
         // Back from the room played on its own (the room picker / a
         // dialogue preview): out in the hall by its door, which is open.
         if (from === to) {
@@ -199,7 +201,10 @@ function addJaxHallway(room, [jaxApi, ribbitApi], outsideKaufmo) {
   const marks = {
     pomni: outsideKaufmo.clone(),
     jax,
-    jaxRun,
+    // From his mark, straight out into the middle of the hall and up it.
+    // The gathering's route hugs the left wall, brushing past every door,
+    // and the middle also keeps him clear of Pomni, who's by Kaufmo's door.
+    jaxRun: jaxRun.map((point, i) => (i ? point.clone().setX(HALL_CENTRE_X) : point)),
     ribbit: new THREE.Vector3(RIBBIT_MARK.x, outsideKaufmo.y, RIBBIT_MARK.z),
   };
   jaxApi.jax.position.copy(jax);

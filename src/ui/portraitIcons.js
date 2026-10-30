@@ -8,9 +8,9 @@ const DIR = './models/objects/2D%20dialogue%20icons/';
 
 export const ICONS = {
   pomni: `${DIR}pomni.webp`,
-  caine: `${DIR}Caine.webp`,
+  caine: `${DIR}caine.png`,
   kaufmo: `${DIR}kaufmo.png`,
   ragatha: `${DIR}Ragatha.webp`,
   jax: `${DIR}Jax.webp`,
-  ribbit: `${DIR}Ribbit.webp`,
+  ribbit: `${DIR}ribbit.png`,
 };
