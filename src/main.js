@@ -683,17 +683,18 @@ sensitivityInput.addEventListener('input', () => {
   }
 });
 
-// Dialogue voice volume, 0 (off) to 1. Same persistence as the sensitivity.
+// Dialogue voice volume, 0 (off) to 1. Off by default — players opt in here.
+// Same persistence as the sensitivity.
 function setVoiceVolume(value) {
   dialogueVoice.setVolume(value);
   voiceVolumeInput.value = value;
   voiceVolumeValue.textContent = value === 0 ? 'off' : `${Math.round(value * 100)}%`;
 }
 try {
-  const stored = Number(localStorage.getItem(VOICE_VOLUME_KEY) ?? 1);
-  setVoiceVolume(Number.isFinite(stored) ? Math.max(0, Math.min(1, stored)) : 1);
+  const stored = Number(localStorage.getItem(VOICE_VOLUME_KEY) ?? 0);
+  setVoiceVolume(Number.isFinite(stored) ? Math.max(0, Math.min(1, stored)) : 0);
 } catch {
-  setVoiceVolume(1);
+  setVoiceVolume(0);
 }
 voiceVolumeInput.addEventListener('input', () => {
   setVoiceVolume(Number(voiceVolumeInput.value));
