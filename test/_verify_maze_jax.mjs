@@ -182,3 +182,26 @@ test('the Jax gate: Levels 1 to 3 reaching 75% of what they could earn keeps him
   assert.equal(gate.getEscapeTotal(), 8, 'the escape gate is still Levels 1 and 2 only');
   gate.resetEscapeThreshold();
 });
+
+test('a trail hint runs through the corridors from her to Jax and is gone after three seconds', async () => {
+  const { playMazeTrail, TRAIL_SECONDS } = await import('../src/effects/mazeTrail.js');
+  const room = await loadMazeRoom(null, { seed: 42, mazeItems: createMazeItems() });
+  const her = new THREE.Vector3(...room.spawn.toArray());
+  const route = room.routeToJax(her);
+  assert.ok(route[0].distanceTo(her.clone().setY(0)) < 1e-6, 'from her');
+  assert.ok(route.at(-1).distanceTo(room.hideouts[room.jaxStop].spot) < 1e-6, 'to where he is (or will turn up)');
+  for (let i = 1; i < route.length - 1; i++) {
+    const from = room.mazePlacement.cellAt(route[i]), to = room.mazePlacement.cellAt(route[i + 1]);
+    if (i < route.length - 2) assert.equal(Math.abs(from.r - to.r) + Math.abs(from.c - to.c), 1, 'cell to neighbouring cell, never through a wall');
+  }
+  const trail = playMazeTrail(room.group, route);
+  const mesh = room.group.getObjectByName('MazeTrailHint');
+  assert.ok(mesh, 'laid in the maze');
+  let alive = true, t = 0, heads = [];
+  while (alive && t < 10) { alive = trail.update(1 / 30); t += 1 / 30; heads.push(mesh.material.uniforms.uHead.value); }
+  assert.ok(Math.abs(t - TRAIL_SECONDS) < .05 && TRAIL_SECONDS === 3, `over in ${t.toFixed(2)} s`);
+  assert.ok(heads.every((v, i) => !i || v >= heads[i - 1]) && heads.at(-1) === 1, 'its head runs all the way to him');
+  assert.ok(mesh.material.uniforms.uFade.value < .01, 'faded out');
+  trail.dispose();
+  assert.equal(room.group.getObjectByName('MazeTrailHint'), undefined);
+});

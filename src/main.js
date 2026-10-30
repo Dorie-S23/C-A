@@ -40,6 +40,7 @@ import {createMazeEncounter} from './levels/mazeEncounter.js';
 import { runMazeJaxChase } from './levels/mazeJaxChase.js';
 import { createMazeSounds } from './audio/mazeSounds.js';
 import { createGlitchCaption } from './ui/glitchCaption.js';
+import { playMazeTrail } from './effects/mazeTrail.js';
 import {createMazeObjectiveHUD} from './ui/mazeObjectiveHUD.js';
 import { createMazeHints } from './ui/mazeHints.js';
 import './ui/mazeHints.css';
@@ -274,6 +275,11 @@ const CAINE_HINT_IMAGES = [
   './models/objects/caine%20hint/261ccc01ee6dec910f904ffed42b06c3.jpg',
 ];
 let nextCaineHintImage = 0;
+function nextCaineHintPortrait() {
+  const portrait = CAINE_HINT_IMAGES[nextCaineHintImage % CAINE_HINT_IMAGES.length];
+  nextCaineHintImage++;
+  return portrait;
+}
 const interactPrompt = document.getElementById('prompt');
 const cinematicSkip = document.getElementById('cinematic-skip');
 const skipCurtain = document.getElementById('skip-curtain');
@@ -401,9 +407,8 @@ function showHint(text, durationMs = 3000, { caine = false } = {}) {
   hintKicker.hidden = !caine;
   hintPortrait.hidden = !caine;
   if (caine) {
-    hintPortrait.src = CAINE_HINT_IMAGES[nextCaineHintImage % CAINE_HINT_IMAGES.length];
+    hintPortrait.src = nextCaineHintPortrait();
     hintPortrait.alt = 'Caine';
-    nextCaineHintImage++;
   } else {
     hintPortrait.removeAttribute('src');
     hintPortrait.alt = '';
@@ -941,6 +946,7 @@ function returnToHome({ toRoomPicker = false } = {}) {
   interactPrompt.hidden = true;
   mazeEncounter?.dispose();mazeEncounter=null;
   mazeSounds?.dispose();mazeSounds=null;mazeChase?.stop();mazeChase=null;
+  mazeTrail?.dispose();mazeTrail=null;mazeTrailPending=false;
   foundJax = false;
   reachedExit = false;
   caught = false;
@@ -1933,6 +1939,8 @@ const MAZE_PICKUP_LINES = { 'bowling-ball': 'mazePickupBowling', 'hot-chocolate-
 let mazeEncounter=null;
 // This maze visit's keepsake sounds and Jax chase (fragments' caption), stopped on leaving it.
 let mazeSounds=null,mazeChase=null;
+// A trail hint revealed in the hints panel runs once she's back in play.
+let mazeTrailPending=false,mazeTrail=null;
 const glitchCaption=createGlitchCaption();
 const mazeItems = createMazeItems({
   onChange(){setLevelPoints('level3',mazeItems.score);currentRoomInfo?.jaxBoundary?.sync();takeCheckpoint();},
@@ -1949,7 +1957,10 @@ const mazeHUD=createMazeObjectiveHUD({root:document.getElementById('maze-objecti
 const mazeHints = createMazeHints({
   button: document.getElementById('maze-hints-button'), reminder: document.getElementById('maze-hints-reminder'), panel: document.getElementById('maze-hints-panel'),
   onOpen: openMazeHints, onClose: finishMazeHints, onChange: () => takeCheckpoint(),
+  nextPortrait: nextCaineHintPortrait,
   hasCollected: id => mazeItems.hasCollected(id),
+  onTrail: () => { mazeTrailPending = true; },
+  getJaxPosition: () => (currentRoomKey === 'maze' ? currentRoomInfo?.hideouts?.[currentRoomInfo.jaxStop]?.spot ?? null : null),
   getPlayerPosition: () => player.position,
   getPlayerFacing: () => pomni?.rotation.y ?? 0,
 });
@@ -2321,6 +2332,16 @@ function jaxFinalScene(room, handlers) {
       return actions[node.action]?.();
     },
   };
+}
+
+/** Runs a revealed trail hint once she's back in play, then clears it away. */
+function updateMazeTrail(deltaSeconds) {
+  if (mazeTrailPending && currentRoomKey === 'maze' && currentRoomInfo?.routeToJax && mazeGameplayAvailable(gameplayHUDContext())) {
+    mazeTrailPending = false;
+    mazeTrail?.dispose();
+    mazeTrail = playMazeTrail(currentRoomInfo.group, currentRoomInfo.routeToJax(player.position));
+  }
+  if (mazeTrail && !mazeTrail.update(deltaSeconds)) { mazeTrail.dispose(); mazeTrail = null; }
 }
 
 // After the talk with Jax, this long (to see him settle, or come apart)
@@ -2796,6 +2817,7 @@ function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
   interactPrompt.hidden = true;
   mazeEncounter?.dispose();mazeEncounter=null;
   mazeSounds?.dispose();mazeSounds=null;mazeChase?.stop();mazeChase=null;
+  mazeTrail?.dispose();mazeTrail=null;mazeTrailPending=false;
   foundJax = false;
   reachedExit = false;
   caught = false;
@@ -5419,6 +5441,7 @@ function animate() {
       playerActive: isLocked && readyToPlay && !dialogueUI.isActive && !activeCutscene && !stageBusy(),
     });
     mazeSounds?.update(delta, player.position);
+    updateMazeTrail(delta);
     refreshDynamicColliders();
     // Her bedroom's lighting runs the environment itself.
     if (!currentRoomInfo?.lighting) {

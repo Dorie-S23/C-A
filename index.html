@@ -186,6 +186,121 @@
                 background: rgba(255, 210, 122, 0.18);
                 border-color: rgba(255, 210, 122, 0.6);
             }
+
+            /* Story jump screen: the same intermission colors, striped
+               marquee trim, and gold framed cards used by the game panels. */
+            #overlay:has(> #dialogue-picker:not([hidden])) {
+                justify-content: flex-start;
+                box-sizing: border-box;
+                overflow-y: auto;
+                padding: clamp(3.5rem, 7vh, 5rem) 1rem 2rem;
+                background: radial-gradient(ellipse at 50% 20%, rgba(49, 19, 66, 0.76), rgba(7, 3, 13, 0.9));
+                backdrop-filter: blur(4px);
+            }
+            #overlay:has(> #dialogue-picker:not([hidden]))::before {
+                content: "";
+                position: fixed;
+                inset: 0 0 auto;
+                height: 0.7rem;
+                background: repeating-linear-gradient(90deg, #d8283c 0 1.5rem, #f6e7c8 1.5rem 3rem);
+                box-shadow: 0 2px 0 #e8b44a, 0 5px 18px rgba(0, 0, 0, 0.5);
+                pointer-events: none;
+            }
+            #overlay:has(> #dialogue-picker:not([hidden])) > #overlay-title {
+                margin: 0 0 0.55rem;
+                color: #ffd27a;
+                font-family: 'Luckiest Guy', 'Trebuchet MS', sans-serif;
+                font-size: clamp(2.4rem, 5vw, 3.5rem);
+                font-weight: 400;
+                letter-spacing: 0.03em;
+                text-shadow: 0 3px 0 #b0163f, 0 6px 0 #3d0a1a, 0 10px 18px rgba(0, 0, 0, 0.45);
+            }
+            #overlay:has(> #dialogue-picker:not([hidden])) > #overlay-subtitle {
+                max-width: 60rem;
+                margin: 0.3rem 0 0.75rem;
+                color: #eee4f4;
+                line-height: 1.5;
+                opacity: 0.92;
+            }
+            #overlay:has(> #dialogue-picker:not([hidden])) #dialogue-picker {
+                width: min(72rem, calc(100vw - 2rem));
+                gap: 0.85rem;
+                margin: 1rem 0 0.35rem;
+            }
+            #overlay:has(> #dialogue-picker:not([hidden])) .dev-group {
+                position: relative;
+                overflow: hidden;
+                gap: 0.55rem;
+                padding: 1rem 0.85rem 0.85rem;
+                background: linear-gradient(145deg, rgba(43, 20, 57, 0.96), rgba(21, 10, 31, 0.96));
+                border: 1px solid rgba(232, 180, 74, 0.6);
+                border-top: 0;
+                border-radius: 12px;
+                box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.035), 0 8px 22px rgba(0, 0, 0, 0.28);
+            }
+            #overlay:has(> #dialogue-picker:not([hidden])) .dev-group::before {
+                content: "";
+                position: absolute;
+                inset: 0 0 auto;
+                height: 0.42rem;
+                background: repeating-linear-gradient(90deg, #d8283c 0 0.8rem, #f6e7c8 0.8rem 1.6rem);
+            }
+            #overlay:has(> #dialogue-picker:not([hidden])) .dev-group.dev-between {
+                background: linear-gradient(145deg, rgba(61, 17, 39, 0.96), rgba(30, 9, 24, 0.97));
+                border-color: rgba(216, 40, 60, 0.75);
+            }
+            #overlay:has(> #dialogue-picker:not([hidden])) .dev-group.dev-between::before {
+                background: repeating-linear-gradient(90deg, #8e1532 0 0.8rem, #ff9db0 0.8rem 1.6rem);
+            }
+            #overlay:has(> #dialogue-picker:not([hidden])) .dev-group h3,
+            #overlay:has(> #dialogue-picker:not([hidden])) #room-picker h3 {
+                margin-top: 0.15rem;
+                font-size: 0.76rem;
+                letter-spacing: 0.16em;
+            }
+            #overlay:has(> #dialogue-picker:not([hidden])) .dev-group button {
+                background: rgba(255, 255, 255, 0.075);
+                border-color: rgba(246, 231, 200, 0.3);
+                border-radius: 8px;
+                transition: transform 0.14s ease, background 0.14s ease, border-color 0.14s ease;
+            }
+            #overlay:has(> #dialogue-picker:not([hidden])) .dev-group button:hover,
+            #overlay:has(> #dialogue-picker:not([hidden])) #room-picker button:hover {
+                transform: translateY(-1px);
+                background: rgba(255, 210, 122, 0.17);
+                border-color: #ffd27a;
+            }
+            #overlay:has(> #dialogue-picker:not([hidden])) #room-picker {
+                width: min(72rem, calc(100vw - 2rem));
+                gap: 0.55rem;
+                margin: 0.35rem 0 0.65rem;
+            }
+            #overlay:has(> #dialogue-picker:not([hidden])) #room-picker h3 {
+                margin: 0 0 0.15rem;
+                color: #ffd27a;
+            }
+            #overlay:has(> #dialogue-picker:not([hidden])) #room-picker button,
+            #overlay:has(> #dialogue-picker:not([hidden])) #btn-title {
+                padding: 0.5em 0.9em;
+                color: #fff3d6;
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(246, 231, 200, 0.38);
+                border-radius: 8px;
+                transition: transform 0.14s ease, background 0.14s ease, border-color 0.14s ease;
+            }
+            #overlay:has(> #dialogue-picker:not([hidden])) #btn-title:hover {
+                transform: translateY(-1px);
+                background: #d8283c;
+                border-color: #f6e7c8;
+            }
+            @media (max-width: 600px) {
+                #overlay:has(> #dialogue-picker:not([hidden])) { padding-inline: 0.75rem; }
+                #overlay:has(> #dialogue-picker:not([hidden])) #dialogue-picker,
+                #overlay:has(> #dialogue-picker:not([hidden])) #room-picker {
+                    width: 100%;
+                }
+            }
+
             #room-picker {
                 display: flex;
                 flex-wrap: wrap;
@@ -472,16 +587,21 @@
                above the maze's "H: Hints · Esc: Pause" reminder. */
             #pomni-health { position: fixed; left: max(16px, env(safe-area-inset-left));
                 bottom: calc(max(16px, env(safe-area-inset-bottom)) + 40px); z-index: 6;
-                display: flex; align-items: center; gap: .6rem; padding: .5rem .85rem;
-                color: #fff8e9; background: rgba(10, 8, 14, .75);
-                border: 1px solid rgba(255, 210, 122, .55); border-radius: 10px;
-                font: 600 .85rem/1 system-ui, sans-serif; letter-spacing: .04em; }
+                display: flex; align-items: center; gap: .65rem; padding: .48rem .8rem;
+                color: #fff3d6; background: linear-gradient(135deg, rgba(43, 20, 57, .94), rgba(18, 10, 30, .93));
+                border: 1px solid rgba(232, 180, 74, .78); border-radius: 13px 13px 13px 5px;
+                box-shadow: 0 6px 18px rgba(0, 0, 0, .4), inset 0 0 0 2px rgba(255, 255, 255, .045);
+                font: 700 .82rem/1 system-ui, sans-serif; letter-spacing: .08em; }
+            #pomni-health::before { content: ""; position: absolute; top: 0; left: .7rem; right: .7rem;
+                height: 3px; border-radius: 0 0 3px 3px;
+                background: linear-gradient(90deg, #d8283c 0 48%, #f6e7c8 48% 52%, #314ba5 52%); }
             #pomni-health[hidden] { display: none; }
-            #pomni-health .health-hearts { display: flex; gap: .3rem; font-size: 1.6rem; }
-            #pomni-health .heart { color: #ff3b5c; text-shadow: 0 0 8px rgba(255, 59, 92, .6);
+            #pomni-health .health-label { color: #f6e7c8; text-transform: uppercase; }
+            #pomni-health .health-hearts { display: flex; gap: .24rem; font-size: 1.42rem; }
+            #pomni-health .heart { color: #f33f59; text-shadow: 0 0 8px rgba(255, 59, 92, .55), 0 1px 0 #8d142b;
                 transition: color .25s, text-shadow .25s, transform .25s; }
             #pomni-health .heart.lost { color: transparent; text-shadow: none;
-                -webkit-text-stroke: 1.5px rgba(255, 255, 255, .45); transform: scale(.85); }
+                -webkit-text-stroke: 1.5px rgba(246, 231, 200, .5); transform: scale(.85); }
             #pomni-health.hit { animation: health-shake .45s; }
             @keyframes health-shake { 0%, 100% { transform: none; } 20% { transform: translateX(-6px); }
                 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(3px); } }
@@ -509,6 +629,36 @@
                 color: #7af0ff;
             }
             #hint-key[hidden] { display: none; }
+            #maze-hints-reminder {
+                position: fixed;
+                left: max(16px, env(safe-area-inset-left));
+                bottom: max(16px, env(safe-area-inset-bottom));
+                z-index: 6;
+                display: flex;
+                align-items: center;
+                gap: .42rem;
+                padding: .42rem .65rem;
+                color: #eee4f4;
+                background: linear-gradient(135deg, rgba(34, 18, 49, .94), rgba(15, 10, 28, .92));
+                border: 1px solid rgba(177, 61, 131, .72);
+                border-radius: 10px 10px 10px 4px;
+                box-shadow: 0 5px 16px rgba(0, 0, 0, .34);
+                font: 500 .78rem/1.2 system-ui, sans-serif;
+                pointer-events: none;
+            }
+            #maze-hints-reminder kbd {
+                min-width: 1.25em;
+                padding: .12em .32em;
+                color: #fff3d6;
+                background: rgba(255, 255, 255, .1);
+                border: 1px solid rgba(246, 231, 200, .38);
+                border-bottom-width: 2px;
+                border-radius: 4px;
+                font: 700 .78rem/1.2 system-ui, sans-serif;
+                text-align: center;
+            }
+            #maze-hints-reminder .reminder-divider { color: #ffd27a; opacity: .8; }
+            #maze-hints-reminder[hidden] { display: none; }
 
             #hint {
                 position: fixed;
@@ -1208,6 +1358,65 @@
                 outline: 3px solid #ffd27a;
                 outline-offset: 4px;
             }
+            #title-quit {
+                background: radial-gradient(ellipse at center, rgba(48, 16, 62, .62), rgba(8, 3, 16, .9));
+                backdrop-filter: blur(3px);
+            }
+            #title-quit .title-panel-box {
+                position: relative;
+                isolation: isolate;
+                width: min(36rem, calc(100vw - 2rem));
+                min-width: 0;
+                max-width: none;
+                box-sizing: border-box;
+                gap: .8rem;
+                padding: 3.65rem clamp(1.1rem, 4vw, 2rem) 1.55rem;
+                overflow: hidden;
+                background: radial-gradient(130% 75% at 50% 0%, #43205d 0%, #261236 58%, #170a22 100%);
+                border: 3px solid #e8b44a;
+                border-radius: 18px;
+                box-shadow: 0 0 0 5px #1d0d29, 0 0 0 7px #a87523, 0 26px 70px rgba(0, 0, 0, .65);
+            }
+            #title-quit .title-panel-box::before {
+                content: "";
+                position: absolute;
+                z-index: -1;
+                inset: 0 0 auto;
+                height: 2.3rem;
+                background: repeating-linear-gradient(90deg, #d8283c 0 1.5rem, #f6e7c8 1.5rem 3rem);
+                -webkit-mask:
+                    linear-gradient(#000 0 0) top / 100% calc(100% - .75rem) no-repeat,
+                    radial-gradient(circle .75rem at 50% 0, #000 97%, transparent) bottom / 1.5rem .75rem repeat-x;
+                mask:
+                    linear-gradient(#000 0 0) top / 100% calc(100% - .75rem) no-repeat,
+                    radial-gradient(circle .75rem at 50% 0, #000 97%, transparent) bottom / 1.5rem .75rem repeat-x;
+            }
+            #title-quit h2 {
+                color: #ffd27a;
+                font-family: 'Luckiest Guy', 'Trebuchet MS', sans-serif;
+                font-size: clamp(2rem, 6vw, 3rem);
+                font-weight: 400;
+                line-height: 1.05;
+                text-shadow: 0 3px 0 #b0163f, 0 6px 0 #3d0a1a, 0 10px 18px rgba(0, 0, 0, .45);
+            }
+            #title-quit p { color: #f6e7c8; font-size: 1.1rem; opacity: 1; }
+            #title-quit #btn-quit-back {
+                width: 100%;
+                padding: .7em 1em;
+                color: #fff3d6;
+                background: #d8283c;
+                border: 2px solid #f6e7c8;
+                border-radius: 8px;
+                box-shadow: 0 4px 0 #79152a, 0 8px 18px rgba(0, 0, 0, .3);
+                font-family: 'Luckiest Guy', 'Trebuchet MS', sans-serif;
+                font-size: 1.15rem;
+                letter-spacing: .04em;
+                cursor: pointer;
+                transition: transform .12s ease, background-color .12s ease;
+            }
+            #title-quit #btn-quit-back:hover { transform: translateY(-2px); background: #ec3b4f; }
+            #title-quit #btn-quit-back:active { transform: translateY(2px); }
+            #title-quit #btn-quit-back:focus-visible { outline: 3px solid #ffd27a; outline-offset: 4px; }
             /* The save/load screen uses the same striped tent and gold frame. */
             #save-slots .title-panel-box {
                 position: relative;
@@ -1989,10 +2198,16 @@
             </div>
         </div>
         <div id="crosshair" hidden></div>
-        <aside id="maze-hints-reminder" hidden>H: Hints &middot; Esc: Pause</aside>
+        <aside id="maze-hints-reminder" aria-label="Maze controls" hidden>
+            <kbd>H</kbd><span>Hints</span><span class="reminder-divider" aria-hidden="true">&middot;</span>
+            <kbd>Esc</kbd><span>Pause</span>
+        </aside>
         <dialog id="maze-hints-panel" aria-labelledby="maze-hints-title">
             <header><div><p class="maze-hints-kicker">LEVEL 3 &middot; A LITTLE DIRECTION</p><h2 id="maze-hints-title">Funhouse hints</h2><small class="maze-hints-count" data-hints-count></small></div><button type="button" data-close-hints>Back &middot; Esc</button></header>
-            <p data-hint-text></p>
+            <div class="maze-hint-reveal">
+                <img data-caine-portrait alt="Caine" hidden />
+                <p data-hint-text></p>
+            </div>
             <section data-maze-map aria-label="Maze floor plan" hidden>
                 <div class="maze-map-layout"><div data-map-drawing></div><ul class="maze-map-key" data-map-legend></ul></div>
             </section>
