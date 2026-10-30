@@ -2325,6 +2325,18 @@ document.getElementById('btn-load-game').addEventListener('click', (event) => {
   titleOptions.hidden = true;
   openSavePanel('load', { fromTitle: true });
 });
+document.getElementById('btn-reset-progress').addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (!window.confirm('Erase every save slot and unlocked level in this browser? This can’t be undone.')) return;
+  for (let slot = 1; slot <= saveSlots.count; slot++) saveSlots.remove(slot);
+  try {
+    localStorage.removeItem(LEVEL_COMPLETE_KEY);
+  } catch {
+    // Storage blocked — nothing was persisted to begin with.
+  }
+  levelCompletion = { 1: false, 2: false, 3: false };
+  refreshLevelSelect();
+});
 document.getElementById('btn-save-slots-back').addEventListener('click', (event) => {
   event.stopPropagation();
   savePanel.hidden = true;
