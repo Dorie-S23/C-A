@@ -6,66 +6,190 @@ import { loadRagatha } from '../characters/ragatha.js';
 import { loadKaufmoTalk } from '../characters/kaufmoTalk.js';
 import { loadCaine } from '../characters/caine.js';
 
-// The ending (KAN-89, KAN-95): the clearing outside the maze entrance, the
-// cast waiting in it, and the camera. Unlike the hallway cutscenes this
-// isn't staged in a loaded room: it's its own small set and scene, built
-// here, and main.js (playEnding) plays endingSavedDialogue or
-// endingAbstractedDialogue over it, feeding each node to onNode.
+// The ending (KAN-85, KAN-89, KAN-95), in two parts. main.js (playEnding)
+// runs them in turn, playing a conversation over each and feeding its
+// nodes to onNode, whose `action`s these act out.
 //
-// The maze wall runs along x at z = GATE_Z with its gate at x = 0, facing
-// +Z into the clearing, where the others stand facing it.
+// 1. The Circus Lobby, just outside the maze door (the real, loaded room):
+//    Pomni walks out, with Jax if he was saved, to the others waiting
+//    there. They talk it over, then Kaufmo says he's found the exit.
+// 2. A space of its own: the exit door at the edge of the circus, light
+//    pouring through it. Caine says goodbye and they leave one by one,
+//    Pomni last. What's on the other side is never shown.
+//
+// The same cast plays both: loaded once, staged in the Lobby, then moved
+// into the exit door's scene. Gangle, Zooble and Kinger aren't in it yet:
+// they have no models (KAN-90).
 
-const GATE_Z = -8;
-const WALK_SPEED = { saved: 1.25, abstracted: 0.8 }; // metres per second
-const WALK_CLIP_RATE = { saved: 0.95, abstracted: 0.7 }; // her Walk clip's timeScale at that speed
-const WALK_OUT_HOLD = 0.7; // after she stops, before the first line
+const GATE_Z = -8; // the exit door's wall, along x; the door at x = 0, facing +Z
+const POMNI_WALK = { saved: 1.5, abstracted: 0.9 }; // m/s out of the maze, by variant
 const GRIEF_SECONDS = 3;
 const CAINE_FLIGHT_SECONDS = 2.4;
+const LEAVE_SPEED = 1.4;   // m/s, walking to the exit door
+const MAZE_DOOR_ARRIVAL = 2.4; // lobbyMazeDoor.js ARRIVAL_DISTANCE: its spawn, this far out of the doorway
 const ACTION_FADE = 0.3;
 
 const v = (x, y, z) => new THREE.Vector3(x, y, z);
+const yawTo = (from, to) => Math.atan2(to.x - from.x, to.z - from.z);
 
-/** Everyone's marks and the shots, in the clearing's own coordinates. */
-export function endingPlan(variant) {
+/** Loads everyone in the ending: Jax only if he was saved; a Pomni of its own for the exit door. */
+export async function loadEndingCast(variant) {
+  const [pomni, jaxApi, ribbitApi, ragathaApi, kaufmoApi, caineApi] = await Promise.all([
+    loadPomni(), variant === 'saved' ? loadJax() : null, loadRibbit(), loadRagatha(), loadKaufmoTalk(), loadCaine(),
+  ]);
+  return { pomni, jaxApi, ribbitApi, ragathaApi, kaufmoApi, caineApi };
+}
+
+// --- Part 1: the Lobby, outside the maze door ------------------------------
+
+/**
+ * Everyone's marks and the shots in the Lobby, measured off the maze door
+ * from its portal's arrival ({ spawn, facing }, lobbyMazeDoor.js): 2.4 m
+ * out of the doorway, facing out into the Lobby.
+ */
+export function lobbyEndingPlan({ spawn, facing }) {
+  // Yaw 0 faces -Z, so out of the doorway is the way she faces on arrival.
+  const out = v(-Math.sin(facing), 0, -Math.cos(facing));
+  const across = v(-out.z, 0, out.x);
+  const centre = spawn.clone().addScaledVector(out, -MAZE_DOOR_ARRIVAL);
+  const at = (distance, side, up = 0) => centre.clone()
+    .addScaledVector(out, distance).addScaledVector(across, side).setY(spawn.y + up);
   return {
-    gateZ: GATE_Z,
-    // Out of the dark of the gate to where the path meets the clearing.
-    pomniWalk: [v(0, 0, GATE_Z - 1.6), v(0, 0, -3.2)],
-    // Beside her on her right (stage left), a pace behind.
-    jaxWalk: [v(-0.95, 0, GATE_Z - 2.1), v(-1.05, 0, -3.5)],
-    ragatha: v(1.4, 0, -0.5),
-    ragathaRush: v(1.05, 0, -2.35), // up to Pomni on groupReacts
-    kaufmo: v(-1.6, 0, 0.1),
-    ribbit: v(-3.0, 0, -0.9),
-    // Marks for the cast whose models don't exist yet (KAN-90). Nothing
-    // stands on them; the shots leave room for them.
-    reserved: {
-      gangle: v(2.9, 0, -0.1),
-      zooble: v(4.0, 0, -1.4),
-      kinger: v(-4.3, 0, -2.1),
-    },
-    // A little apart from the group, floating, once he's flown in.
-    caine: v(5.2, 0.6, -4.8),
-    caineFrom: v(7.5, 9, -7.5),
-    // Where the camera looks while each kind of line plays (cameraFor).
+    out,
+    door: at(0, 0),
+    pomniWalk: [at(-0.3, 0), at(2.6, 0)],
+    jaxWalk: [at(-0.5, -1.0), at(2.4, -1.1)],
+    ragatha: at(6.0, 1.5),
+    ragathaRush: at(3.7, 1.0),
+    kaufmo: at(6.5, -1.2),
+    ribbit: at(5.8, -2.8),
     shots: {
-      // Low behind the group, through them at the gate; it pushes in slowly.
-      walkOut: { position: v(0.3, 2.1, 5.4), target: v(0, 1.3, -7), drift: v(-0.1, -0.1, -1.6) },
-      // Over Pomni's shoulder at the group.
-      group: { position: v(1.7, 1.9, -5.9), target: v(-1.3, 1.15, -0.4), drift: v(0.2, 0, 0.2) },
-      // On Pomni (and Jax beside her), from just in front of the group.
-      pomni: variant === 'saved'
-        ? { position: v(-0.35, 1.55, -0.45), target: v(-0.5, 1.15, -3.4), drift: v(0, 0, -0.25) }
-        : { position: v(-1.1, 1.5, -0.7), target: v(0.15, 1.15, -3.2), drift: v(0, 0, -0.25) },
-      // From the group's side, up at Caine.
-      caine: { position: v(1.9, 1.7, -0.9), target: v(5.2, 2.1, -4.8), drift: v(0.1, 0.05, 0) },
-      // Pulling back and up over everyone, the gate behind them.
-      closing: { position: v(2.4, 3.6, 7.5), target: v(0, 1.4, -4.5), drift: v(0.6, 1.4, 3) },
+      // From among the group, back at the maze door as she comes out.
+      walkOut: { position: at(9.5, 0.6, 2.0), target: at(0, 0, 1.3) },
+      // Over Pomni's shoulder at the others.
+      group: { position: at(1.3, -1.7, 1.95), target: at(6.2, 0.4, 1.1) },
+      // On Pomni (and Jax beside her), from the group's side.
+      pomni: { position: at(5.6, -2.0, 1.55), target: at(2.5, -0.4, 1.15) },
+      // Side on to everyone, for Kaufmo's news.
+      kaufmo: { position: at(4.4, 5.2, 2.0), target: at(4.4, -0.6, 1.2) },
     },
   };
 }
 
-// --- The set: the clearing outside the maze entrance (KAN-89) -------------
+/**
+ * Puts the cast on their marks in the loaded Lobby and returns its driver:
+ * onNode(node) acts out each node of endingLobby*Dialogue, detach() takes
+ * the cast back out of the room for the exit door. `stage` is main.js's
+ * (place, walkTo, frame, lookAt, lookWithHead, wait).
+ */
+export function stageLobbyEnding(room, stage, variant, cast, plan) {
+  const { jaxApi, ribbitApi, ragathaApi, kaufmoApi } = cast;
+  const { ribbit } = ribbitApi;
+  const { ragatha } = ragathaApi;
+  const { kaufmo } = kaufmoApi;
+  const sad = variant === 'abstracted';
+  const pomniAt = plan.pomniWalk[1];
+
+  ribbit.position.copy(plan.ribbit);
+  ragatha.position.copy(plan.ragatha);
+  kaufmo.position.copy(plan.kaufmo);
+  ribbit.rotation.y = yawTo(plan.ribbit, plan.door);
+  ragatha.rotation.y = yawTo(plan.ragatha, plan.door);
+  kaufmo.rotation.y = yawTo(plan.kaufmo, plan.door);
+  ribbitApi.setPose('standing', { immediate: true });
+  ragathaApi.setPose('watch');
+  kaufmoApi.setPose('worried');
+  room.group.add(ribbit, ragatha, kaufmo);
+  if (jaxApi) {
+    jaxApi.jax.visible = false;
+    room.group.add(jaxApi.jax);
+  }
+
+  const frame = (name) => {
+    const shot = plan.shots[name];
+    stage.frame({ position: shot.position.toArray(), target: shot.target.toArray() });
+  };
+  // Pomni just inside the doorway, out of sight until she walks out.
+  stage.place({ x: plan.pomniWalk[0].x, z: plan.pomniWalk[0].z, lookAt: pomniAt });
+  frame('walkOut');
+  const bowHead = () => stage.lookWithHead(pomniAt.clone().addScaledVector(plan.out, 1.2).setY(pomniAt.y - 0.6));
+
+  async function walkOut() {
+    if (sad) bowHead();
+    if (jaxApi) {
+      const [from, to] = plan.jaxWalk;
+      jaxApi.playPassBy(from, to, from.distanceTo(to) / POMNI_WALK[variant] * 1.08, { style: 'sly', stay: true });
+    }
+    await stage.walkTo([pomniAt], { speed: POMNI_WALK[variant] });
+    await stage.wait(0.6);
+  }
+
+  function onNode(node) {
+    const speaker = node.type === 'line' ? node.speaker : null;
+    ragathaApi.setSpeaking(speaker === 'ragatha');
+    kaufmoApi.setSpeaking(speaker === 'kaufmo');
+    kaufmoApi.setListening(Boolean(speaker) && speaker !== 'kaufmo');
+    if (speaker === 'pomni' || speaker === 'jax') frame('pomni');
+    else if (speaker) frame('group');
+
+    switch (node.action) {
+      case 'walkOut':
+        return walkOut();
+      case 'groupReacts':
+        ragathaApi.setPose(sad ? 'chatty' : 'wave');
+        ragathaApi.walkTo(plan.ragathaRush, () => ragathaApi.faceTowards(pomniAt));
+        kaufmoApi.setPose('happy');
+        kaufmoApi.faceTowards(pomniAt);
+        ribbitApi.faceTowards(pomniAt);
+        break;
+      case 'groupRealises':
+        ragathaApi.setPose('worried');
+        kaufmoApi.setPose('shocked');
+        break;
+      case 'grief':
+        frame('group');
+        ragathaApi.setPose('worried');
+        kaufmoApi.setPose('sad');
+        ribbitApi.setDistress(2);
+        bowHead();
+        return stage.wait(GRIEF_SECONDS);
+      case 'jaxLooksAway':
+        jaxApi?.faceTowards(plan.ribbit.clone().addScaledVector(plan.out, -6));
+        break;
+      case 'kaufmoExit':
+        frame('kaufmo');
+        kaufmoApi.setPose(sad ? 'sad' : 'happy');
+        stage.lookWithHead(null);
+        stage.lookAt(plan.kaufmo);
+        for (const api of [ragathaApi, ribbitApi, jaxApi]) api?.faceTowards(plan.kaufmo);
+        break;
+      default:
+    }
+    if (speaker === 'pomni' && !sad) stage.lookWithHead(null);
+    return undefined;
+  }
+
+  room.storyUpdate = (deltaSeconds) => {
+    jaxApi?.update(deltaSeconds);
+    ribbitApi.update(deltaSeconds);
+    ragathaApi.update(deltaSeconds);
+    kaufmoApi.update(deltaSeconds);
+  };
+
+  return {
+    plan,
+    onNode,
+    detach() {
+      room.storyUpdate = null;
+      ragathaApi.setSpeaking(false);
+      kaufmoApi.setSpeaking(false);
+      kaufmoApi.setListening(false);
+      for (const object of [ribbit, ragatha, kaufmo, jaxApi?.jax]) object?.removeFromParent();
+    },
+  };
+}
+
+// --- Part 2's set: the circus wall and its exit door ---------------------
 
 function seeded(seed) {
   let s = seed >>> 0;
@@ -92,10 +216,10 @@ function signTexture(text) {
   return texture;
 }
 
-/** The clearing, the maze wall and its gate, trees and lights: a Group. */
-export function buildEndingClearing() {
+/** The clearing, the circus's outer wall and its exit door, trees and lights: a Group. */
+export function buildExitDoorSet() {
   const set = new THREE.Group();
-  set.name = 'EndingClearing';
+  set.name = 'ExitDoorSet';
   const random = seeded(89);
   const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...extra });
   const add = (mesh, { cast = true, receive = true } = {}) => {
@@ -130,28 +254,21 @@ export function buildEndingClearing() {
   patch.rotation.x = -Math.PI / 2;
   patch.position.set(0, 0.012, -1.6);
 
-  // The maze's outer wall: red-and-cream circus stripes, a gold trim on top,
+  // The circus's outer wall: red-and-cream stripes, a gold trim on top,
   // and a gap for the gate.
   const WALL_HEIGHT = 4;
   const stripe = [mat('#b3202d'), mat('#efe3c8')];
   const trim = mat('#d9ab30',{ metalness: 0.3, roughness: 0.5 });
   for (let x = -16; x < 16; x++) {
-    if (x >= -2 && x < 2) continue; // the gate
+    if (x >= -2 && x < 2) continue; // the door
     const block = add(new THREE.Mesh(new THREE.BoxGeometry(1, WALL_HEIGHT, 1), stripe[(x + 100) % 2]));
     block.position.set(x + 0.5, WALL_HEIGHT / 2, GATE_Z - 0.5);
     const cap = add(new THREE.Mesh(new THREE.BoxGeometry(1, 0.25, 1.2), trim));
     cap.position.set(x + 0.5, WALL_HEIGHT + 0.12, GATE_Z - 0.5);
   }
-  // Behind the wall, the maze's own walls peeking over it.
-  for (let i = 0; i < 26; i++) {
-    const x = -15 + random() * 30;
-    if (Math.abs(x) < 3) continue;
-    const h = 4.5 + random() * 2.5;
-    const inner = add(new THREE.Mesh(new THREE.BoxGeometry(0.6, h, 2 + random() * 3), stripe[i % 2]));
-    inner.position.set(x, h / 2, GATE_Z - 3 - random() * 8);
-  }
 
-  // The gate: striped pillars, an arch, a sign, and darkness inside.
+  // The exit: striped pillars, an arch, a sign, a door swung open, and
+  // nothing but light through it. What's on the other side isn't shown.
   for (const side of [-1, 1]) {
     for (let k = 0; k < 5; k++) {
       const band = add(new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1, 20), stripe[k % 2]));
@@ -163,13 +280,33 @@ export function buildEndingClearing() {
   const arch = add(new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.22, 12, 40, Math.PI), trim));
   arch.position.set(0, 4.6, GATE_Z + 0.1);
   const sign = add(new THREE.Mesh(new THREE.PlaneGeometry(3, 0.75),
-    new THREE.MeshStandardMaterial({ map: signTexture('THE MAZE'), roughness: 0.6, emissive: '#3b1450', emissiveIntensity: 0.25 })),
+    new THREE.MeshStandardMaterial({ map: signTexture('EXIT'), roughness: 0.6, emissive: '#3b1450', emissiveIntensity: 0.25 })),
   { cast: false });
   sign.position.set(0, 5.6, GATE_Z + 0.2);
-  // Two planes: you walk out of the dark, and nothing behind the gate shows.
-  const dark = new THREE.MeshBasicMaterial({ color: '#0d0618', fog: false });
-  const doorway = add(new THREE.Mesh(new THREE.PlaneGeometry(3.4, 4.6), dark), { cast: false, receive: false });
-  doorway.position.set(0, 2.3, GATE_Z - 1.4);
+  const light = new THREE.MeshBasicMaterial({ color: '#fff6e0', fog: false });
+  const doorway = add(new THREE.Mesh(new THREE.PlaneGeometry(3.4, 4.9), light), { cast: false, receive: false });
+  doorway.position.set(0, 2.35, GATE_Z - 0.9);
+  // The light's floor too, so no grass shows through the doorway.
+  const threshold = add(new THREE.Mesh(new THREE.PlaneGeometry(3.4, 1.3), light), { cast: false, receive: false });
+  threshold.rotation.x = -Math.PI / 2;
+  threshold.position.set(0, 0.03, GATE_Z - 0.3);
+  // The door itself, swung open toward the clearing on its left hinge.
+  const hinge = new THREE.Group();
+  hinge.position.set(-1.7, 0, GATE_Z - 0.05);
+  hinge.rotation.y = -1.9;
+  const leaf = new THREE.Mesh(new THREE.BoxGeometry(3.3, 4.5, 0.14), mat('#6b3f22'));
+  leaf.position.set(1.65, 2.25, 0);
+  leaf.castShadow = true;
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8), trim);
+  knob.position.set(3.0, 2.1, 0.12);
+  hinge.add(leaf, knob);
+  set.add(hinge);
+  // Light spilling out of it across the ground.
+  const spill = add(new THREE.Mesh(new THREE.PlaneGeometry(3.4, 6),
+    new THREE.MeshBasicMaterial({ color: '#fff1c9', transparent: true, opacity: 0.35, depthWrite: false, fog: false })),
+  { cast: false, receive: false });
+  spill.rotation.x = -Math.PI / 2;
+  spill.position.set(0, 0.02, GATE_Z + 3);
   // Above the doorway, under the arch.
   const lintel = add(new THREE.Mesh(new THREE.BoxGeometry(3.4, 2.2, 0.9), stripe[0]));
   lintel.position.set(0, 4.6 + 1.1, GATE_Z - 0.5);
@@ -224,8 +361,8 @@ export function buildEndingClearing() {
   Object.assign(sun.shadow.camera, { left: -14, right: 14, top: 14, bottom: -14, near: 1, far: 40 });
   sun.shadow.bias = -0.0005;
   set.add(sun, sun.target);
-  const gateGlow = new THREE.PointLight('#ffb36b', 14, 12, 2);
-  gateGlow.position.set(0, 3.5, GATE_Z + 1.8);
+  const gateGlow = new THREE.PointLight('#fff0cf', 26, 14, 2);
+  gateGlow.position.set(0, 2.4, GATE_Z + 1.2);
   set.add(gateGlow);
   const groupFill = new THREE.PointLight('#ffe2c4', 10, 10, 2);
   groupFill.position.set(0.5, 3, 2.5);
@@ -234,17 +371,39 @@ export function buildEndingClearing() {
   return set;
 }
 
-// --- The cast -------------------------------------------------------------
+// --- Part 2: the exit door -------------------------------------------------
 
-/** Loads everyone in the scene: Jax only walks out with her if he was saved. */
-export async function loadEndingCast(variant) {
-  const [pomni, jaxApi, ribbitApi, ragathaApi, kaufmoApi, caineApi] = await Promise.all([
-    loadPomni(), variant === 'saved' ? loadJax() : null, loadRibbit(), loadRagatha(), loadKaufmoTalk(), loadCaine(),
-  ]);
-  return { pomni, jaxApi, ribbitApi, ragathaApi, kaufmoApi, caineApi };
+/** Everyone's marks and the shots at the exit door, in its set's own coordinates. */
+export function exitDoorPlan() {
+  return {
+    // Just in front of the door, then into the light past it, where each of them is gone.
+    approach: v(0, 0, GATE_Z + 1.4),
+    through: v(0, 0, GATE_Z - 0.7),
+    // In front of the door, facing it: Kaufmo, who found it, nearest.
+    kaufmo: v(-0.5, 0, -5.0),
+    ribbit: v(-2.2, 0, -4.2),
+    ragatha: v(1.7, 0, -4.1),
+    jax: v(-1.3, 0, -3.2),
+    pomni: v(0.4, 0, -2.8),
+    // A little apart from them, floating, once he's popped in.
+    caine: v(4.0, 0.6, -4.2),
+    caineFrom: v(6.5, 8, -6),
+    shots: {
+      // Wide from behind them: the wall, the open door, the light.
+      gathered: { position: v(2.8, 2.6, 5.0), target: v(0, 1.6, -7), drift: v(-0.6, -0.2, -1.6) },
+      // From beside the door, back at their faces.
+      faces: { position: v(3.7, 1.8, -7.3), target: v(-0.8, 1.3, -3.2), drift: v(0.2, 0, 0.3) },
+      // Up at Caine, from among them.
+      caine: { position: v(0.4, 1.7, -2.0), target: v(4.0, 2.1, -4.2), drift: v(0.1, 0.05, 0) },
+      // Behind them, the door ahead: they go one by one.
+      leaving: { position: v(0.9, 1.9, 2.4), target: v(0, 1.5, -8), drift: v(-0.2, 0, -0.8) },
+      // Last: just behind Pomni as she walks into the light.
+      pomniLast: { position: v(0.7, 1.6, 0.2), target: v(0, 1.4, -8), drift: v(-0.4, -0.1, -2.6) },
+    },
+  };
 }
 
-/** Her own copy of Pomni (the player's stays with the player) with Idle/Walk. */
+/** Her own copy of Pomni (the player's stays in the Lobby) with Idle/Walk and a bow of the head. */
 function stagePomni({ pomni: model, animations }) {
   const mixer = new THREE.AnimationMixer(model);
   const actions = {};
@@ -274,62 +433,60 @@ function stagePomni({ pomni: model, animations }) {
     update(deltaSeconds) {
       mixer.update(deltaSeconds);
       droop += (droopTarget - droop) * Math.min(1, deltaSeconds * 1.5);
-      // On top of the clip: her head bowed (the clip resets it each frame).
+      // On top of the clip, which resets the bones each frame.
       if (neck) neck.rotation.x += droop * 0.25;
       if (head) head.rotation.x += droop * 0.35;
     },
   };
 }
 
-const yawTo = (from, to) => Math.atan2(to.x - from.x, to.z - from.z);
-
 /**
- * Builds the ending's scene for `variant` around a loaded cast and returns
- * its driver: onNode(node) acts out each dialogue node (returning a promise
- * for the beats the dialogue waits on), update(deltaSeconds) animates and
- * renders a frame, dispose() frees the set.
+ * Builds the exit door's scene around the cast (taken back out of the
+ * Lobby) and returns its driver: onNode(node) acts out each node of
+ * exitDoor*Dialogue (returning a promise for the beats the dialogue waits
+ * on), update(deltaSeconds) animates and renders a frame, dispose() frees
+ * the set and the cast.
  */
-export function createEndingScene(renderer, variant, cast) {
-  const plan = endingPlan(variant);
+export function createExitDoorScene(renderer, variant, cast) {
+  const plan = exitDoorPlan();
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog('#d99a72', 28, 75);
-  const set = buildEndingClearing();
-  scene.add(set);
+  scene.add(buildExitDoorSet());
 
   const camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 200);
   const { jaxApi, ribbitApi, ragathaApi, kaufmoApi, caineApi } = cast;
   const pomni = stagePomni(cast.pomni);
   const sad = variant === 'abstracted';
+  const door = v(0, 0, GATE_Z);
 
-  // On their marks, everyone watching the gate.
-  const gate = v(0, 0, plan.gateZ);
-  pomni.model.position.copy(plan.pomniWalk[0]);
-  pomni.model.rotation.y = 0;
+  // Everyone on their marks, facing the door.
+  const place = (object, mark) => {
+    object.position.copy(mark);
+    object.rotation.set(0, yawTo(mark, door), 0);
+    object.visible = true;
+    scene.add(object);
+  };
+  place(pomni.model, plan.pomni);
   pomni.play('idle');
-  scene.add(pomni.model);
-  const { ribbit } = ribbitApi;
-  const { ragatha } = ragathaApi;
-  const { kaufmo } = kaufmoApi;
-  const { caine } = caineApi;
-  ribbit.position.copy(plan.ribbit);
-  ragatha.position.copy(plan.ragatha);
-  kaufmo.position.copy(plan.kaufmo);
-  ribbit.rotation.y = yawTo(plan.ribbit, gate);
-  ragatha.rotation.y = yawTo(plan.ragatha, gate);
-  kaufmo.rotation.y = yawTo(plan.kaufmo, gate);
-  ribbitApi.setPose('standing', { immediate: true });
-  ragathaApi.setPose('watch');
-  kaufmoApi.setPose('worried');
-  scene.add(ribbit, ragatha, kaufmo);
-  // Caine waits up out of shot until his entrance.
-  caine.position.copy(plan.caineFrom);
-  caine.visible = false;
-  scene.add(caine);
+  pomni.setDroop(sad ? 0.5 : 0);
+  place(ribbitApi.ribbit, plan.ribbit);
+  place(ragathaApi.ragatha, plan.ragatha);
+  place(kaufmoApi.kaufmo, plan.kaufmo);
+  ribbitApi.setDistress(sad ? 1 : 0);
+  ribbitApi.faceTowards(door);
+  ragathaApi.setPose(sad ? 'worried' : 'listen');
+  ragathaApi.faceTowards(door);
+  kaufmoApi.setPose(sad ? 'sad' : 'happy');
+  kaufmoApi.faceTowards(door);
   if (jaxApi) {
-    jaxApi.jax.position.copy(plan.jaxWalk[0]);
-    jaxApi.jax.visible = false;
-    scene.add(jaxApi.jax);
+    place(jaxApi.jax, plan.jax);
+    jaxApi.setShown(true);
+    jaxApi.faceTowards(door);
   }
+  // Caine waits up out of shot until he pops in.
+  caineApi.caine.position.copy(plan.caineFrom);
+  caineApi.caine.visible = false;
+  scene.add(caineApi.caine);
 
   // --- camera
   let shot = null;
@@ -340,120 +497,133 @@ export function createEndingScene(renderer, variant, cast) {
     shot = next;
     shotTime = 0;
   }
-  const lookTarget = new THREE.Vector3();
   function placeCamera() {
     const t = THREE.MathUtils.smootherstep(Math.min(shotTime / 9, 1), 0, 1);
-    camera.position.copy(shot.position).addScaledVector(shot.drift ?? v(0, 0, 0), t);
-    lookTarget.copy(shot.target);
-    camera.lookAt(lookTarget);
+    camera.position.copy(shot.position).addScaledVector(shot.drift, t);
+    camera.lookAt(shot.target);
   }
-  cut('walkOut');
+  cut('gathered');
 
   // --- beats the dialogue waits on
-  let walk = null; // { points, index, speed, resolve, hold }
   let timer = null; // { left, resolve }
-  let flight = null; // resolve once Caine lands
-  const pomniPosition = () => pomni.model.position;
-
-  function walkOut() {
-    pomni.setDroop(sad ? 0.8 : 0);
-    pomni.play('walk', WALK_CLIP_RATE[variant]);
-    const [from, to] = plan.pomniWalk;
-    pomni.model.rotation.y = yawTo(from, to);
-    if (jaxApi) {
-      const [jaxFrom, jaxTo] = plan.jaxWalk;
-      const seconds = from.distanceTo(to) / WALK_SPEED[variant];
-      jaxApi.playPassBy(jaxFrom, jaxTo, seconds * 1.08, { style: 'sly', stay: true });
-    }
-    return new Promise((resolve) => {
-      walk = { to, speed: WALK_SPEED[variant], hold: WALK_OUT_HOLD, resolve };
-    });
-  }
   function wait(seconds) {
     return new Promise((resolve) => { timer = { left: seconds, resolve }; });
   }
-  function caineArrives() {
-    caine.visible = true;
-    caineApi.setPose(sad ? 'worried' : 'happy');
-    for (const api of [ragathaApi, kaufmoApi, ribbitApi]) api.faceTowards(plan.caine);
-    jaxApi?.faceTowards(plan.caine);
+
+  // Walking up to the door and on into the light, where they're gone.
+  const walkers = new Set(); // { object, points, speed, onStep, resolve }
+  function walkThrough(object, { speed = LEAVE_SPEED, onStep } = {}) {
+    const points = [plan.approach, plan.through];
     return new Promise((resolve) => {
-      flight = resolve;
+      walkers.add({ object, points, speed, onStep, resolve });
+    }).then(() => {
+      object.visible = false;
+      return wait(0.5);
+    });
+  }
+  function stepWalkers(deltaSeconds) {
+    for (const walker of walkers) {
+      const { object, points } = walker;
+      let step = walker.speed * deltaSeconds;
+      while (points.length && step > 0) {
+        const to = points[0];
+        const gap = Math.hypot(to.x - object.position.x, to.z - object.position.z);
+        if (gap > step) {
+          object.rotation.y = yawTo(object.position, to);
+          object.position.x += (to.x - object.position.x) / gap * step;
+          object.position.z += (to.z - object.position.z) / gap * step;
+          step = 0;
+        } else {
+          object.position.x = to.x;
+          object.position.z = to.z;
+          step -= gap;
+          points.shift();
+        }
+      }
+      walker.onStep?.(deltaSeconds);
+      if (!points.length) {
+        walkers.delete(walker);
+        walker.resolve();
+      }
+    }
+  }
+
+  function caineArrives() {
+    caineApi.caine.visible = true;
+    caineApi.setPose(sad ? 'worried' : 'shocked');
+    for (const api of [ragathaApi, kaufmoApi, ribbitApi, jaxApi]) api?.faceTowards(plan.caine);
+    return new Promise((resolve) => {
       caineApi.flyTo(plan.caine, CAINE_FLIGHT_SECONDS, () => {
-        caineApi.faceTowards(v(0, 0, -1.5));
-        flight = null;
+        caineApi.faceTowards(plan.pomni);
         setTimeout(resolve, 300);
       });
     });
   }
 
+  let ribbitStep = 0;
   function onNode(node) {
     const speaker = node.type === 'line' ? node.speaker : null;
     ragathaApi.setSpeaking(speaker === 'ragatha');
     kaufmoApi.setSpeaking(speaker === 'kaufmo');
-    kaufmoApi.setListening(Boolean(speaker) && speaker !== 'kaufmo');
     caineApi.setSpeaking(speaker === 'caine');
     if (speaker === 'caine') cut('caine');
-    else if (speaker === 'pomni' || speaker === 'jax') cut('pomni');
-    else if (speaker) cut('group');
+    else if (speaker) cut('faces');
+    if (speaker === 'caine' && node.mood) caineApi.setPose(node.mood);
 
     switch (node.action) {
-      case 'walkOut':
-        cut('walkOut');
-        return walkOut();
-      case 'groupReacts':
-        ragathaApi.setPose(sad ? 'chatty' : 'wave');
-        ragathaApi.walkTo(plan.ragathaRush, () => ragathaApi.faceTowards(pomniPosition()));
-        kaufmoApi.setPose('happy');
-        kaufmoApi.faceTowards(pomniPosition());
-        ribbitApi.faceTowards(pomniPosition());
-        break;
-      case 'groupRealises':
-        ragathaApi.setPose('worried');
-        kaufmoApi.setPose('shocked');
-        break;
-      case 'grief':
-        cut('group');
-        ragathaApi.setPose('worried');
-        kaufmoApi.setPose('sad');
-        ribbitApi.setDistress(2);
-        pomni.setDroop(1);
-        return wait(GRIEF_SECONDS);
-      case 'jaxLooksAway':
-        jaxApi?.faceTowards(v(-4, 0, -2.5));
-        break;
+      case 'gathered':
+        cut('gathered');
+        return wait(1.2);
       case 'caineArrives':
         cut('caine');
         return caineArrives();
-      case 'closing':
-        cut('closing');
-        if (jaxApi) jaxApi.faceTowards(pomniPosition());
-        if (sad) pomni.setDroop(1);
-        break;
+      case 'kaufmoLeaves':
+        cut('leaving');
+        kaufmoApi.setPose('happy');
+        kaufmoApi.setActivity('walk');
+        return walkThrough(kaufmoApi.kaufmo);
+      case 'ribbitLeaves':
+        cut('leaving');
+        // No walk of her own: a bob in step.
+        return walkThrough(ribbitApi.ribbit, {
+          speed: LEAVE_SPEED * 0.9,
+          onStep: (dt) => { ribbitStep += dt; ribbitApi.ribbit.position.y = Math.abs(Math.sin(ribbitStep * 6)) * 0.05; },
+        });
+      case 'ragathaLeaves':
+        cut('leaving');
+        ragathaApi.faceTowards(null);
+        ragathaApi.setPose('idle');
+        return walkThrough(ragathaApi.ragatha);
+      case 'jaxLeaves': {
+        if (!jaxApi) return undefined;
+        cut('leaving');
+        // His own stroll, which hides him at the end of it.
+        const from = jaxApi.jax.position.clone();
+        jaxApi.playPassBy(from, plan.through, from.distanceTo(plan.through) / LEAVE_SPEED, { style: 'sly' });
+        return new Promise((resolve) => {
+          const check = () => (jaxApi.isRunning() ? setTimeout(check, 100) : resolve());
+          check();
+        }).then(() => wait(0.5));
+      }
+      case 'pomniLooksBack':
+        cut('faces');
+        // Over her shoulder, back toward the circus.
+        pomni.model.rotation.y = yawTo(plan.pomni, v(plan.pomni.x + 3, 0, plan.pomni.z + 6));
+        pomni.setDroop(0.2);
+        return wait(2);
+      case 'pomniLeaves':
+        cut('pomniLast');
+        pomni.setDroop(0);
+        pomni.play('walk', 0.8);
+        return walkThrough(pomni.model, { speed: 1.1 });
       default:
     }
-    if (speaker === 'pomni' && !sad) pomni.setDroop(0);
     return undefined;
   }
 
   function update(deltaSeconds) {
     shotTime += deltaSeconds;
-    if (walk) {
-      const position = pomni.model.position;
-      const step = walk.speed * deltaSeconds;
-      const remaining = position.distanceTo(walk.to);
-      if (remaining > step) {
-        position.addScaledVector(walk.to.clone().sub(position).normalize(), step);
-      } else {
-        position.copy(walk.to);
-        pomni.play('idle');
-        if ((walk.hold -= deltaSeconds) <= 0) {
-          const { resolve } = walk;
-          walk = null;
-          resolve();
-        }
-      }
-    }
+    stepWalkers(deltaSeconds);
     if (timer && (timer.left -= deltaSeconds) <= 0) {
       const { resolve } = timer;
       timer = null;
@@ -476,9 +646,8 @@ export function createEndingScene(renderer, variant, cast) {
   }
 
   function dispose() {
-    walk = null;
+    walkers.clear();
     timer = null;
-    flight = null;
     scene.traverse((child) => {
       child.geometry?.dispose();
       for (const material of [child.material].flat()) {

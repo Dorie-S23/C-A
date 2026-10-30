@@ -500,13 +500,10 @@ try {
     assert.ok(restored.timeLeft > FULL - 5 && restored.timeLeft <= FULL);
     assert.deepEqual(restored.escape, checkpoint.escape);
   });
-  // Pages through the ending's conversation (its beats wait on the scene) to its card.
-  async function playThroughEnding() {
-    for (let i = 0; i < 400 && !(await state()).cardVisible; i++) {
-      await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true, cancelable: true })));
-      await page.waitForTimeout(150);
-    }
-    await page.waitForFunction(() => window.__mazeCounterReview.state().cardVisible, null, { timeout: 10000 });
+  // Skips the rest of the ending (Escape, in the game), on to its card.
+  async function skipEnding() {
+    await call('cancelDialogue');
+    await page.waitForFunction(() => window.__mazeCounterReview.state().cardVisible, null, { timeout: 20000 });
   }
   await check('Leaving the maze after Jax fades out, plays the ending scene, records it, and a save resumes at it', async () => {
     await call('startStory'); await call('lock');
@@ -523,10 +520,13 @@ try {
     assert.equal(leaving.fadeOn, true, 'The maze starts fading to black at the exit');
     assert.equal(leaving.cardVisible, false, 'No card until the fade has finished');
     assert.equal(leaving.timerHidden, true);
-    // The ending's scene outside the maze (KAN-89, KAN-95), then its card.
+    // The ending: first in the Lobby, outside the maze door, then (not
+    // played through here: its walks crawl under swiftshader) the exit door.
     await page.waitForFunction(() => window.__mazeCounterReview.state().dialogueActive, null, { timeout: 60000 });
-    assert.equal(await page.locator('#scene-fade').evaluate(el => el.classList.contains('on')), false, 'The scene fades up');
-    await playThroughEnding();
+    const lobby = await state();
+    assert.equal(lobby.room, 'tadc', 'The ending opens in the Circus Lobby');
+    assert.equal(lobby.fadeOn, false, 'The scene fades up');
+    await skipEnding();
     const ending = await state();
     assert.equal(ending.cardTitle, 'Level 3 Complete');
     assert.match(ending.cardSubtitle, /Pomni and Jax step out of the maze together/);
@@ -548,9 +548,9 @@ try {
 
     await call('loadCheckpoint', saved);
     await page.waitForFunction(() => window.__mazeCounterReview.state().dialogueActive, null, { timeout: 60000 });
-    await playThroughEnding();
+    await skipEnding();
     const resumed = await state();
-    assert.equal(resumed.roomLoaded, false, 'A save from after the maze does not reload the maze');
+    assert.equal(resumed.room, 'tadc', 'A save from after the maze resumes at the ending, in the Lobby');
     assert.equal(resumed.cardVisible, true); assert.equal(resumed.cardTitle, 'Level 3 Complete');
     assert.equal(resumed.ending, 'saved');
     await page.locator('#btn-level-complete-continue').click();
