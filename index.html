@@ -4,6 +4,10 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>TADC - CGV Game</title>
+        <!-- Luckiest Guy (Apache 2.0, public/fonts/LICENSE-luckiest-guy.txt):
+             the title screen's chunky lettering, for the pause menu. Preloaded
+             here so the packager ships it (it follows src/href paths). -->
+        <link rel="preload" href="./fonts/luckiest-guy.woff2" as="font" type="font/woff2" crossorigin />
         <style>
             html,
             body {
@@ -123,39 +127,184 @@
                 50% { transform: translate(-50%, calc(-50% - 4px)); }
             }
 
-            #room-picker {
-                display: flex;
-                gap: 1em;
-                margin-top: 1em;
-            }
-            #room-picker button {
-                font-size: 1em;
-                padding: 0.6em 1.2em;
-                background: rgba(255, 255, 255, 0.1);
-                border: 1px solid rgba(255, 255, 255, 0.4);
-                color: #fff;
-                border-radius: 4px;
-                cursor: pointer;
-            }
-            #room-picker button:hover {
-                background: rgba(255, 255, 255, 0.2);
+            @font-face {
+                font-family: 'Luckiest Guy';
+                src: url('./fonts/luckiest-guy.woff2') format('woff2');
+                font-display: swap;
             }
 
-            #pause-menu {
+            /* Developer jumps: one card per stretch of the story, levels
+               and the cutscenes between them told apart at a glance. */
+            #dialogue-picker {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+                gap: 0.75rem;
+                width: min(64rem, calc(100vw - 2rem));
+                margin-top: 1.2rem;
+                cursor: default;
+            }
+            .dev-group {
                 display: flex;
                 flex-direction: column;
-                gap: 0.8em;
-                margin-top: 1.2em;
+                gap: 0.45rem;
+                padding: 0.8rem;
+                text-align: left;
+                background: rgba(26, 14, 38, 0.86);
+                border: 1px solid rgba(255, 210, 122, 0.35);
+                border-top: 3px solid #ffd27a;
+                border-radius: 9px;
+            }
+            .dev-group.dev-between {
+                border-top-color: #b73950;
+                background: rgba(38, 12, 24, 0.86);
+            }
+            .dev-group h3,
+            #room-picker h3 {
+                margin: 0 0 0.15rem;
+                color: #ffd27a;
+                font-size: 0.72rem;
+                letter-spacing: 0.14em;
+                text-transform: uppercase;
+            }
+            .dev-between h3 {
+                color: #ff9db0;
+            }
+            .dev-group button,
+            #room-picker button {
+                font: inherit;
+                font-size: 0.9rem;
+                padding: 0.5em 0.8em;
+                text-align: left;
+                color: #fff8e9;
+                background: rgba(255, 255, 255, 0.07);
+                border: 1px solid rgba(255, 255, 255, 0.22);
+                border-radius: 6px;
+                cursor: pointer;
+            }
+            .dev-group button:hover,
+            #room-picker button:hover {
+                background: rgba(255, 210, 122, 0.18);
+                border-color: rgba(255, 210, 122, 0.6);
+            }
+            #room-picker {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                justify-content: center;
+                gap: 0.5rem;
+                width: min(64rem, calc(100vw - 2rem));
+                margin-top: 0.75rem;
+                cursor: default;
+            }
+            #room-picker h3 {
+                width: 100%;
+                margin-bottom: 0;
+            }
+            #room-picker button {
+                font-size: 0.82rem;
+                padding: 0.4em 0.9em;
+            }
+
+            /* The pause menu: an intermission card under the big top. A
+               striped, scalloped valance and a row of marquee bulbs over a
+               plum card in a gold frame; the buttons are admission tickets. */
+            #overlay:has(> #pause-menu:not([hidden])) {
+                cursor: default;
+                background: radial-gradient(ellipse at center, rgba(40, 14, 58, 0.55), rgba(6, 2, 12, 0.88));
+                backdrop-filter: blur(3px);
+            }
+            #overlay:has(> #pause-menu:not([hidden])) > #overlay-title,
+            #overlay:has(> #pause-menu:not([hidden])) > #overlay-subtitle {
+                display: none;
+            }
+            #pause-menu {
+                --ticket: #f6e7c8;
+                --ink: #5a0f22;
+                position: relative;
+                display: flex;
+                flex-direction: column;
+                gap: 0.65rem;
+                width: min(21rem, calc(100vw - 2rem));
+                max-height: calc(100dvh - 2rem);
+                box-sizing: border-box;
+                padding: 3.6rem 1.5rem 1.3rem;
+                overflow-y: auto;
+                background: radial-gradient(130% 70% at 50% 0%, #43205d 0%, #261236 55%, #170a22 100%);
+                border: 3px solid #e8b44a;
+                border-radius: 18px;
+                box-shadow: 0 0 0 5px #1d0d29, 0 0 0 7px #a87523, 0 26px 70px rgba(0, 0, 0, 0.65);
             }
             #pause-menu[hidden] {
                 display: none;
             }
-            #pause-menu {
-                max-height: calc(100dvh - 12rem);
-                overflow-y: auto;
-            }
             #pause-menu > * {
                 flex-shrink: 0;
+            }
+            /* The tent's valance: red and cream stripes, each ending in a scallop. */
+            #pause-menu::before {
+                content: "";
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 2.3rem;
+                border-radius: 15px 15px 0 0;
+                background: repeating-linear-gradient(90deg, #d8283c 0 1.5rem, #f6e7c8 1.5rem 3rem);
+                -webkit-mask:
+                    linear-gradient(#000 0 0) top / 100% calc(100% - 0.75rem) no-repeat,
+                    radial-gradient(circle 0.75rem at 50% 0, #000 97%, transparent) bottom / 1.5rem 0.75rem repeat-x;
+                mask:
+                    linear-gradient(#000 0 0) top / 100% calc(100% - 0.75rem) no-repeat,
+                    radial-gradient(circle 0.75rem at 50% 0, #000 97%, transparent) bottom / 1.5rem 0.75rem repeat-x;
+            }
+            /* Marquee bulbs just under it, every other one twinkling. */
+            .pause-marquee,
+            .pause-marquee span {
+                position: absolute;
+                left: 1.1rem;
+                right: 1.1rem;
+                top: 2.55rem;
+                height: 0.55rem;
+                background: radial-gradient(circle 0.22rem, #fff2c4 60%, rgba(255, 200, 90, 0.55) 75%, transparent 100%) 0 50% / 1.1rem 100% repeat-x;
+            }
+            .pause-marquee span {
+                left: 0;
+                right: 0;
+                top: 0;
+                background-position: 0.55rem 50%;
+                animation: pause-bulbs 1.6s steps(2, jump-none) infinite;
+            }
+            @keyframes pause-bulbs {
+                from { opacity: 1; }
+                to { opacity: 0.15; }
+            }
+            @media (prefers-reduced-motion: reduce) {
+                .pause-marquee span { animation: none; }
+            }
+            #pause-menu .pause-kicker {
+                margin: 0.35rem 0 0;
+                color: #e9c9ff;
+                font-size: 0.68rem;
+                letter-spacing: 0.22em;
+                text-transform: uppercase;
+                opacity: 0.85;
+            }
+            .pause-title {
+                margin: 0 0 0.1rem;
+                font-family: 'Luckiest Guy', 'Trebuchet MS', sans-serif;
+                font-weight: 400;
+                font-size: 2.6rem;
+                line-height: 1;
+                letter-spacing: 0.03em;
+                color: #ffd27a;
+                transform: rotate(-2deg);
+                text-shadow: 0 3px 0 #b0163f, 0 6px 0 #3d0a1a, 0 10px 18px rgba(0, 0, 0, 0.45);
+            }
+            #pause-menu #pause-caption {
+                margin: 0 0 0.35rem;
+                color: #d9cde6;
+                font-size: 0.85rem;
+                opacity: 1;
             }
             #title-options .title-panel-box {
                 max-height: calc(100dvh - 2rem);
@@ -169,9 +318,16 @@
                 font-size: 0.95rem;
                 line-height: 1.4;
             }
-            #caine-pause-joke {
-                max-width: 28rem;
-                margin: 0;
+            #pause-menu #caine-pause-joke {
+                opacity: 1;
+                margin: 0 0 0.2rem;
+                padding: 0.55rem 0.75rem;
+                font-size: 0.85rem;
+                font-style: italic;
+                color: #f3dcff;
+                background: rgba(255, 255, 255, 0.06);
+                border: 1px dashed rgba(232, 180, 74, 0.6);
+                border-radius: 10px;
             }
             #caine-memory-caption {
                 position: fixed;
@@ -190,32 +346,60 @@
             [data-caine-clear] {
                 background: rgba(100, 60, 150, 0.25);
             }
+            /* Admission tickets: notched at both ends (the notches show the
+               card through), a perforated stub with a star on the left. */
             #pause-menu button {
-                font-size: 1.1em;
-                padding: 0.7em 2em;
-                border-radius: 6px;
+                position: relative;
+                padding: 0.62em 1em 0.5em 2.6em;
+                font-family: 'Luckiest Guy', 'Trebuchet MS', sans-serif;
+                font-size: 1.15rem;
+                letter-spacing: 0.06em;
+                color: var(--ink);
+                border: none;
+                border-radius: 5px;
                 cursor: pointer;
-                border: 1px solid rgba(255, 255, 255, 0.4);
-                color: #fff;
-                font-family: inherit;
-                transition: background 0.15s ease;
+                background:
+                    radial-gradient(circle at 0 50%, transparent 0.5rem, var(--ticket) calc(0.5rem + 1px)) left / 50.5% 100% no-repeat,
+                    radial-gradient(circle at 100% 50%, transparent 0.5rem, var(--ticket) calc(0.5rem + 1px)) right / 50.5% 100% no-repeat;
+                filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.35));
+                transition: transform 0.12s ease;
             }
-            #btn-resume {
-                background: rgba(80, 180, 80, 0.25);
+            #pause-menu button::before {
+                content: "\2605";
+                position: absolute;
+                left: 0.95rem;
+                top: 50%;
+                transform: translateY(-52%);
+                font-size: 0.8rem;
+                opacity: 0.75;
             }
-            #btn-resume:hover {
-                background: rgba(80, 180, 80, 0.45);
+            #pause-menu button::after {
+                content: "";
+                position: absolute;
+                left: 2rem;
+                top: 0.35rem;
+                bottom: 0.35rem;
+                border-left: 2px dashed currentColor;
+                opacity: 0.3;
             }
-            #btn-home {
-                background: rgba(200, 60, 60, 0.25);
+            #pause-menu button:hover {
+                transform: translateY(-2px) rotate(-1deg);
+                --ticket: #fff4dc;
             }
-            #btn-save,
-            #btn-pause-load {
-                background: rgba(26, 86, 232, 0.25);
+            #pause-menu button:active {
+                transform: translateY(0) rotate(0);
             }
-            #btn-save:hover,
-            #btn-pause-load:hover {
-                background: rgba(26, 86, 232, 0.45);
+            #pause-menu button:focus-visible {
+                outline: 3px solid #ffd27a;
+                outline-offset: 3px;
+            }
+            #pause-menu #btn-resume {
+                --ticket: #d8283c;
+                --ink: #fff3d6;
+                font-size: 1.35rem;
+            }
+            #pause-menu #btn-resume:hover {
+                --ticket: #ec3b4f;
             }
             /* Over the pause menu, so a darker backdrop than other panels. */
             #save-slots {
@@ -244,32 +428,19 @@
                 font-size: 0.8em;
                 opacity: 0.75;
             }
-            #btn-home:hover {
-                background: rgba(200, 60, 60, 0.45);
+            #pause-menu #btn-home {
+                --ticket: #cdb8e0;
+                --ink: #2c1440;
+            }
+            #pause-menu #btn-home:hover {
+                --ticket: #ddcbee;
             }
 
-            #dialogue-picker {
-                display: flex;
-                gap: 1em;
-                margin-top: 0.75em;
-            }
-            /* `display: flex` above would otherwise override the hidden attribute,
-       leaving both menus on the pause overlay mid-game. */
+            /* `display: grid/flex` above would otherwise override the hidden
+               attribute, leaving both menus on the pause overlay mid-game. */
             #room-picker[hidden],
             #dialogue-picker[hidden] {
                 display: none;
-            }
-            #dialogue-picker button {
-                font-size: 0.9em;
-                padding: 0.5em 1em;
-                background: rgba(176, 22, 63, 0.25);
-                border: 1px solid rgba(255, 255, 255, 0.4);
-                color: #fff;
-                border-radius: 4px;
-                cursor: pointer;
-            }
-            #dialogue-picker button:hover {
-                background: rgba(176, 22, 63, 0.45);
             }
 
             #picture-counter, #maze-items-counter {
@@ -1189,32 +1360,61 @@
         <div id="overlay" class="loading">
             <h1 id="overlay-title">Loading&hellip;</h1>
             <p id="overlay-subtitle"></p>
+            <!-- Developer jumps (DEV_JUMPS in main.js): each level and each
+                 cutscene between them from its own start. ▶ plays, 🎬 is a
+                 cutscene, which runs on into what follows it. -->
+            <div id="dialogue-picker" hidden>
+                <section class="dev-group">
+                    <h3>Pre-story</h3>
+                    <button data-story>&#9654; From the very start</button>
+                    <button data-jump="caine">&#9654; Caine arrives in the hall</button>
+                </section>
+                <section class="dev-group">
+                    <h3>Level 1 &middot; Ribbit</h3>
+                    <button data-jump="level1">&#9654; Play Level 1</button>
+                </section>
+                <section class="dev-group dev-between">
+                    <h3>Level 1 &rarr; 2</h3>
+                    <button data-jump="kaufmoHallway">&#127916; Kaufmo hurries past</button>
+                </section>
+                <section class="dev-group">
+                    <h3>Level 2 &middot; Kaufmo</h3>
+                    <button data-jump="level2Intro">&#9654; Kaufmo&rsquo;s introduction</button>
+                    <button data-jump="level2Search">&#9654; Photo search</button>
+                    <button data-jump="level2HandIn">&#127916; Handing in the photos</button>
+                </section>
+                <section class="dev-group dev-between">
+                    <h3>Level 2 &rarr; 3</h3>
+                    <button data-jump="jaxHallway">&#127916; Jax bolts down the hall</button>
+                    <button data-jump="jaxLobby">&#127916; Jax in the Lobby</button>
+                </section>
+                <section class="dev-group">
+                    <h3>Level 3 &middot; Maze</h3>
+                    <button data-jump="level3">&#9654; Play Level 3</button>
+                    <button data-jump="level3LastAct">&#9654; Jax&rsquo;s last act</button>
+                </section>
+            </div>
             <div id="room-picker" hidden>
+                <h3>Free roam &middot; no story</h3>
                 <button data-room="pomni">Pomni's Room</button>
-                <button data-room="tadc">Circus Lobby</button>
                 <button data-room="dorm">Dorm Hall</button>
                 <button data-room="ribbit">Ribbit's Room</button>
-                <button data-room="maze">Maze (raw, no intro)</button>
                 <button data-room="kaufmo">Kaufmo's Room</button>
-            </div>
-            <div id="dialogue-picker" hidden>
-                <button data-story>
-                    &#9654; Story: Pre-Level 1 &rarr; Level 1
-                </button>
-                <button id="btn-level2">
-                    &#9654; Level 2
-                </button>
-                <button id="btn-level3">
-                    &#9654; Level 3
-                </button>
+                <button data-room="tadc">Circus Lobby</button>
+                <button data-room="maze">Maze</button>
             </div>
             <button id="btn-title" hidden>&larr; Title screen</button>
             <div id="pause-menu" hidden>
+                <div class="pause-marquee" aria-hidden="true"><span></span></div>
+                <p class="pause-kicker">The Amazing Digital Circus</p>
+                <h2 class="pause-title">Intermission</h2>
+                <p id="pause-caption"></p>
                 <p id="caine-pause-joke" class="caine-memory-text" role="status" aria-live="polite" hidden></p>
-                <button id="btn-resume">&#9654; Resume</button>
-                <button id="btn-save">&#128190; Save Game</button>
+                <button id="btn-resume">Resume</button>
+                <button id="maze-hints-button" type="button" aria-haspopup="dialog" aria-controls="maze-hints-panel" aria-expanded="false" hidden>Hints</button>
+                <button id="btn-save">Save Game</button>
                 <button id="btn-pause-load">Load Game</button>
-                <button id="btn-home">&#8962; Back to Home</button>
+                <button id="btn-home">Back to Home</button>
             </div>
         </div>
         <div id="level-complete-panel" class="title-panel" hidden>
@@ -1306,6 +1506,15 @@
             </div>
         </div>
         <div id="crosshair" hidden></div>
+        <aside id="maze-hints-reminder" hidden>H: Hints &middot; Esc: Pause</aside>
+        <dialog id="maze-hints-panel" aria-labelledby="maze-hints-title">
+            <header><div><p class="maze-hints-kicker">LEVEL 3 &middot; A LITTLE DIRECTION</p><h2 id="maze-hints-title">Funhouse hints</h2><small class="maze-hints-count" data-hints-count></small></div><button type="button" data-close-hints>Back &middot; Esc</button></header>
+            <p data-hint-text></p>
+            <section data-maze-map aria-label="Maze floor plan" hidden>
+                <div class="maze-map-layout"><div data-map-drawing></div><ul class="maze-map-key" data-map-legend></ul></div>
+            </section>
+            <button type="button" data-next-hint></button>
+        </dialog>
         <aside id="maze-objective-hud" role="status" aria-live="polite" aria-atomic="true" hidden>
             <p class="maze-kicker">LEVEL 3: THE LAST ACT</p>
             <h2 data-maze-title></h2><p id="maze-items-counter" data-maze-count hidden></p><p id="maze-search-timer" role="timer" aria-live="off" hidden></p><ul data-maze-checklist></ul>

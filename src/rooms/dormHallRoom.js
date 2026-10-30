@@ -100,7 +100,7 @@ export function loadDormHallRoom(onProgress, { from, items, travel, jaxHallway }
     room.mapMarkers = [];
     const joins = [];
     let arrival = null;
-    let outsideKaufmo = null;
+    let outsideKaufmo = null; // where she steps out of his room, for the Jax hall scene
     for (const { frame, slab, icon, to } of ROOM_DOORS) {
       const frameObject = room.group.getObjectByName(frame);
       if (!frameObject) continue;
@@ -182,8 +182,7 @@ export function loadDormHallRoom(onProgress, { from, items, travel, jaxHallway }
       room.spawn = bedroom.arrival.spawn;
       room.spawnFacing = bedroom.arrival.facing;
     }
-    // Kaufmo's is a walk-in door now, with no portal; looking only for his
-    // door's portal (as this used to) left Jax out of the hall altogether.
+    // His room's a walk-in now (no portal), so its doorway gives her mark.
     outsideKaufmo ??= portals.find((portal) => portal.to === 'kaufmo')?.arrival.spawn ?? null;
     if (cast && outsideKaufmo) addJaxHallway(room, cast, outsideKaufmo);
     return room;

@@ -1,9 +1,17 @@
 # Story progression through Ribbit and Kaufmo
 
 Start **Play** or **New Game** for a story session. Both clear objectives,
-encounter milestones, Escape points, photos and cinematic state. Options →
-Room previews and the developer mission buttons remain separate from story
-progression.
+encounter milestones, Escape points, photos and cinematic state. Free roam of
+a room from the developer screen stays separate from story progression.
+
+The developer screen (Options → Room previews, or `?dev=1`) jumps straight into
+any level or the cutscene between two of them: pre-story, Level 1, Level 1 → 2,
+Level 2, Level 2 → 3 and Level 3, with free roam of each room separate. Each
+jump is a story checkpoint like a save (`DEV_JUMPS` in `main.js`), holding what
+the story would have by then (done objectives, Ribbit's points, the photos, the
+keepsakes), so a level plays exactly as it does in the story. Jumps that begin
+with an action (the knock on Ribbit's door, talking to Kaufmo, his hallway pass)
+start it as the player clicks in.
 
 The playable sequence is:
 

@@ -213,6 +213,7 @@ export const level1OpenDialogue = [
     speaker: 'caine',
     side: 'right',
     direction: 'to the audience/camera, grin snapping back too fast',
+    action: 'asideToCamera', // caineApproachCutscene.js: turns to the camera, rolls his eyes
     mood: 'happy',
     text: 'She always says that! She never does!',
     next: null,

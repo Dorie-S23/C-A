@@ -22,7 +22,8 @@ const COLLIDER_RADIUS = 0.45;
  *   update: (deltaSeconds: number) => void, setPose: (pose: string) => void,
  *   setSpeaking: (speaking: boolean) => void,
  *   flyTo: (target: THREE.Vector3, duration?: number, onArrive?: () => void) => void,
- *   faceTowards: (target: THREE.Vector3) => void }>}
+ *   faceTowards: (target: THREE.Vector3) => void, turnTowards: (target: THREE.Vector3 | null) => void,
+ *   rollEyes: (options?: { delay?: number }) => void }>}
  */
 export function loadCaine() {
   const loader = new GLTFLoader();
@@ -74,6 +75,8 @@ export function loadCaine() {
           setSpeaking: animator.setSpeaking,
           flyTo: animator.flyTo,
           faceTowards: animator.faceTowards,
+          turnTowards: animator.turnTowards,
+          rollEyes: animator.rollEyes,
         });
       },
       undefined,
@@ -116,6 +119,15 @@ const L_PALM_REST = new THREE.Vector3(-1, 0, 0);
 const R_PALM_REST = new THREE.Vector3(1, 0, 0);
 const L_CURL_AXIS = new THREE.Vector3(0, 0, -1);
 const X_AXIS = new THREE.Vector3(1, 0, 0);
+
+// turnTowards: how quickly he swings round to face a point.
+const TURN_SHARPNESS = 5;
+// rollEyes: a playful, exaggerated eye roll (radians on the eye bones).
+const EYE_ROLL_SECONDS = 1.4;
+const EYE_ROLL_YAW = 0.55;        // how far across the eyes sweep, either side
+const EYE_ROLL_PITCH = 0.7;       // how far up they go
+const EYE_ROLL_HEAD_BACK = 0.12;  // head tips back with them
+const EYE_ROLL_HEAD_TILT = 0.08;  // and wobbles side to side
 
 // Chin position and prop arm constants for the pondering pose
 const CHIN = new THREE.Vector3(0.01, 1.23, 0.33);
@@ -209,6 +221,10 @@ export function createCaineAnimator(caine) {
 
   // Flight state
   let flight = null;
+  // An eased turn toward a point (turnTowards); faceTowards snaps instead.
+  let turnTarget = null;
+  // A playful eye roll in progress (rollEyes): seconds in, and the wait before it.
+  let eyeRoll = null;
 
   // Working quaternions & vectors
   const headQ = new THREE.Quaternion();
@@ -258,7 +274,18 @@ export function createCaineAnimator(caine) {
   }
 
   function faceTowards(worldPoint) {
+    turnTarget = null;
     caine.rotation.y = Math.atan2(worldPoint.x - caine.position.x, worldPoint.z - caine.position.z);
+  }
+
+  /** Turns him to face a world point over a moment, rather than snapping. */
+  function turnTowards(worldPoint) {
+    turnTarget = worldPoint ? worldPoint.clone() : null;
+  }
+
+  /** A playful eye roll: both eyes sweep up and over the top, head tilting with them. */
+  function rollEyes({ delay = 0 } = {}) {
+    eyeRoll = { elapsed: -delay };
   }
 
   function update(deltaSeconds) {
@@ -278,6 +305,30 @@ export function createCaineAnimator(caine) {
         const cb = flight.onArrive;
         flight = null;
         cb?.();
+      }
+    }
+
+    if (turnTarget && !flight) {
+      const wanted = Math.atan2(turnTarget.x - caine.position.x, turnTarget.z - caine.position.z);
+      const diff = THREE.MathUtils.euclideanModulo(wanted - caine.rotation.y + Math.PI, Math.PI * 2) - Math.PI;
+      caine.rotation.y += diff * Math.min(1, deltaSeconds * TURN_SHARPNESS);
+    }
+
+    // Eye roll: s runs 0..1 over EYE_ROLL_SECONDS. The eyes swing up to one
+    // side, sweep across the top to the other, and drop back, eased in and
+    // out (`lift`) so it starts and ends on his normal gaze.
+    let rollPitch = 0, rollYaw = 0, rollHeadPitch = 0, rollHeadRoll = 0;
+    if (eyeRoll) {
+      eyeRoll.elapsed += deltaSeconds;
+      const s = eyeRoll.elapsed / EYE_ROLL_SECONDS;
+      if (s >= 1) eyeRoll = null;
+      else if (s > 0) {
+        const lift = Math.sin(Math.PI * s);
+        const sweep = Math.PI * (0.85 - 0.7 * s); // left-and-up, over the top, to right-and-up
+        rollYaw = Math.cos(sweep) * EYE_ROLL_YAW * lift;
+        rollPitch = (Math.sin(sweep) * EYE_ROLL_PITCH) * lift;
+        rollHeadPitch = EYE_ROLL_HEAD_BACK * lift; // head tips back a touch with the eyes
+        rollHeadRoll = Math.sin(Math.PI * 2 * s) * EYE_ROLL_HEAD_TILT * lift;
       }
     }
 
@@ -318,17 +369,18 @@ export function createCaineAnimator(caine) {
     // Halved so the nod doesn't beat against jaw chatter and amplify the visual shake.
     const speechNod = isSpeaking ? Math.sin(time * 9.5) * 0.018 : 0;
     headQ.setFromEuler(euler.set(
-      -currentPose.head.pitch + Math.sin(wander * 1.3) * 0.03 + speechNod,
+      -currentPose.head.pitch + Math.sin(wander * 1.3) * 0.03 + speechNod - rollHeadPitch,
       currentPose.head.yaw + Math.sin(wander * 0.8) * 0.05,
-      -currentPose.head.roll + Math.sin(wander * 0.6) * 0.04,
+      -currentPose.head.roll + Math.sin(wander * 0.6) * 0.04 + rollHeadRoll,
     ));
     applyCharacterRotation(rig.head, headQ);
 
     // Eyes wander and react
     const eyeDart = Math.sin(time * 3.2) * 0.08;
+    const settle = eyeRoll ? 0 : 1; // no darting about mid-roll
     eyeQ.setFromEuler(euler.set(
-      -currentPose.head.eyePitch + Math.sin(wander * 2.1) * 0.04,
-      currentPose.head.eyeYaw + eyeDart,
+      -currentPose.head.eyePitch + Math.sin(wander * 2.1) * 0.04 * settle - rollPitch,
+      currentPose.head.eyeYaw + eyeDart * settle + rollYaw,
       0,
     ));
     applyCharacterRotation(rig.leftEye, eyeQ);
@@ -396,6 +448,8 @@ export function createCaineAnimator(caine) {
     setSpeaking,
     flyTo,
     faceTowards,
+    turnTowards,
+    rollEyes,
     getMood: () => currentMood,
   };
 }
