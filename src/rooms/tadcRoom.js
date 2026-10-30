@@ -64,6 +64,19 @@ const PHOTO_OPEN_MIN = 28;
 // call almost everywhere else, to skip a shelf/ceiling above the real
 // floor) finds that lower floor instead of the landing itself here.
 const STAGE_STEPS_SPOT = { x: 2, y: 2.24, z: 8.6 };
+// And one up in the blue castle, on its second floor (y 10.27, x -28 to
+// -21 along the top of its stairs), so the climb has a reason.
+const CASTLE_TOP_SPOT = { x: -24.5, y: 10.27, z: 79.3 };
+
+// The castle's stairs (Castle_Stairs) climb 10 m over 8.8 m in 0.48 m steps,
+// with a first step of 0.95 m: every one of them taller than Pomni can step
+// up (STEP_HEIGHT, 0.4 m), so they stopped her dead. Walked on instead: an
+// unseen ramp along the steps' front edges, from the floor at its foot to
+// the second floor at its head (x, y measured against the real model: the
+// edges rise 1.143 m a metre, 48.8°, inside main.js's walkable slope), then
+// flat across the steps' top landing onto the second floor (from x -21.6),
+// and the steps themselves no longer collide. They still draw as steps.
+const CASTLE_RAMP = { foot: { x: -11.6, y: 0.26 }, head: { x: -20.4, y: 10.27 }, landing: -22, lift: 0.02 };
 
 // Level 3's way into the maze (lobbyMazeDoor.js): one of the bedroom doors
 // along the wall, chosen each run. Plane119 is the north-end door nearest
@@ -122,7 +135,7 @@ export function loadTadcRoom(onProgress, { from, items, mazeDoor } = {}) {
         isOpen: (origin) => lobbyReach.has(origin.x, origin.z),
         isReachable: (spot) => photoInView(room.group, spot, defaultSpawn.y)
           && photoInOpen(room.group, spot, defaultSpawn.y),
-        pinned: { id: PICTURES[0].id, ...STAGE_STEPS_SPOT },
+        pinned: [{ id: PICTURES[0].id, ...STAGE_STEPS_SPOT }, { id: PICTURES[1].id, ...CASTLE_TOP_SPOT }],
       });
       room.photoPositions = pictures.remaining;
       const doorsUpdate = room.update;
@@ -134,6 +147,8 @@ export function loadTadcRoom(onProgress, { from, items, mazeDoor } = {}) {
     // Added after scatterPictures (if it ran) has already committed to its
     // wall spots — its sweep rays hit room.group directly, so a staircase
     // added any earlier would've been fair game for a picture to land on.
+    // After the photos too, or one could land on its (unseen) slope.
+    smoothCastleStairs(room);
     const stairs = createStaircase({ base: STAIRS_BASE, floorY: STAIRS_FLOOR_Y });
     room.group.add(stairs.group);
     room.collisionMeshes.push(...stairs.colliders);
@@ -247,6 +262,36 @@ function photoInOpen(group, spot, floorY) {
     if (seen + cells.length - 1 - i < PHOTO_OPEN_MIN) return false;
   }
   return false;
+}
+
+/** Lays CASTLE_RAMP over the castle's stairs, as wide as they are, and takes the steps out of collision. */
+function smoothCastleStairs(room) {
+  const steps = room.group.getObjectByName('Castle_Stairs');
+  if (!steps) return;
+  room.collisionMeshes = room.collisionMeshes.filter((entry) => entry.mesh !== steps);
+  const { min, max } = new THREE.Box3().setFromObject(steps);
+  const { foot, head, landing, lift } = CASTLE_RAMP;
+  room.group.updateMatrixWorld(true);
+  const corner = (x, y, z) => room.group.worldToLocal(new THREE.Vector3(x, y + lift, z));
+  const points = [
+    corner(foot.x, foot.y, min.z), corner(foot.x, foot.y, max.z),
+    corner(head.x, head.y, max.z), corner(head.x, head.y, min.z),
+    corner(landing, head.y, max.z), corner(landing, head.y, min.z),
+  ];
+  // Unshared corners per face, so each keeps its own (slope or flat) normal.
+  const faces = [[0, 1, 2], [0, 2, 3], [3, 2, 4], [3, 4, 5]];
+  const geometry = new THREE.BufferGeometry().setFromPoints(faces.flat().map((i) => points[i]));
+  geometry.computeVertexNormals();
+  // Facing up, so floor rays land on it and the wall probes see a ramp.
+  if (geometry.attributes.normal.getY(0) < 0) {
+    geometry.setFromPoints(faces.map(([a, b, c]) => [a, c, b]).flat().map((i) => points[i]));
+    geometry.computeVertexNormals();
+  }
+  const ramp = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+  ramp.name = 'CastleStairsRamp';
+  ramp.visible = false; // walked on, never drawn
+  room.group.add(ramp);
+  room.collisionMeshes.push({ mesh: ramp, box: new THREE.Box3().setFromObject(ramp) });
 }
 
 /** Swaps the lobby's stub castle walls for the full ones, collision included. */

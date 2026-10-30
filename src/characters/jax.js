@@ -68,42 +68,44 @@ const KEY_LIGHT_INTENSITY = 6;
 const KEY_LIGHT_RANGE = 5;
 const KEY_LIGHT_OFFSET = new THREE.Vector3(0.9, 1.6, 1.1); // forward-up-right of his centre, clear of his own mesh
 
-// Idle hold (e.g. the maze, where he just stands rather than running) reads
-// as "frozen like a statue" with nothing layered on top of the bind pose —
-// same problem Kaufmo had before kaufmoTalk.js. A slow breathing sway plus
-// a faster, smaller shiver on top (he's spent the run getting here scared,
-// not calm) sells "alive and on edge" without needing any mood/dialogue
-// content to drive it, which isn't written yet.
+// Standing (standNormally): upright, arms relaxed at his sides, with just a
+// slow, small breath so he isn't a statue. No shiver, hunch, shuffle or
+// twitch on top: those read as him wiggling in place.
 const IDLE_BREATHE_HZ = 0.3;
-const IDLE_BREATHE_ANGLE = THREE.MathUtils.degToRad(2.5);
-const IDLE_TREMBLE_HZ = 5.5;
-const IDLE_TREMBLE_ANGLE = THREE.MathUtils.degToRad(1.1);
-const IDLE_HUNCH_ANGLE = THREE.MathUtils.degToRad(6); // a little drawn in on himself, not standing tall
+const IDLE_BREATHE_ANGLE = THREE.MathUtils.degToRad(1.2);
+// His arms angle out from his sides by this much, so his hands hang clear
+// of his hips instead of sinking into them.
+const ARM_OUT = 0.12; // radians
+// Running, the Mixamo swing brings his hands right across his chest: more.
+const RUN_ARM_OUT = 0.32;
+// His rig's fingers rest spread flat (a T-pose hand), and nothing animates
+// them: curled this much at every knuckle toward the palm (see relaxHands),
+// standing and running, his hands hang relaxed, loosely closed. The thumb
+// a little, in toward the palm too.
+const FINGER_CURL = THREE.MathUtils.degToRad(35);
+const THUMB_CURL = THREE.MathUtils.degToRad(15);
+const FINGERS = ['index', 'middle', 'ring'];
+// They rest fanned wide apart too: the outer two are drawn this much of
+// the way in toward the middle one, in the palm's plane, before curling.
+const FINGER_CLOSE = 0.7;
+const KNUCKLES = ['proximal', 'intermediate', 'distal'];
+// Distressed (the maze nook's final talk): standing the same, head hung a
+// little, lifting as he engages with her.
+const DISTRESS_HEAD_DROP = THREE.MathUtils.degToRad(10);
 const TURN_SHARPNESS = 5; // matches ribbit.js's/kaufmoTalk.js's own faceTowards rate
 
 // Glitching (setGlitching; Level 3's "his idle is jerky, with small
-// stutters"): every so often the idle skips like a scratched recording.
-// The pose holds for a frame or two, his head and shoulders jerk to one
-// side and he jumps a few centimetres, then he carries on from a little
-// further along. glitch() is one bigger tear across him, skipping every
-// frame for a moment.
+// stutters"): every so often his glitch shader bursts (onStutter, in
+// time with the idle's clock skipping), while his body itself stands still.
+// glitch() is one bigger tear across him, bursting every frame for a moment.
 const STUTTER_GAP = [0.3, 1.0];    // seconds of smooth idle between skips
 const STUTTER_HOLD = [0.06, 0.14]; // how long each skip holds
 const STUTTER_SKIP = 0.35;         // seconds of idle jumped over
-const STUTTER_JERK = THREE.MathUtils.degToRad(7);
-const STUTTER_SHIFT = 0.035;       // metres
 const GLITCH_SECONDS = 0.4;
-const GLITCH_SIZE = 2.5;           // how much bigger its skips are
 
 // Restless (setRestless; the maze, waiting for Pomni with his back to her):
-// he shuffles from side to side in little steps, stops at each end, then
-// goes back, hands fidgeting and head glancing about. Until he's engaged
-// (engage(point)): he stops, turns to face her and settles.
-const RESTLESS_REACH = 0.34;      // metres either side of his mark
-const RESTLESS_PERIOD = 3.6;      // seconds there and back
-const RESTLESS_STEP = 0.16;       // metres per shuffled step
-const RESTLESS_LIFT = THREE.MathUtils.degToRad(24); // knee bend of a stepping leg
-const RESTLESS_SETTLE = 2.5;      // how fast he stops (or starts) pacing
+// he stands at his mark facing his wall (homeYaw). Engaged (engage(point)),
+// he turns to face her; let go, he turns back to his wall.
 
 /**
  * Finds a bone by a loose, punctuation-insensitive match on its name.
@@ -119,6 +121,76 @@ function findBone(root, prefix) {
     if (clean.startsWith(prefix)) found = child;
   });
   return found;
+}
+
+/**
+ * Curls his fingers toward his palms (FINGER_CURL, THUMB_CURL), and makes
+ * his gait clips, which would otherwise hold them at the rig's flat, spread
+ * rest, keep them curled.
+ *
+ * The bones' own axes aren't the same from hand to hand (one hand mirrors
+ * the other), so the way each finger closes is worked out from the hand
+ * itself, in world terms: along the finger (knuckle to next knuckle),
+ * across the hand (index knuckle to ring knuckle), and the palm side is
+ * the side facing his body (his arms hang at his sides by now, palms in;
+ * the thumb's side alone is ambiguous on his right hand). A finger closes
+ * by turning about along × palm, which swings it in toward the palm.
+ */
+function relaxHands(model, clips) {
+  model.updateMatrixWorld(true);
+  const bone = (name, side) => findBone(model, `${name}${side}`);
+  const at = (b) => b.getWorldPosition(new THREE.Vector3());
+  const spine = findBone(model, 'spine');
+  if (!spine) return;
+  const curled = new Map();
+  const close = (b, child, palm, angle) => {
+    const along = (child ? at(child) : at(b).sub(at(b.parent)).add(at(b))).sub(at(b)).normalize();
+    const axis = along.cross(palm).normalize();
+    if (axis.lengthSq() < 1e-6) return;
+    // Into the bone's own frame, then turned there.
+    const local = axis.applyQuaternion(b.getWorldQuaternion(new THREE.Quaternion()).invert());
+    b.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(local, angle));
+    b.updateMatrixWorld(true);
+    curled.set(`${b.name}.quaternion`, b.quaternion);
+  };
+  for (const side of ['l', 'r']) {
+    const index = bone('indexproximal', side), ring = bone('ringproximal', side), thumb = bone('thumbdistal', side);
+    if (!index || !ring || !thumb) continue;
+    const across = at(ring).sub(at(index));
+    const along = at(bone('middleintermediate', side) ?? index).sub(at(bone('middleproximal', side) ?? index));
+    const palm = along.clone().cross(across).normalize();
+    const towardBody = at(spine).sub(at(index)).setY(0);
+    if (palm.dot(towardBody) < 0) palm.negate();
+    // Together first: the index and ring fingers turned in toward the
+    // middle one about the palm's normal (the way the hand faces).
+    const middle = at(bone('middleintermediate', side) ?? index).sub(at(bone('middleproximal', side) ?? index)).normalize();
+    for (const finger of ['index', 'ring']) {
+      const knuckle = bone(`${finger}proximal`, side), next = bone(`${finger}intermediate`, side);
+      if (!knuckle || !next) continue;
+      const direction = at(next).sub(at(knuckle)).normalize();
+      const flat = (v) => v.clone().addScaledVector(palm, -v.dot(palm)).normalize();
+      const spread = flat(direction).angleTo(flat(middle));
+      const sign = Math.sign(flat(direction).cross(flat(middle)).dot(palm)) || 1;
+      const local = palm.clone().applyQuaternion(knuckle.getWorldQuaternion(new THREE.Quaternion()).invert());
+      knuckle.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(local, sign * spread * FINGER_CLOSE));
+      knuckle.updateMatrixWorld(true);
+    }
+    // Knuckle by knuckle from the hand out, so each turn starts from the
+    // one before it (the palm side stays the same for the whole hand).
+    for (const finger of FINGERS) {
+      const chain = KNUCKLES.map((knuckle) => bone(`${finger}${knuckle}`, side));
+      chain.forEach((b, i) => b && close(b, chain[i + 1], palm, FINGER_CURL));
+    }
+    const thumbs = KNUCKLES.map((knuckle) => bone(`thumb${knuckle}`, side));
+    thumbs.forEach((b, i) => b && close(b, thumbs[i + 1], palm, THUMB_CURL));
+  }
+  for (const clip of clips) {
+    for (const track of clip.tracks) {
+      const quaternion = curled.get(track.name);
+      if (!quaternion) continue;
+      for (let i = 0; i < track.values.length; i += 4) quaternion.toArray(track.values, i);
+    }
+  }
 }
 
 /**
@@ -196,6 +268,7 @@ export function loadJax() {
     for (const bone of Object.values(bones)) {
       if (bone) rest.set(bone, bone.quaternion.clone());
     }
+    relaxHands(model, gaitClips);
 
     const gaitMixer = gaitClips.length ? new THREE.AnimationMixer(model) : null;
     const gaitActions = Object.fromEntries(gaitClips.map((clip) => [clip.name, gaitMixer.clipAction(clip)]));
@@ -220,12 +293,11 @@ export function loadJax() {
     const restorePose=()=>{for(const [bone,rotation]of rest)bone.quaternion.copy(rotation);};
     function setDistressed(value){distressed=Boolean(value);engaged=false;engagement=0;targetYaw=null;restorePose();}
     let onStutter = null;
-    const restless = { on: false, homeYaw: 0, pacing: 0, offset: 0, travelled: 0 };
-    /** Restless pacing facing `homeYaw` (see RESTLESS_*); off returns him to standing. */
+    const restless = { on: false, homeYaw: 0 };
+    /** Restless: standing at his mark facing `homeYaw` (see the note at the top); off returns him to plain standing. */
     function setRestless(value, homeYaw = jax.rotation.y) {
       restless.on = Boolean(value);
       restless.homeYaw = homeYaw;
-      restless.pacing = restless.on ? 1 : 0;
       engaged = false; engagement = 0; targetYaw = null; distressed = false;
       restorePose();
       model.position.x = 0;
@@ -242,7 +314,7 @@ export function loadJax() {
     let targetYaw = null;
     const ownPosition = new THREE.Vector3();
     let glitching = false;
-    const skip = { gap: 0, hold: 0, jerk: 0, shift: 0, tear: 0 };
+    const skip = { gap: 0, hold: 0, tear: 0 };
     const between = ([min, max]) => min + Math.random() * (max - min);
 
     /** Advances the idle's clock, holding and jumping it while glitching. */
@@ -250,7 +322,6 @@ export function loadJax() {
       skip.tear = Math.max(0, skip.tear - deltaSeconds);
       if (!glitching && skip.tear === 0) {
         idleTime += deltaSeconds;
-        skip.jerk = skip.shift = 0;
         return;
       }
       if (skip.hold > 0) {
@@ -258,16 +329,30 @@ export function loadJax() {
         return;
       }
       idleTime += deltaSeconds;
-      skip.jerk = skip.shift = 0;
       skip.gap -= deltaSeconds;
       if (skip.gap > 0 && skip.tear === 0) return;
-      const size = skip.tear > 0 ? GLITCH_SIZE : 1;
       skip.hold = between(STUTTER_HOLD);
       onStutter?.();
       skip.gap = between(STUTTER_GAP);
       idleTime += STUTTER_SKIP;
-      skip.jerk = (Math.random() * 2 - 1) * STUTTER_JERK * size;
-      skip.shift = (Math.random() * 2 - 1) * STUTTER_SHIFT * size;
+    }
+
+    /** Standing normally: rest pose, a slight elbow bend, a slow small breath. */
+    function standNormally(time) {
+      restorePose();
+      bendBone(bones.spine, jax, UP, Math.sin(time * IDLE_BREATHE_HZ * Math.PI * 2) * IDLE_BREATHE_ANGLE);
+      poseLeg(bones.lowerArmL, IDLE_ELBOW_BEND);
+      poseLeg(bones.lowerArmR, IDLE_ELBOW_BEND);
+      bendBone(bones.upperArmL, jax, FORWARD, ARM_OUT);
+      bendBone(bones.upperArmR, jax, FORWARD, -ARM_OUT);
+      model.position.x = 0;
+    }
+
+    /** Turns him toward targetYaw (if any), `rate` as sharp as TURN_SHARPNESS. */
+    function turnToTarget(deltaSeconds, rate = 1) {
+      if (targetYaw === null) return;
+      const diff = THREE.MathUtils.euclideanModulo(targetYaw - jax.rotation.y + Math.PI, Math.PI * 2) - Math.PI;
+      jax.rotation.y += diff * (1 - Math.exp(-TURN_SHARPNESS * rate * deltaSeconds));
     }
 
     /** `stay`: stop and stand at `to` (the Lobby chase) rather than vanish there. */
@@ -305,40 +390,15 @@ export function loadJax() {
       if (!walk) {
         stutter(deltaSeconds);
         const time = idleTime;
-        if (restless.on) { updateRestless(deltaSeconds, time); return; }
-        if(distressed){
-          restorePose();engagement=THREE.MathUtils.lerp(engagement,engaged?1:0,1-Math.exp(-deltaSeconds*1.4));
-          const breath=Math.sin(time*Math.PI*2*0.22),twitch=Math.pow(Math.max(0,Math.sin(time*0.9)),10)*Math.sin(time*38)*0.009;
-          bendBone(bones.spine,jax,SIDEWAYS,0.20+breath*0.007);
-          bendBone(bones.chest,jax,SIDEWAYS,0.12+breath*0.008+twitch);
-          bendBone(bones.neck,jax,SIDEWAYS,0.12-engagement*0.035);
-          bendBone(bones.head,jax,SIDEWAYS,0.26-engagement*0.08+twitch*0.6);
-          bendBone(bones.shoulderL,jax,FORWARD,-0.055);bendBone(bones.shoulderR,jax,FORWARD,0.055);
-          bendBone(bones.upperArmL,jax,SIDEWAYS,0.06);bendBone(bones.upperArmR,jax,SIDEWAYS,0.06);
-          poseLeg(bones.lowerArmL,THREE.MathUtils.degToRad(22));poseLeg(bones.lowerArmR,THREE.MathUtils.degToRad(22));
-          if(engaged&&targetYaw!==null){const diff=THREE.MathUtils.euclideanModulo(targetYaw-jax.rotation.y+Math.PI,Math.PI*2)-Math.PI;jax.rotation.y+=diff*(1-Math.exp(-deltaSeconds*0.8));}
+        standNormally(time);
+        if (restless.on) { turnToTarget(deltaSeconds, 0.5); return; }
+        if (distressed) {
+          engagement = THREE.MathUtils.lerp(engagement, engaged ? 1 : 0, 1 - Math.exp(-deltaSeconds * 1.4));
+          bendBone(bones.head, jax, SIDEWAYS, DISTRESS_HEAD_DROP * (1 - engagement * 0.6));
+          if (engaged) turnToTarget(deltaSeconds, 0.16);
           return;
         }
-        // Standing still (e.g. found in the maze) still breathes and
-        // shivers instead of holding dead still like a mannequin.
-        if (bones.spine) bones.spine.quaternion.copy(rest.get(bones.spine));
-        if (bones.head) bones.head.quaternion.copy(rest.get(bones.head));
-        bendBone(bones.spine, jax, SIDEWAYS, IDLE_HUNCH_ANGLE);
-        bendBone(bones.spine, jax, UP, Math.sin(time * IDLE_BREATHE_HZ * Math.PI * 2) * IDLE_BREATHE_ANGLE);
-        bendBone(bones.spine, jax, SIDEWAYS, Math.sin(time * IDLE_TREMBLE_HZ * Math.PI * 2) * IDLE_TREMBLE_ANGLE);
-        bendBone(bones.head, jax, SIDEWAYS, Math.sin(time * IDLE_TREMBLE_HZ * Math.PI * 2 + 1.3) * IDLE_TREMBLE_ANGLE);
-        if (skip.jerk) {
-          bendBone(bones.head, jax, UP, skip.jerk);
-          bendBone(bones.spine, jax, SIDEWAYS, skip.jerk * 0.5);
-        }
-        model.position.x = skip.shift;
-        poseLeg(bones.lowerArmL, IDLE_ELBOW_BEND);
-        poseLeg(bones.lowerArmR, IDLE_ELBOW_BEND);
-
-        if (targetYaw !== null) {
-          const diff = THREE.MathUtils.euclideanModulo(targetYaw - jax.rotation.y + Math.PI, Math.PI * 2) - Math.PI;
-          jax.rotation.y += diff * (1 - Math.exp(-TURN_SHARPNESS * deltaSeconds));
-        }
+        turnToTarget(deltaSeconds);
         return;
       }
       walk.elapsed += deltaSeconds;
@@ -347,6 +407,9 @@ export function loadJax() {
 
       if (walk.action) {
         gaitMixer.update(deltaSeconds);
+        // The Mixamo swing brings his hands across his chest: out a little, clear of it.
+        bendBone(bones.upperArmL, jax, FORWARD, RUN_ARM_OUT);
+        bendBone(bones.upperArmR, jax, FORWARD, -RUN_ARM_OUT);
       } else {
         const walking = walk.style !== 'run';
         const phase = walk.elapsed * (walking ? 1.4 : STRIDE_HZ) * Math.PI * 2;
@@ -379,50 +442,6 @@ export function loadJax() {
           jax.visible = false;
         }
         walk = null;
-      }
-    }
-
-    function updateRestless(deltaSeconds, time) {
-      restorePose();
-      // Pacing eases out while he's engaged and back in once he's let go.
-      restless.pacing = THREE.MathUtils.damp(restless.pacing, engaged ? 0 : 1, RESTLESS_SETTLE, deltaSeconds);
-      engagement = THREE.MathUtils.damp(engagement, engaged ? 1 : 0, RESTLESS_SETTLE, deltaSeconds);
-      // Side to side: quick across, a pause at each end (a squashed sine).
-      const sweep = Math.tanh(2.4 * Math.sin(time * Math.PI * 2 / RESTLESS_PERIOD)) / Math.tanh(2.4);
-      const offset = sweep * RESTLESS_REACH * restless.pacing;
-      const moved = Math.abs(offset - restless.offset);
-      restless.offset = offset;
-      restless.travelled += moved;
-      const speed = moved / Math.max(deltaSeconds, 1e-4);
-      const stepping = THREE.MathUtils.clamp(speed / 0.25, 0, 1);
-      // Little steps: one knee then the other as he shuffles.
-      const stepPhase = restless.travelled / RESTLESS_STEP * Math.PI;
-      poseLeg(bones.lowerLegL, Math.max(0, Math.sin(stepPhase)) * RESTLESS_LIFT * stepping);
-      poseLeg(bones.lowerLegR, Math.max(0, -Math.sin(stepPhase)) * RESTLESS_LIFT * stepping);
-      poseLeg(bones.upperLegL, -Math.max(0, Math.sin(stepPhase)) * RESTLESS_LIFT * .45 * stepping);
-      poseLeg(bones.upperLegR, -Math.max(0, -Math.sin(stepPhase)) * RESTLESS_LIFT * .45 * stepping);
-      model.position.x = offset + skip.shift;
-      // Hunched, weight rocking onto the leading foot, head never still:
-      // glancing about, now and then over his shoulder. Engaged, he lifts it to her.
-      const glance = Math.sin(time * 0.9) * 0.35 + Math.pow(Math.max(0, Math.sin(time * 0.37)), 8) * 0.6;
-      bendBone(bones.spine, jax, SIDEWAYS, IDLE_HUNCH_ANGLE * 1.6 * (1 - engagement * .5));
-      bendBone(bones.spine, jax, FORWARD, -sweep * 0.05 * restless.pacing);
-      bendBone(bones.spine, jax, SIDEWAYS, Math.sin(time * IDLE_TREMBLE_HZ * Math.PI * 2) * IDLE_TREMBLE_ANGLE);
-      bendBone(bones.head, jax, UP, glance * (1 - engagement));
-      bendBone(bones.head, jax, SIDEWAYS, 0.18 * (1 - engagement) + Math.sin(time * IDLE_TREMBLE_HZ * Math.PI * 2 + 1.3) * IDLE_TREMBLE_ANGLE);
-      if (skip.jerk) {
-        bendBone(bones.head, jax, UP, skip.jerk);
-        bendBone(bones.spine, jax, SIDEWAYS, skip.jerk * 0.5);
-      }
-      // Keep his hands tucked and still; the old alternating elbow wring
-      // made them visibly shake while he waited in the maze.
-      poseLeg(bones.lowerArmL, THREE.MathUtils.degToRad(55));
-      poseLeg(bones.lowerArmR, THREE.MathUtils.degToRad(55));
-      bendBone(bones.upperArmL, jax, SIDEWAYS, -0.25);
-      bendBone(bones.upperArmR, jax, SIDEWAYS, -0.25);
-      if (targetYaw !== null) {
-        const diff = THREE.MathUtils.euclideanModulo(targetYaw - jax.rotation.y + Math.PI, Math.PI * 2) - Math.PI;
-        jax.rotation.y += diff * (1 - Math.exp(-TURN_SHARPNESS * 0.5 * deltaSeconds));
       }
     }
 

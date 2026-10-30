@@ -832,6 +832,33 @@ musicVolumeInput.addEventListener('input', () => {
     // Storage blocked — the setting just won't persist.
   }
 });
+// The pause menu's settings (#pause-settings): each slider stands in for
+// one of Options' (data-mirrors), and moving it moves that one, so the
+// setting is applied and saved by Options' own code above. syncPauseSettings
+// shows Options' current values, each time the menu opens.
+const pauseSettings = [...document.querySelectorAll('#pause-settings input[data-mirrors]')].map((input) => ({
+  input,
+  output: input.nextElementSibling,
+  options: document.getElementById(input.dataset.mirrors),
+  label: document.getElementById(`${input.dataset.mirrors}-value`),
+}));
+function syncPauseSettings() {
+  for (const { input, output, options, label } of pauseSettings) {
+    input.value = options.value;
+    output.textContent = label.textContent;
+    const fill = (Number(input.value) - Number(input.min)) / (Number(input.max) - Number(input.min));
+    input.style.setProperty('--fill', `${fill * 100}%`); // the slider track's filled part
+  }
+}
+for (const { input, options } of pauseSettings) {
+  input.addEventListener('input', () => {
+    options.value = input.value;
+    options.dispatchEvent(new Event('input'));
+    syncPauseSettings();
+  });
+}
+syncPauseSettings();
+
 // Dev mode: open straight onto the room picker instead of playing the
 // title intro every reload. Ticked in Options, or ?dev=1 / ?dev=0 in the URL; either
 // way it's remembered in this browser.
@@ -1235,6 +1262,7 @@ function pauseOpening(value) {
   overlaySubtitle.textContent = pauseCaption.textContent = 'Resume the opening or return to the title screen';
   pauseMenu.hidden = !value;
   if (value) {
+    syncPauseSettings();
     openingAudio.playIntermissionCue();
     showPauseMemory();
   }
@@ -2258,6 +2286,40 @@ function takeCheckpoint() {
 }
 objectives.subscribe(() => takeCheckpoint());
 
+// What the pause menu's Save writes (set as the save panel opens).
+let saveToWrite = null;
+/**
+ * The game as it is right now, for Save: the story so far, and exactly
+ * where Pomni is standing and facing (`at`), so loading puts her back on
+ * that spot. Mid-scene (a conversation, cutscene or staged moment) it's
+ * the last checkpoint instead, as before: never half a scene.
+ */
+function snapshotForSave() {
+  const free = readyToPlay && !dialogueUI.isActive && !activeCutscene && !stageBusy()
+    && !activeCinematic()?.active && !activeJaxPass?.active && !reachedExit && !caught;
+  if (!free || !player || !pomni) return checkpoint;
+  takeCheckpoint();
+  if (!checkpoint || checkpoint.room !== currentRoomKey) return checkpoint;
+  return {
+    ...checkpoint,
+    at: {
+      x: player.position.x, y: player.position.y - PLAYER_HEIGHT, z: player.position.z,
+      facing: pomni.rotation.y, cameraYaw, cameraPitch,
+    },
+  };
+}
+
+/** A save's exact spot (`at`), once its room's loaded: Pomni back where she stood, facing the same way. */
+function placeAtSavedSpot(at) {
+  const ok = [at?.x, at?.y, at?.z].every(Number.isFinite);
+  if (!ok) return;
+  player.position.set(at.x, at.y + PLAYER_HEIGHT, at.z);
+  settleOnGround(player); // onto whatever's under her there (a GLB room's floor)
+  if (Number.isFinite(at.facing)) pomni.rotation.y = at.facing;
+  if (Number.isFinite(at.cameraYaw)) cameraYaw = at.cameraYaw;
+  if (Number.isFinite(at.cameraPitch)) cameraPitch = at.cameraPitch;
+}
+
 /** Starts the story from a save, from the title screen or mid-game. */
 function loadGame(data) {
   if (!data || data.incompatible) return;
@@ -2294,6 +2356,7 @@ function loadGame(data) {
     from: data.from ?? undefined,
     openingMode: data.room === 'pomni' ? 'settled' : undefined,
     onReady: () => {
+      placeAtSavedSpot(data.at);
       overlayTitle.textContent = 'Click to Play';
       overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
     },
@@ -2321,12 +2384,14 @@ function renderSaveSlots(note) {
   const saving = savePanelMode === 'save';
   savePanelTitle.textContent = saving ? 'Save Game' : 'Load Game';
   savePanelNote.textContent = note ?? (saving
-    ? (checkpoint
-      ? `Saves your last checkpoint (${checkpoint.objectiveTitle ?? ROOM_NAMES[checkpoint.room]}).`
+    ? (saveToWrite
+      ? (saveToWrite.at
+        ? `Saves right where you are (${saveToWrite.objectiveTitle ?? ROOM_NAMES[saveToWrite.room]}).`
+        : `Saves your last checkpoint (${saveToWrite.objectiveTitle ?? ROOM_NAMES[saveToWrite.room]}).`)
       : 'Nothing to save yet: the story saves from the end of the morning on.')
     : 'Pick a save to continue from.');
   btnSaveFile.hidden = !saving;
-  btnSaveFile.disabled = !checkpoint;
+  btnSaveFile.disabled = !saveToWrite;
   btnLoadFile.hidden = saving;
   saveSlotList.replaceChildren(...saveSlots.list().map((data, i) => {
     const slot = i + 1;
@@ -2338,13 +2403,13 @@ function renderSaveSlots(note) {
     detail.className = 'save-slot-detail';
     detail.textContent = describeSlot(data);
     button.append(name, detail);
-    button.disabled = saving ? !checkpoint : (!data || data.incompatible);
+    button.disabled = saving ? !saveToWrite : (!data || data.incompatible);
     button.addEventListener('click', (event) => {
       event.stopPropagation();
       if (saving) {
         if (data && !window.confirm(`Overwrite Slot ${slot}?`)) return;
         try {
-          saveSlots.write(slot, checkpoint);
+          saveSlots.write(slot, saveToWrite);
           renderSaveSlots(`Saved to Slot ${slot}.`);
         } catch (error) {
           console.warn('Save failed', error);
@@ -2359,14 +2424,14 @@ function renderSaveSlots(note) {
   }));
 }
 
-// Save files: the same checkpoint as a .json on disk, for a backup or
+// Save files: the same save as a .json on disk, for a backup or
 // another computer. Chrome and Edge ask where to put it; other browsers
 // download it.
 btnSaveFile.addEventListener('click', async (event) => {
   event.stopPropagation();
-  if (!checkpoint) return;
-  const text = saveFileContents(checkpoint);
-  const name = saveFileName(checkpoint);
+  if (!saveToWrite) return;
+  const text = saveFileContents(saveToWrite);
+  const name = saveFileName(saveToWrite);
   try {
     let saved = name;
     if (window.showSaveFilePicker) {
@@ -2407,6 +2472,7 @@ saveFileInput.addEventListener('change', async () => {
 
 function openSavePanel(mode, { fromTitle = false } = {}) {
   savePanelMode = mode;
+  if (mode === 'save') saveToWrite = snapshotForSave();
   savePanelFromTitle = fromTitle;
   renderSaveSlots();
   savePanel.hidden = false;
@@ -2415,7 +2481,7 @@ function openSavePanel(mode, { fromTitle = false } = {}) {
 document.getElementById('btn-save').addEventListener('click', (event) => {
   event.stopPropagation();
   if (currentRoomKey === 'maze' && checkpoint?.room === 'maze') checkpoint.mazeHints = mazeHints.snapshot();
-  openSavePanel('save');
+  openSavePanel('save'); // (saves the moment: snapshotForSave)
 });
 document.getElementById('btn-pause-load').addEventListener('click', (event) => {
   event.stopPropagation();
@@ -3684,6 +3750,13 @@ const BODY_RAY_DIRECTIONS = Array.from({ length: 8 }, (_, i) => {
 const bodyRaycaster = new THREE.Raycaster();
 const moveStart = new THREE.Vector3();
 const partDirection = new THREE.Vector3();
+const moveDirection = new THREE.Vector3();
+// A frame's move is taken in steps no longer than this, each through the
+// wall and floor checks. In one long step (sprinting, or a slow frame) a
+// steep ramp rises past STEP_HEIGHT within it, and the floor follow, not
+// finding the ramp within reach, would drop her to whatever floor is under
+// it instead (under the castle's stairs, say).
+const MAX_MOVE_STEP = 0.2;
 
 // Populated once a room model has loaded and its real bounding box is known.
 let bounds = null;
@@ -3778,6 +3851,7 @@ function pauseRoomForMenu() {
   dialoguePicker.hidden = true;
   btnTitle.hidden = true;
   pauseMenu.hidden = false;
+  syncPauseSettings();
   openingAudio.playIntermissionCue();
   showPauseMemory();
 }
@@ -5148,12 +5222,14 @@ function updateMovement(deltaSeconds) {
       .addScaledVector(moveForward, -velocity.z);
 
     const distance = moveDelta.length();
-    if (distance > 1e-6) {
-      moveDelta.divideScalar(distance);
+    const steps = Math.ceil(distance / MAX_MOVE_STEP);
+    if (distance > 1e-6) moveDirection.copy(moveDelta).divideScalar(distance);
+    for (let step = 0; step < steps && distance > 1e-6; step++) {
+      const stepDistance = distance / steps;
       moveStart.copy(player.position);
       const startClearance = bodyClearance(player);
 
-      moveWithCollisions(player, moveDelta, distance);
+      moveWithCollisions(player, moveDirection, stepDistance);
       if (!acceptMove(player, startClearance)) {
         // Blocked as a whole: try the X and Z parts on their own, so the
         // player still slides past instead of sticking.
@@ -5910,6 +5986,19 @@ export function gloinkPomniForReview() {
   const gloink = hazards.find(hazard => hazard.mesh.userData?.isGloink) ?? hazards[0];
   if (gloink) gloink.mesh.position.set(player.position.x, gloink.mesh.position.y, player.position.z);
   return { health: pomniHealth, caught, hudHidden: pomniHealthHUD.hidden };
+}
+
+/** Development-only review: stands Pomni at (x, z) on whatever floor is there, facing `yaw` (the camera's). */
+export function placePomniForReview(x, z, yaw = cameraYaw) {
+  if (!import.meta.env.DEV || !currentRoom) return null;
+  // Dropped from just above where she is, so she lands on the floor there.
+  player.position.set(x, player.position.y + 2, z);
+  airborne = true;
+  verticalVelocity = 0;
+  cameraYaw = yaw;
+  pomni.rotation.y = yaw + Math.PI;
+  resetMoveState();
+  return player.position.toArray();
 }
 
 /** Development-only review: Kaufmo abstracts now (in his room), as if the photos fell short. */

@@ -65,10 +65,12 @@ export async function loadJaxClips(model) {
     try {
       const source = await loader.loadAsync(file);
       try {
-        return lowerArms(retargetClip(source, source.animations[0], model, name, {
+        return (retargetClip(source, source.animations[0], model, name, {
           targetHipsName: 'hips_58_10',
           sourceBoneForTarget,
-        }), model);
+          // His arms don't rest as Mixamo's T-pose does.
+          matchRestDirections: true,
+        }));
       } finally {
         disposeSource(source);
       }

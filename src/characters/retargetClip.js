@@ -4,11 +4,19 @@ import * as THREE from 'three';
  * Plays `clip` on `source` and re-expresses it on `target`, bone by bone
  * (matched by name), sampled at 30 samples per second. `sourceBoneForTarget`
  * can map differently named rigs; `decorate` can attach clip-specific data.
+ *
+ * Each source bone's turn away from its rest is applied to the target
+ * bone's rest. That assumes the two rest poses match (both a T-pose); with
+ * `matchRestDirections`, each target bone's rest is first turned to point
+ * the way the source bone's rest does (bone to next mapped bone down the
+ * limb), so a rig resting in a different pose (arms lower, say) still
+ * ends up with its limbs where the source's are.
  */
 export function retargetClip(source, clip, target, name, {
   targetHipsName = 'mixamorigHips',
   sourceBoneForTarget = (boneName, sourceBones) => sourceBones.get(boneName),
   decorate = () => {},
+  matchRestDirections = false,
 } = {}) {
   const sourceBones = new Map();
   source.traverse((object) => { if (object.isBone) sourceBones.set(object.name, object); });
@@ -28,6 +36,7 @@ export function retargetClip(source, clip, target, name, {
   const sourceRestInverse = new Map([...sourceRest].map(([boneName, quaternion]) => [boneName, quaternion.clone().invert()]));
   const targetRest = new Map(targetBones.map((bone) => [bone, restWorld(bone)]));
   const targetRestLocal = new Map(targetBones.map((bone) => [bone, bone.quaternion.clone()]));
+  if (matchRestDirections) alignRests(targetBones, targetRest, sourceBones, sourceBoneForTarget);
   const sourceHipsRest = sourceHips.getWorldPosition(new THREE.Vector3());
   const targetHipsRest = targetHips.getWorldPosition(new THREE.Vector3());
   const targetFloor = new THREE.Box3().setFromObject(target).min.y;
@@ -97,6 +106,26 @@ export function retargetClip(source, clip, target, name, {
   result.userData = { speedPerHipHeight: travel / sourceHipHeight / clip.duration };
   decorate(result, { footHeights, times });
   return result;
+}
+
+/**
+ * Turns each mapped target bone's rest (in `targetRest`, world terms) so it
+ * points along its source bone's rest: the way from the bone to its first
+ * mapped child bone, in each rig.
+ */
+function alignRests(targetBones, targetRest, sourceBones, sourceBoneForTarget) {
+  const at = (bone) => bone.getWorldPosition(new THREE.Vector3());
+  for (const bone of targetBones) {
+    const match = sourceBoneForTarget(bone.name, sourceBones);
+    if (!match) continue;
+    const child = bone.children.find((candidate) => candidate.isBone && sourceBoneForTarget(candidate.name, sourceBones));
+    if (!child) continue;
+    const toward = at(child).sub(at(bone));
+    const sourceToward = at(sourceBoneForTarget(child.name, sourceBones)).sub(at(match));
+    if (toward.lengthSq() < 1e-12 || sourceToward.lengthSq() < 1e-12) continue;
+    const turn = new THREE.Quaternion().setFromUnitVectors(toward.normalize(), sourceToward.normalize());
+    targetRest.get(bone).premultiply(turn);
+  }
 }
 
 /** Restores the actual bound pose, including rigs under rotated/scaled armatures. */

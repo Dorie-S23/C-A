@@ -279,10 +279,10 @@ export function scatterPictures(room, items, pictures, spawn, keepClear = [], {
   spacing = 30, keepClearRadius = 4,
   gridStep = 10, gridRadius = 4, rng = Math.random, zoneOf = (spot) => spot.object,
   isOpen = () => true, isReachable = () => true,
-  // { id, x, z }: forces this one picture onto the floor near a fixed
-  // point instead of the random pool (e.g. a landmark players should
-  // always find one photo at). Falls back to the random pool for it if
-  // nothing's found there. The rest still keep spacing clear of it.
+  // { id, x, z } (or a list of them): forces that picture onto the floor
+  // near a fixed point instead of the random pool (e.g. a landmark players
+  // should always find one photo at). Falls back to the random pool for it
+  // if nothing's found there. The rest still keep spacing clear of it.
   pinned = null,
 } = {}) {
   const layout = items.getPhotoLayout(() => choosePictureSpots(room, pictures, spawn, keepClear, {
@@ -314,24 +314,25 @@ function choosePictureSpots(room, pictures, spawn, keepClear, {
   const avoid = keepClear.filter(Boolean);
   const aboveY = spawn.y + FLOOR_SEARCH_ABOVE;
 
-  let pinnedSpot = null;
-  if (pinned) {
+  const pinnedSpots = [];
+  for (const pin of [pinned].flat().filter(Boolean)) {
     // An explicit y skips the raycast: some surfaces (a stair landing with
     // open space underneath it, say) have real floor visible below them
     // too, and "lowest hit" (the right call for skipping a shelf/ceiling
     // above the floor almost everywhere else) finds the wrong one there.
-    const spot = Number.isFinite(pinned.y)
-      ? { position: new THREE.Vector3(pinned.x, pinned.y + FRAME_DEPTH / 2 + 0.01, pinned.z), object: null }
-      : findFloorSpot(room.group, pinned.x, pinned.z, { aboveY, far: FLOOR_SEARCH_FAR });
+    const spot = Number.isFinite(pin.y)
+      ? { position: new THREE.Vector3(pin.x, pin.y + FRAME_DEPTH / 2 + 0.01, pin.z), object: null }
+      : findFloorSpot(room.group, pin.x, pin.z, { aboveY, far: FLOOR_SEARCH_FAR });
     if (spot) {
+      spot.id = pin.id;
       spot.rotationY = rng() * Math.PI * 2;
       spot.tilt = (rng() * 2 - 1) * TILT_RANGE;
       spot.zone = zoneOf(spot);
-      pinnedSpot = spot;
+      pinnedSpots.push(spot);
     }
   }
-  // Falls back to the random pool if the pinned point found no floor.
-  const remaining = pinnedSpot ? pictures.filter((picture) => picture.id !== pinned.id) : pictures;
+  // A pinned point that found no floor falls back to the random pool.
+  const remaining = pictures.filter((picture) => !pinnedSpots.some((spot) => spot.id === picture.id));
 
   const origins = [];
   for (let gx = -gridRadius; gx <= gridRadius; gx++) {
@@ -346,7 +347,7 @@ function choosePictureSpots(room, pictures, spawn, keepClear, {
   }
 
   const spots = [];
-  const zones = new Set(pinnedSpot ? [pinnedSpot.zone] : []);
+  const zones = new Set(pinnedSpots.map((spot) => spot.zone));
   const wanted = remaining.length * 3; // a bigger pool than needed, so the spacing/keep-clear filters still have real room to choose from
   for (const origin of origins) {
     if (spots.length >= wanted && zones.size >= remaining.length) break;
@@ -361,7 +362,7 @@ function choosePictureSpots(room, pictures, spawn, keepClear, {
       const spot = findFloorSpot(room.group, x, z, { aboveY, far: FLOOR_SEARCH_FAR });
       if (!spot) continue;
       if (avoid.some((point) => Math.hypot(point.x - spot.position.x, point.z - spot.position.z) < keepClearRadius)) continue;
-      if (pinnedSpot && pinnedSpot.position.distanceTo(spot.position) < spacing) continue;
+      if (pinnedSpots.some((pin) => pin.position.distanceTo(spot.position) < spacing)) continue;
       if (spots.some((other) => other.position.distanceTo(spot.position) < spacing)) continue;
       if (!isReachable(spot)) continue;
       spot.rotationY = rng() * Math.PI * 2;
@@ -379,7 +380,7 @@ function choosePictureSpots(room, pictures, spawn, keepClear, {
     [spots[i], spots[j]] = [spots[j], spots[i]];
   }
   const chosen = [];
-  const usedZones = new Set(pinnedSpot ? [pinnedSpot.zone] : []);
+  const usedZones = new Set(pinnedSpots.map((spot) => spot.zone));
   for (const spot of spots) {
     if (chosen.length >= remaining.length) break;
     if (usedZones.has(spot.zone)) continue;
@@ -393,8 +394,8 @@ function choosePictureSpots(room, pictures, spawn, keepClear, {
   }
 
   const results = new Map();
-  if (pinnedSpot) {
-    results.set(pinned.id, { id: pinned.id, position: pinnedSpot.position, rotationY: pinnedSpot.rotationY, tilt: pinnedSpot.tilt });
+  for (const spot of pinnedSpots) {
+    results.set(spot.id, { id: spot.id, position: spot.position, rotationY: spot.rotationY, tilt: spot.tilt });
   }
   remaining.forEach(({ id }, i) => {
     const spot = chosen[i];

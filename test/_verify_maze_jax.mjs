@@ -44,7 +44,7 @@ test('Jax is in his first hideout as soon as she arrives in the maze', async () 
   assert.equal(room.jaxEncounter.enabled(), true);
 });
 
-test('he stands in a dead end facing its back wall, pacing side to side and glitching', async () => {
+test('he stands in a dead end facing its back wall, still on his mark (no shuffling or wiggling) while his glitch runs', async () => {
   for (const seed of [1, 2, 42, 1234]) {
     const room = await loadMazeRoom(null, { seed, mazeItems: createMazeItems() });
     const { jaxApi: { jax } } = room;
@@ -68,16 +68,15 @@ test('he stands in a dead end facing its back wall, pacing side to side and glit
         leftElbow.quaternion.angleTo(elbowPose[0]), rightElbow.quaternion.angleTo(elbowPose[1]));
     }
     assert.ok(maxElbowChange < 1e-6, `hands stay still instead of wringing (${maxElbowChange})`);
-    assert.ok(Math.max(...offsets) > .2 && Math.min(...offsets) < -.2, `seed ${seed}: shuffles both ways`);
-    assert.ok(Math.max(...offsets.map(Math.abs)) < .5, `seed ${seed}: but stays on his mark`);
+    assert.ok(Math.max(...offsets.map(Math.abs)) < 1e-6, `seed ${seed}: stands still on his mark`);
     assert.ok(room.jaxGlitch.uniforms.uGlitchTime.value > 4.9, 'the glitch shader runs');
-    // Engaged, he stops and turns to her; let go, back to pacing at his wall.
+    // Engaged, he turns to her; let go, back to his wall.
     const her = jax.position.clone().addScaledVector(wayIn, 2);
     room.jaxApi.engage(her);
     for (let i = 0; i < 360; i++) room.update(1 / 60, player);
     const turned = new THREE.Vector3(Math.sin(jax.rotation.y), 0, Math.cos(jax.rotation.y));
     assert.ok(turned.dot(wayIn) > .95, `seed ${seed}: turns to face her`);
-    assert.ok(Math.abs(model.position.x) < .08, `seed ${seed}: stops pacing`);
+    assert.ok(Math.abs(model.position.x) < 1e-6, `seed ${seed}: still on his mark`);
     room.jaxApi.engage(null);
     for (let i = 0; i < 360; i++) room.update(1 / 60, player);
     const back = new THREE.Vector3(Math.sin(jax.rotation.y), 0, Math.cos(jax.rotation.y));

@@ -555,6 +555,113 @@
                 font-size: 0.8em;
                 opacity: 0.75;
             }
+            /* The settings on a ticket, matching the buttons: the same
+               notches, stub and perforation, its title, then a row per
+               setting (name, a slider in the circus colours, its level). */
+            #pause-menu .pause-ticket {
+                position: relative;
+                display: flex;
+                flex-direction: column;
+                gap: 0.3rem;
+                margin: 0;
+                padding: 0.55em 1.1em 0.6em 2.6em;
+                color: var(--ink);
+                border-radius: 5px;
+                background:
+                    radial-gradient(circle at 0 50%, transparent 0.5rem, var(--ticket) calc(0.5rem + 1px)) left / 50.5% 100% no-repeat,
+                    radial-gradient(circle at 100% 50%, transparent 0.5rem, var(--ticket) calc(0.5rem + 1px)) right / 50.5% 100% no-repeat;
+                filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.35));
+                cursor: default;
+            }
+            #pause-menu .pause-ticket::before {
+                content: "\266A"; /* a note: sound and feel */
+                position: absolute;
+                left: 0.9rem;
+                top: 50%;
+                transform: translateY(-52%);
+                font-size: 0.9rem;
+                opacity: 0.75;
+            }
+            #pause-menu .pause-ticket::after {
+                content: "";
+                position: absolute;
+                left: 2rem;
+                top: 0.35rem;
+                bottom: 0.35rem;
+                border-left: 2px dashed currentColor;
+                opacity: 0.3;
+            }
+            #pause-menu .pause-ticket-name {
+                font-family: 'Luckiest Guy', 'Trebuchet MS', sans-serif;
+                font-size: 1.15rem;
+                letter-spacing: 0.06em;
+                text-align: center;
+            }
+            #pause-menu .pause-setting {
+                display: grid;
+                grid-template-columns: 4.6rem 1fr 2.6rem;
+                align-items: center;
+                gap: 0.5rem;
+                font-size: 0.78rem;
+                font-weight: 700;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+            }
+            #pause-menu .pause-setting output {
+                text-align: right;
+                opacity: 0.75;
+            }
+            #pause-menu .pause-ticket input[type="range"] {
+                --fill: 0%;
+                width: 100%;
+                height: 1.1rem;
+                margin: 0;
+                background: transparent;
+                cursor: pointer;
+                -webkit-appearance: none;
+                appearance: none;
+            }
+            #pause-menu .pause-ticket input[type="range"]::-webkit-slider-runnable-track {
+                height: 0.45rem;
+                border-radius: 999px;
+                background: linear-gradient(90deg, #d8283c, #e8b44a) 0 / var(--fill) 100% no-repeat, rgba(90, 15, 34, 0.18);
+                box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+            }
+            #pause-menu .pause-ticket input[type="range"]::-moz-range-track {
+                height: 0.45rem;
+                border-radius: 999px;
+                background: rgba(90, 15, 34, 0.18);
+                box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+            }
+            #pause-menu .pause-ticket input[type="range"]::-moz-range-progress {
+                height: 0.45rem;
+                border-radius: 999px;
+                background: linear-gradient(90deg, #d8283c, #e8b44a);
+            }
+            #pause-menu .pause-ticket input[type="range"]::-webkit-slider-thumb {
+                width: 1.15rem;
+                height: 1.15rem;
+                margin-top: -0.35rem;
+                border: 2px solid #5a0f22;
+                border-radius: 50%;
+                background: radial-gradient(circle at 35% 30%, #fff2c4, #ffd27a 55%, #e8b44a);
+                box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+                -webkit-appearance: none;
+                appearance: none;
+            }
+            #pause-menu .pause-ticket input[type="range"]::-moz-range-thumb {
+                width: 1.05rem;
+                height: 1.05rem;
+                border: 2px solid #5a0f22;
+                border-radius: 50%;
+                background: radial-gradient(circle at 35% 30%, #fff2c4, #ffd27a 55%, #e8b44a);
+                box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+            }
+            #pause-menu .pause-ticket input[type="range"]:focus-visible {
+                outline: 3px solid #ffd27a;
+                outline-offset: 3px;
+                border-radius: 999px;
+            }
             #pause-menu #btn-home {
                 --ticket: #cdb8e0;
                 --ink: #2c1440;
@@ -2175,6 +2282,31 @@
                 <button id="maze-hints-button" type="button" aria-haspopup="dialog" aria-controls="maze-hints-panel" aria-expanded="false" hidden>Hints</button>
                 <button id="btn-save">Save Game</button>
                 <button id="btn-pause-load">Load Game</button>
+                <!-- Options' own settings, mirrored (data-mirrors: the Options
+                     slider each one drives; main.js keeps them in step). -->
+                <div id="pause-settings" class="pause-ticket" role="group" aria-label="Settings">
+                    <span class="pause-ticket-name">Settings</span>
+                    <label class="pause-setting">
+                        <span>Mouse</span>
+                        <input type="range" min="0.2" max="3" step="0.1" data-mirrors="sensitivity" aria-label="Mouse sensitivity" />
+                        <output></output>
+                    </label>
+                    <label class="pause-setting">
+                        <span>Voices</span>
+                        <input type="range" min="0" max="1" step="0.05" data-mirrors="voice-volume" aria-label="Voice volume" />
+                        <output></output>
+                    </label>
+                    <label class="pause-setting">
+                        <span>Music</span>
+                        <input type="range" min="0" max="1" step="0.05" data-mirrors="music-volume" aria-label="Music volume" />
+                        <output></output>
+                    </label>
+                    <label class="pause-setting">
+                        <span>Ambience</span>
+                        <input type="range" min="0" max="1" step="0.05" data-mirrors="ambience-volume" aria-label="Ambience volume" />
+                        <output></output>
+                    </label>
+                </div>
                 <button id="btn-home">Back to Home</button>
             </div>
         </div>
