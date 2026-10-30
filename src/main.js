@@ -30,7 +30,7 @@ import { createGamepadInput } from './input/gamepad.js';
 import { createIntroStory } from './ui/introStory.js';
 import { createEndingSlides } from './ui/endingSlides.js';
 import { ENDING_SLIDES } from './data/endingSlides.js';
-import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold, setLevelPoints, passesJaxGate } from './state/escapeThreshold.js';
+import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold, setLevelPoints, passesJaxGate, endingFor } from './state/escapeThreshold.js';
 import { createChoiceTally } from './dialogue/choiceTally.js';
 import { createStoryProgress, ENDING_VARIANTS } from './game/storyProgress.js';
 import { createSaveSlots, parseSaveFile, saveFileContents, saveFileName } from './game/saveGame.js';
@@ -61,14 +61,15 @@ import { createTutorialHUD } from './ui/tutorialHUD.js';
 import { createActionCaptions } from './ui/actionCaptions.js';
 import { createCaineConversation } from './game/caineConversation.js';
 import { createCaineMemory } from './state/caineMemory.js';
-import { distressFromDialogue } from './effects/abstraction.js';
+import { distressFromDialogue, ABSTRACT_SECONDS } from './effects/abstraction.js';
+import { createAbstractions, loadAbstractedForm } from './characters/abstractedForm.js';
 import { createHandInPhotos } from './props/handInPhotos.js';
 import {
   SPEAKERS, preLevel1Dialogue, level1OpenDialogue, level2OpeningDialogue, level1RibbitDialogue,
   level2IdleDialogue, level2CompleteDialogue, level2ReturnAndSendoffDialogue, level2AbstractionDialogue,
   level2TimeUpDialogue, level3HallwayDialogue, level3JaxDialogue, level3JaxFinalDialogue,
   level3JaxMumble1Dialogue, level3JaxMumble2Dialogue, mazePickupBowlingDialogue, mazePickupMugDialogue, JAX_GLITCH_FRAGMENTS,
-  endingLobbySavedDialogue, endingLobbyAbstractedDialogue, exitDoorSavedDialogue, exitDoorAbstractedDialogue,
+  endingLobbySavedDialogue, endingLobbyAbstractedDialogue, exitDoorSavedDialogue, exitDoorAbstractedDialogue, exitDoorTrappedDialogue,
   level2HallwayDialogue, level2RoomOpeningDialogue, ribbitFollowupDialogue,
 } from './data/dialogues.js';
 
@@ -106,6 +107,7 @@ const DIALOGUE_SCRIPTS = {
   endingLobbyAbstracted: { script: endingLobbyAbstractedDialogue, room: 'tadc' },
   exitDoorSaved: { script: exitDoorSavedDialogue, room: null },
   exitDoorAbstracted: { script: exitDoorAbstractedDialogue, room: null },
+  exitDoorTrapped: { script: exitDoorTrappedDialogue, room: null },
 };
 
 const ROOM_LOADERS = {
@@ -217,8 +219,12 @@ let currentAction = null;
 const pomniReady = loadPomni().then(({ pomni: model, animations }) => {
   pomni = model;
   pomniSpeaking = createPomniSpeaking(pomni);
-  pomniJump = createPomniJump(pomni);
-  pomniGaitArms = createPomniGaitArms(pomni, animations);
+  // The Mixamo clips from her folder (characters/pomniClips.js) bring their
+  // own jump and arm swing; the procedural ones stand in only without them.
+  const clip = (name) => animations.find((one) => one.name.toLowerCase() === name);
+  jumpClip = clip('jump')?.userData.retargeted ? clip('jump') : null;
+  pomniJump = jumpClip ? null : createPomniJump(pomni);
+  pomniGaitArms = clip('walk')?.userData.retargeted ? null : createPomniGaitArms(pomni, animations);
   pomni.position.y = -PLAYER_HEIGHT; // feet on the floor
   player.add(pomni);
 
@@ -234,6 +240,11 @@ const pomniReady = loadPomni().then(({ pomni: model, animations }) => {
   if (pomniBones.Hips) {
     pomni.updateMatrixWorld(true);
     pomniHipsHeight = pomniBones.Hips.getWorldPosition(new THREE.Vector3()).y - pomni.position.y;
+    // How fast each retargeted gait carries her at her size, so her feet
+    // keep pace with the ground (see updatePomniWalk).
+    const pace = (name) => clip(name)?.userData.speedPerHipHeight * pomniHipsHeight;
+    if (pace('walk') > 0) walkClipSpeed = pace('walk');
+    if (pace('run') > 0) runClipSpeed = pace('run');
   }
 });
 const pomniBones = {
@@ -349,6 +360,8 @@ const tutorialHUD = createTutorialHUD({
 let preLevel1Session = false;
 let storySessionId = 0;
 let morningDialoguePending = false;
+// The controls card has popped up after the opening once this run (resumeOpeningGameplay).
+let openingControlsShown = false;
 // Saving (see takeCheckpoint): the latest checkpoint, and how Pomni came
 // into the current room (a loaded save arrives the same way).
 let checkpoint = null;
@@ -373,6 +386,11 @@ let paused = false;
 // it's stale and dispose itself instead of overwriting newer state.
 let loadToken = 0;
 let activeOpening = null;
+// The opening is started (posed on its first shot) under the loading
+// screen, then held there, its clock stopped, until revealOpeningWhenReady
+// has every shader built and a few real frames drawn.
+let openingHeld = false;
+const OPENING_WARM_FRAMES = 3;
 let activeEntrance = null;
 let activeJaxPass = null;
 const activeCinematic = () => activeJaxPass?.active ? activeJaxPass : activeEntrance?.active ? activeEntrance : activeOpening;
@@ -399,7 +417,8 @@ function fastForwardCutscenes() {
     return;
   }
   const cinematic = activeCinematic();
-  if (cinematic?.active && cinematic.skippable) cinematic.skip();
+  // A held opening is skipped once it's revealed, not under the loading screen.
+  if (cinematic?.active && cinematic.skippable && !(cinematic === activeOpening && openingHeld)) cinematic.skip();
 }
 
 // Hints name keyboard keys ("Press T to continue"); while the controller is
@@ -445,7 +464,7 @@ dialoguePicker.querySelectorAll('button[data-story]').forEach((button) => {
 document.getElementById('btn-backstory').addEventListener('click', (event) => {
   event.stopPropagation();
   openingAudio.unlock(); // while this click still counts as a user gesture
-  introStory.play(() => startNewGame());
+  playIntroStory(() => startNewGame());
 });
 
 // --- Developer jumps ----------------------------------------------------
@@ -597,6 +616,64 @@ function updateMemoryCaption(delta, context) {
 // --- Title screen ---
 const titleOptions = document.getElementById('title-options');
 const titleQuit = document.getElementById('title-quit');
+const levelSelect = document.getElementById('level-select');
+const levelButtons = { 1: document.getElementById('btn-level-1'), 2: document.getElementById('btn-level-2'), 3: document.getElementById('btn-level-3') };
+
+// Which levels have ever been completed in this browser — separate from any
+// save file, so the level select stays unlocked even from a cold start.
+const LEVEL_COMPLETE_KEY = 'tadc.levelComplete';
+function loadLevelCompletion() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LEVEL_COMPLETE_KEY) ?? '{}');
+    return { 1: Boolean(saved[1]), 2: Boolean(saved[2]), 3: Boolean(saved[3]) };
+  } catch {
+    return { 1: false, 2: false, 3: false };
+  }
+}
+let levelCompletion = loadLevelCompletion();
+function markLevelComplete(level) {
+  if (levelCompletion[level]) return;
+  levelCompletion = { ...levelCompletion, [level]: true };
+  try {
+    localStorage.setItem(LEVEL_COMPLETE_KEY, JSON.stringify(levelCompletion));
+  } catch {
+    // Storage blocked — the unlock just won't persist past this page.
+  }
+  refreshLevelSelect();
+}
+function refreshLevelSelect() {
+  levelButtons[2].disabled = !levelCompletion[1];
+  levelButtons[2].title = levelCompletion[1] ? '' : 'Complete Level 1 first';
+  levelButtons[2].textContent = levelCompletion[1] ? 'Level 2' : 'Level 2 🔒';
+  levelButtons[3].disabled = !levelCompletion[2];
+  levelButtons[3].title = levelCompletion[2] ? '' : 'Complete Level 2 first';
+  levelButtons[3].textContent = levelCompletion[2] ? 'Level 3' : 'Level 3 🔒';
+}
+refreshLevelSelect();
+levelButtons[1].addEventListener('click', (event) => {
+  event.stopPropagation();
+  levelSelect.hidden = true;
+  // The authored glove-click + fly-into-the-tent plays now, since this is
+  // genuinely the start of the story; Level 2/3 skip straight in instead,
+  // the same as Load Game does.
+  titleScreen.playOutro(() => startNewGameWithStory());
+});
+levelButtons[2].addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (levelButtons[2].disabled) return;
+  levelSelect.hidden = true;
+  devJump('level2Search');
+});
+levelButtons[3].addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (levelButtons[3].disabled) return;
+  levelSelect.hidden = true;
+  devJump('level3');
+});
+document.getElementById('btn-level-select-back').addEventListener('click', (event) => {
+  event.stopPropagation();
+  levelSelect.hidden = true;
+});
 const sensitivityInput = document.getElementById('sensitivity');
 const sensitivityValue = document.getElementById('sensitivity-value');
 const SENSITIVITY_KEY = 'tadc.mouseSensitivity';
@@ -629,7 +706,7 @@ function startTitleTheme() {
 }
 
 // Keys shouldn't drive the menu hidden behind an open panel.
-const titleMenuBlocked = () => !titleOptions.hidden || !titleQuit.hidden || !creditsPanel.classList.contains('hidden');
+const titleMenuBlocked = () => !titleOptions.hidden || !titleQuit.hidden || !levelSelect.hidden || !creditsPanel.classList.contains('hidden');
 const titleScreen = createTitleScreen({
   renderer,
   onIntroStart: startTitleTheme,
@@ -637,7 +714,8 @@ const titleScreen = createTitleScreen({
   isBlocked: titleMenuBlocked,
   onAction: (action) => {
     if (action === 'play') {
-      startNewGameWithStory();
+      refreshLevelSelect();
+      levelSelect.hidden = false;
     } else if (action === 'options') {
       titleOptions.hidden = false;
     } else if (action === 'quit') {
@@ -757,6 +835,14 @@ musicVolumeInput.addEventListener('input', () => {
 // way it's remembered in this browser.
 const DEV_SKIP_INTRO_KEY = 'tadc.devSkipIntro';
 const devSkipIntroInput = document.getElementById('dev-skip-intro');
+const roomPreviewsButton = document.getElementById('btn-room-previews');
+
+// Room previews is the dev room/dialogue picker (every room, no story) —
+// only useful, and only shown, in Dev mode; everyone else plays through the
+// level select instead.
+function refreshRoomPreviewsButton() {
+  roomPreviewsButton.hidden = !devSkipIntroInput.checked;
+}
 
 function setDevSkipIntro(on) {
   devSkipIntroInput.checked = on;
@@ -766,6 +852,7 @@ function setDevSkipIntro(on) {
   } catch {
     // Storage blocked — it just won't persist past this page.
   }
+  refreshRoomPreviewsButton();
 }
 const devParam = new URLSearchParams(window.location.search).get('dev');
 // Development-only reproduction of a reported Level 3 layout. Normal loads
@@ -787,6 +874,7 @@ if (devParam !== null) {
   } catch {
     devSkipIntroInput.checked = false;
   }
+  refreshRoomPreviewsButton();
 }
 devSkipIntroInput.addEventListener('change', () => setDevSkipIntro(devSkipIntroInput.checked));
 
@@ -816,7 +904,8 @@ document.getElementById('btn-replay-intro').addEventListener('click', () => {
 document.getElementById('btn-new-game').addEventListener('click', (event) => {
   event.stopPropagation();
   titleOptions.hidden = true;
-  startNewGameWithStory();
+  refreshLevelSelect();
+  levelSelect.hidden = false;
 });
 document.getElementById('btn-room-previews').addEventListener('click', () => {
   titleOptions.hidden = true;
@@ -963,7 +1052,10 @@ function returnToHome({ toRoomPicker = false } = {}) {
 
   pauseMenu.hidden = true;
   crosshair.hidden = true;
-  if (toRoomPicker) {
+  // The dev room/dialogue picker only stands in for the title screen in dev
+  // mode; everyone else's "Back to Home" goes to the real title screen (and
+  // from there, PLAY, into the level select).
+  if (toRoomPicker && devSkipIntroInput.checked) {
     showRoomPicker();
   } else {
     overlay.classList.add('hidden');
@@ -984,7 +1076,17 @@ function startNewGameWithStory() {
   }
   openingAudio.unlock(); // while this click/keypress still counts as a user gesture
   titleScreen.hide();
-  introStory.play(() => startNewGame());
+  playIntroStory(() => startNewGame());
+}
+
+/** The intro story over its own music (openingAudio.playStoryMusic), in place of the title theme. */
+function playIntroStory(done) {
+  openingAudio.stopMainTheme();
+  openingAudio.playStoryMusic();
+  introStory.play(() => {
+    openingAudio.stopStoryMusic();
+    done();
+  });
 }
 
 /**
@@ -1020,6 +1122,7 @@ function resetObjectiveSession(active = false) {
   morningDialoguePending = false;
   objectives.reset(); objectiveHUD.hide();
   controlsTutorial.reset(); tutorialHUD.hide();
+  openingControlsShown = false;
   checkpoint = null; // a new session has nothing to save until its first checkpoint
 }
 
@@ -1070,7 +1173,8 @@ function playMorningDialogue(finish) {
 
 function pauseOpening(value) {
   const cinematic = activeCinematic();
-  if (!cinematic?.active) return;
+  // Held under the loading screen it isn't playing yet: nothing to pause.
+  if (!cinematic?.active || (cinematic === activeOpening && openingHeld)) return;
   paused = value;
   activeOpening?.setPaused(value);
   activeEntrance?.setPaused(value);
@@ -1183,6 +1287,12 @@ function resumeOpeningGameplay(token) {
   overlay.classList.remove('hidden');
   overlayTitle.textContent = 'Click to Play';
   overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact';
+  // Her wake-up and Ragatha's visit are over: the controls, once a run,
+  // before she's first let loose. Closing them leaves Click to Play.
+  if (!openingControlsShown) {
+    openingControlsShown = true;
+    controlsPanel.hidden = false;
+  }
 }
 
 window.addEventListener(RAGATHA_ENTRANCE_EVENT, (event) => {
@@ -1552,7 +1662,10 @@ function attachStoryInteractions(room, roomKey, token) {
       if (!current() || objectives.active?.id !== 'find-ribbit') return;
       ambience.setRoom('ribbit');
       ambience.setRoomGain(0.5);
-      runLevel1(missionApi, { hall: room, story: true, onComplete: points => storyProgress.finishRibbit(points) });
+      runLevel1(missionApi, {
+        hall: room, story: true,
+        onComplete: points => { storyProgress.finishRibbit(points); markLevelComplete(1); },
+      });
     },
   });
 }
@@ -1728,6 +1841,7 @@ function talkToKaufmo(kaufmoApi, token) {
     if (key === 'level2Return' && !itemState.isDone()) {
       // Before the card, so a save from here on picks up the way into Level 3.
       storyProgress.finishLevel2();
+      markLevelComplete(2);
       itemState.markDone();
       void finishKaufmoLevel(token);
     } else if (key === 'level2Abstraction') {
@@ -1905,11 +2019,23 @@ async function finishKaufmoLevel(token) {
 /** Too few photos: Kaufmo abstracts. Game Over, then the search starts over. */
 async function kaufmoAbstracted(token) {
   const memoryTicket = caineMemory.revision;
+  // He comes apart, and his abstracted form rises where he stood.
+  const room = currentRoomKey === 'kaufmo' ? currentRoomInfo : null;
+  const kaufmoApi = room?.kaufmoApi;
+  let abstracted = null;
+  if (kaufmoApi) {
+    resetMoveState();
+    abstracted = await abstractions.transform(kaufmoApi.kaufmo, {
+      parent: room.group, form: takeAbstractedForm(room), effect: kaufmoApi.abstraction, voidSeconds: ABSTRACT_SECONDS,
+    });
+    if (token !== loadToken) return;
+  }
   const retry = await showLevelComplete(
     'Kaufmo has abstracted.',
     `He needed at least ${PHOTO_THRESHOLD} of the ${PHOTO_COUNT} photos. Try the search again.`,
     { resume: false, chime: 'fail', buttonLabel: 'Retry Level 2', memoryRetry: 'level2' }
   );
+  abstracted?.undo();
   if (!retry || token !== loadToken) return;
   await resetPhotoSearch(memoryTicket);
 }
@@ -1984,6 +2110,14 @@ function canOpenMazeHints() {
 
 function openMazeHints() {
   if (mazeHints.isOpen || !canOpenMazeHints()) return false;
+  // A beam: fired straight away (or as soon as she's back in play, from the
+  // pause menu), nothing to open.
+  if (mazeHints.nextIsBeam) {
+    mazeHints.useBeam();
+    const left = mazeHints.remaining;
+    showHint(`Beam to Jax · ${left} ${left === 1 ? 'hint' : 'hints'} left`, 3000, { caine: true });
+    return true;
+  }
   resetMoveState(); mazeClockWasPlayable = false;
   pauseRoomForMenu();
   mazeHints.open(currentRoomInfo);
@@ -2207,6 +2341,18 @@ document.getElementById('btn-load-game').addEventListener('click', (event) => {
   titleOptions.hidden = true;
   openSavePanel('load', { fromTitle: true });
 });
+document.getElementById('btn-reset-progress').addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (!window.confirm('Erase every save slot and unlocked level in this browser? This can’t be undone.')) return;
+  for (let slot = 1; slot <= saveSlots.count; slot++) saveSlots.remove(slot);
+  try {
+    localStorage.removeItem(LEVEL_COMPLETE_KEY);
+  } catch {
+    // Storage blocked — nothing was persisted to begin with.
+  }
+  levelCompletion = { 1: false, 2: false, 3: false };
+  refreshLevelSelect();
+});
 document.getElementById('btn-save-slots-back').addEventListener('click', (event) => {
   event.stopPropagation();
   savePanel.hidden = true;
@@ -2283,10 +2429,13 @@ function restartMazeSearch() {
 async function retryMaze(title, subtitle) {
   const token = loadToken, session = storySessionId, memoryTicket = caineMemory.revision;
   const failedSeed = mazeAttemptSeed;
+  const abstracted = await abstractPomni();
+  if (token !== loadToken) return;
   const continued = await showLevelComplete(
     title, subtitle,
     { resume: false, chime: 'fail', buttonLabel: 'Retry', memoryRetry: 'maze' }
   );
+  abstracted?.undo(); // herself again, whatever's next
   if (!continued || token !== loadToken || currentRoomKey !== 'maze') return;
   const seed = Math.floor(Math.random() * 0x100000000);
   resetMazeAttempt(seed === failedSeed ? (seed + 1) >>> 0 : seed);
@@ -2297,12 +2446,13 @@ async function retryMaze(title, subtitle) {
 }
 
 /**
- * How Level 3 went for Jax, for the ending (see ENDING_VARIANTS in
- * storyProgress.js): what the Jax gate decided as his final conversation
- * ended (Levels 1 to 3's points reaching 75%, escapeThreshold.js).
+ * Which ending the run has earned (see ENDING_VARIANTS in storyProgress.js):
+ * what the Jax gate decided as his final conversation ended (Levels 1 to
+ * 3's points reaching 75%), then, if he's lost, whether Gate 1 (Levels 1
+ * and 2's) still lets the others leave (endingFor, escapeThreshold.js).
  */
 function jaxOutcome() {
-  return mazeItems.jaxOutcome === 'abstracts' ? 'abstracted' : 'saved';
+  return endingFor(mazeItems.jaxOutcome !== 'abstracts');
 }
 
 /**
@@ -2315,7 +2465,7 @@ function jaxFinalScene(room, handlers) {
   const { jaxApi, jaxGlitch } = room;
   const token = loadToken;
   const actions = {
-    jaxSteadies() { jaxGlitch?.setLevel(0.12); },
+    jaxSteadies() { jaxGlitch?.setLevel(0.12); jaxGlitch?.setSeverity(0); },
     jaxUnravels() {
       jaxGlitch?.setLevel(1);
       jaxGlitch?.burst();
@@ -2326,7 +2476,12 @@ function jaxFinalScene(room, handlers) {
       sceneFade.classList.add('white');
       await fadeScreen(true, 0.6);
       if (token !== loadToken) return;
+      // Out of the white, his abstracted form where he stood, rising.
+      const form = takeAbstractedForm(room);
+      await form;
+      if (token !== loadToken) return;
       jaxApi.setShown(false);
+      void abstractions.transform(jaxApi.jax, { parent: room.group, form, voidSeconds: 0 });
       await fadeScreen(false, 1.4);
       sceneFade.classList.remove('white');
     },
@@ -2342,12 +2497,71 @@ function jaxFinalScene(room, handlers) {
   };
 }
 
+// Each wrong answer in his final talk: a big tear there and then, and he
+// stays this much more glitched (jaxGlitch severity) for the rest of it.
+const WRONG_ANSWER_SEVERITY = 0.34;
+function worsenJaxGlitch(room) {
+  const { jaxApi, jaxGlitch } = room;
+  if (!jaxGlitch) return;
+  jaxGlitch.setSeverity(jaxGlitch.severity + WRONG_ANSWER_SEVERITY);
+  jaxGlitch.burst();
+  jaxApi.glitch?.();
+}
+
+// Failing a level, the one who breaks (Pomni in the maze, Kaufmo, Jax)
+// abstracts: eaten away by the void, then the abstracted form rising where
+// they stood (characters/abstractedForm.js).
+const abstractions = createAbstractions();
+/** The room's preloaded abstracted form, for one use (a fresh one is loaded for the next). */
+function takeAbstractedForm(room) {
+  const form = room?.abstractedForm ?? loadAbstractedForm();
+  if (room) room.abstractedForm = loadAbstractedForm();
+  return form;
+}
+// Pomni's gone to her abstracted form (the camera, which shows and hides
+// her by how close it is, keeps her hidden).
+let pomniAbstracted = false;
+/**
+ * Level 3 failed: Pomni stops where she is and abstracts, before the fail
+ * card, the camera pulled back off her to watch.
+ */
+async function abstractPomni() {
+  if (currentRoomKey !== 'maze' || !currentRoomInfo || !pomni) return null;
+  resetMoveState();
+  stage.hold(true);
+  // From behind her if there's room, else whichever way round her has the
+  // most (she may be backed up against a wall).
+  const feet = player.position.clone().setY(player.position.y - PLAYER_HEIGHT);
+  const target = feet.clone().setY(feet.y + 1.3);
+  let best = null;
+  for (let k = 0; k < 8; k++) {
+    const yaw = cameraYaw + k * Math.PI / 4;
+    const desired = feet.clone().add(new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).multiplyScalar(ABSTRACT_SHOT_DISTANCE)).setY(feet.y + 3.4);
+    const position = resolveOpeningCamera(target, desired);
+    const reach = position.distanceTo(target);
+    if (!best || reach > best.reach + 0.5) best = { position, reach };
+  }
+  stageCamera = { position: best.position, target };
+  const handle = await abstractions.transform(pomni, {
+    parent: currentRoomInfo.group, form: takeAbstractedForm(currentRoomInfo),
+    setShown: (shown) => { pomniAbstracted = !shown; pomni.visible = shown; },
+  });
+  return { undo() { handle.undo(); stageCamera = null; } };
+}
+const ABSTRACT_SHOT_DISTANCE = 6.5; // metres back from her, so all of the form's in shot
+
 /** Runs a revealed trail hint once she's back in play, then clears it away. */
 function updateMazeTrail(deltaSeconds) {
-  if (mazeTrailPending && currentRoomKey === 'maze' && currentRoomInfo?.routeToJax && mazeGameplayAvailable(gameplayHUDContext())) {
-    mazeTrailPending = false;
-    mazeTrail?.dispose();
-    mazeTrail = playMazeTrail(currentRoomInfo.group, currentRoomInfo.routeToJax(player.position));
+  // To where he is: while he's out of sight between hiding places, it waits for him.
+  const room = currentRoomInfo;
+  if (mazeTrailPending && currentRoomKey === 'maze' && room?.routeToJax && mazeChase?.atHidingPlace
+    && mazeGameplayAvailable(gameplayHUDContext())) {
+    const route = room.routeToJax(player.position);
+    if (route) {
+      mazeTrailPending = false;
+      mazeTrail?.dispose();
+      mazeTrail = playMazeTrail(room.group, route);
+    }
   }
   if (mazeTrail && !mazeTrail.update(deltaSeconds)) { mazeTrail.dispose(); mazeTrail = null; }
 }
@@ -2355,6 +2569,7 @@ function updateMazeTrail(deltaSeconds) {
 // After the talk with Jax, this long (to see him settle, or come apart)
 // before the maze fades out into the ending. There's no exit to walk to.
 const LEAVE_AFTER_TALK_SECONDS = 1.6;
+const LEAVE_AFTER_ABSTRACTING_SECONDS = 4; // his abstracted form rising, first
 function leaveMazeAfterTalk() {
   if (reachedExit) return;
   reachedExit = true; // no Gloink catches her in the meantime
@@ -2363,7 +2578,7 @@ function leaveMazeAfterTalk() {
   setTimeout(() => {
     if (token !== loadToken || currentRoomKey !== 'maze') return;
     void leaveMaze(jaxOutcome());
-  }, LEAVE_AFTER_TALK_SECONDS * 1000);
+  }, (jaxOutcome() !== 'saved' ? LEAVE_AFTER_ABSTRACTING_SECONDS : LEAVE_AFTER_TALK_SECONDS) * 1000);
 }
 
 /** Fades the screen to black (true) or back (false); resolves once it's there. */
@@ -2386,6 +2601,7 @@ async function leaveMaze(variant) {
   await fadeScreen(true);
   if (token !== loadToken) return;
   storyProgress.finishLevel3(variant);
+  markLevelComplete(3);
   takeCheckpoint();
   await playEnding(variant);
 }
@@ -2394,18 +2610,21 @@ async function leaveMaze(variant) {
 const ENDING_CARDS = {
   saved: 'Pomni and Jax step out of the maze together.',
   abstracted: 'Pomni steps out of the maze alone.',
+  trapped: 'The door never opened. Nobody leaves the circus.',
 };
 // Each part's conversation (DIALOGUE_SCRIPTS) and the music under both.
 const ENDING_PARTS = {
   saved: { lobby: 'endingLobbySaved', door: 'exitDoorSaved', music: 'endingSaved' },
   abstracted: { lobby: 'endingLobbyAbstracted', door: 'exitDoorAbstracted', music: 'endingAbstracted' },
+  // The same goodbye in the Lobby; at the red door, it won't open.
+  trapped: { lobby: 'endingLobbyAbstracted', door: 'exitDoorTrapped', music: 'endingAbstracted' },
 };
 
 /**
- * The end of the game for `variant` ('saved' or 'abstracted'): Dorsa's script
- * as a conversation over its slides (playEndingSlides), then the card, then
- * the title screen. Escape or the Skip button skips what's left of the
- * slides; developer cutscene skipping skips them all.
+ * The end of the game for `variant` (ENDING_VARIANTS): Dorsa's script as a
+ * conversation over its slides (playEndingSlides), then the card, then the
+ * title screen. Escape or the Skip button skips what's left of the slides;
+ * developer cutscene skipping skips them all.
  */
 async function playEnding(variant) {
   sceneFade.classList.add('on');
@@ -2443,7 +2662,8 @@ async function playEndingSlides(variant) {
     if (token !== loadToken) return false;
     await playEndingPart(door, slides);
     if (token !== loadToken) return false;
-    sceneFade.classList.add('white');
+    // Trapped: the door never opened, so there's no light to cut to.
+    if (variant !== 'trapped') sceneFade.classList.add('white');
     await fadeScreen(true, 2);
   } else {
     await fadeScreen(true, 1.2);
@@ -2520,18 +2740,21 @@ async function kaufmoOutOfTime() {
     target: kaufmo.position.clone().setY(kaufmo.position.y + 1.2),
   };
 
-  let over = false;
+  let over = false, abstractedKaufmo = null;
   const gameOver = async () => {
     if (over || token !== loadToken) return;
     over = true;
     kaufmoApi.setSpeaking(false);
-    abstraction.setProgress(1);
-    abstraction.setDistress(1, { immediate: true });
+    if (!abstractedKaufmo) {
+      abstraction.setProgress(1);
+      abstraction.setDistress(1, { immediate: true });
+    }
     const retry = await showLevelComplete(
       'Kaufmo has abstracted.',
       'Time ran out before you got the photos back to him. Level 2 starts again from the beginning.',
       { resume: false, chime: 'fail', buttonLabel: 'Retry Level 2', memoryRetry: 'level2' },
     );
+    abstractedKaufmo?.undo();
     if (retry && token === loadToken) {
       await restartLevel2();
       caineMemory.recordRetry('level2', memoryTicket);
@@ -2545,8 +2768,12 @@ async function kaufmoOutOfTime() {
       const speaking = node.speaker === 'kaufmo';
       kaufmoApi.setSpeaking(speaking);
       kaufmoApi.setPose(speaking ? (node.mood || 'neutral') : 'neutral');
-      // Holds the beat (its text hidden) while he comes apart.
-      if (node.id === 'abstracts') return abstraction.abstract();
+      // Holds the beat (its text hidden) while he comes apart, and his
+      // abstracted form rises where he stood.
+      if (node.id === 'abstracts') {
+        return abstractions.transform(kaufmo, { parent: room.group, form: takeAbstractedForm(room), effect: abstraction, voidSeconds: ABSTRACT_SECONDS })
+          .then(form => { abstractedKaufmo = form; });
+      }
     },
     onComplete: gameOver,
     onCancel: gameOver,
@@ -2713,6 +2940,7 @@ function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
   cancelCutscene();
   if (dialogueUI.isActive) dialogueUI.cancel();
   activeOpening = null;
+  openingHeld = false;
   cinematicSkip.hidden = true;
   paused = false;
   if (!keepMoving) resetMoveState();
@@ -2815,9 +3043,9 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
         try { rehearseBedroomFromHall(result, roomPreload); } catch (error) { console.warn('Could not rehearse her room from the hall.', error); }
       }
       const ready = onReady && (() => onReady(result));
-      // Kaufmo's room: the hall outside his door is got ready under this
+      // Kaufmo's or Ribbit's room: the hall outside the door is got ready under this
       // same loading screen, for walking out into.
-      const settle = roomKey === 'kaufmo' && ready ? () => readyHallBehindDoor(myToken, ready) : ready;
+      const settle = HALL_DOOR_ROOMS.has(roomKey) && ready ? () => readyHallBehindDoor(myToken, ready) : ready;
       applyLoadedRoom(result, settle, roomKey, openingMode === 'play');
       if (roomKey === 'maze') storyProgress.enteredMaze();
       takeCheckpoint();
@@ -2876,6 +3104,9 @@ function applyLoadedRoom({
   roomInteractables = currentRoomInfo.interactables;
   currentRoom = group;
   currentRoomKey = roomKey;
+  // Where someone may abstract (failing a level), their abstracted form's
+  // got ready ahead (see takeAbstractedForm).
+  if(roomKey==='maze'||roomKey==='kaufmo')currentRoomInfo.abstractedForm=loadAbstractedForm();
   if(roomKey==='maze'){
     // Finding him (mazeJaxChase.js): he's there from the start, mumbles and
     // bolts twice, then in his nook she calls out (E) and they talk here.
@@ -2891,7 +3122,13 @@ function applyLoadedRoom({
     const choices=createChoiceTally(level3JaxFinalDialogue);
     mazeEncounter=createMazeEncounter({items:mazeItems,
       playDialogue:handlers=>playRoomDialogue('level3JaxFinal',{...handlers,
-        onChoice:option=>{if(choices.record(option)!==null)mazeItems.setChoicePoints(choices.points);},
+        onChoice:option=>{
+          const right=choices.record(option);
+          if(right===null)return;
+          mazeItems.setChoicePoints(choices.points);
+          // Each wrong answer and he comes further apart, for the rest of the talk.
+          if(!right)worsenJaxGlitch(mazeRoom);
+        },
         ...jaxFinalScene(mazeRoom,handlers)}),
       outcome:()=>passesJaxGate()?'stays':'abstracts',
       // Talked through, he stays turned to her (how he is depends on the
@@ -2965,6 +3202,7 @@ function applyLoadedRoom({
 
   if (playOpening && roomOpening) {
     activeOpening = roomOpening;
+    openingHeld = true;
     player.visible = false;
     roomOpening.start({ camera, resolveCamera: resolveOpeningCamera,
       onHandoff: handoffOpening, onComplete: completeOpening, onSeated: seatedOpeningDialogue });
@@ -2998,18 +3236,15 @@ function applyLoadedRoom({
     if(mazeItems.jaxOutcome==='abstracts')currentRoomInfo.jaxApi?.setShown(false); // gone since Ending B
     foundJax = mazeSearch.status === 'reached';
   }
-  overlay.classList.remove('loading');
   if (activeOpening?.active) {
-    openingFrameProfile = { frames: 0, seconds: 0, maxSeconds: 0 };
-    clock.getDelta(); // loading/compile time is not cinematic playback time
-    try { activeOpening.setAudio(openingAudio.createSession(currentRoom)); }
-    catch (error) { console.warn('Temporary opening audio unavailable; continuing silently.', error); }
+    // Stays behind the loading screen until it can play smoothly.
     readyToPlay = false;
-    overlay.classList.add('hidden');
     btnTitle.hidden = true;
-    cinematicSkip.hidden = false;
+    overlaySubtitle.textContent = 'Setting the stage…';
+    void revealOpeningWhenReady(activeOpening, loadToken);
     return;
   }
+  overlay.classList.remove('loading');
   if (playOpening && openingError) {
     openingCompleted = true;
     morningDialoguePending = preLevel1Session;
@@ -3024,6 +3259,33 @@ function applyLoadedRoom({
   if (roomKey === 'pomni' && morningDialoguePending) {
     showHint('Press T to retry the morning conversation with Ragatha.', 8000);
   }
+}
+
+/**
+ * Lifts the loading screen off the held opening only once it can play
+ * without a hitch: renderer.compile only queues the shaders (the browser
+ * links them in the background), and textures and shadow maps upload on
+ * the first frames that draw them. Each of those stalls a frame, and the
+ * cutscene's clock ran on through them, so it seemed to start early or
+ * jump ahead. Its clock starts here, from its first frame. A background
+ * tab draws no frames, so it also waits for the player to come back.
+ */
+async function revealOpeningWhenReady(opening, token) {
+  const stillCurrent = () => token === loadToken && activeOpening === opening && opening.active;
+  try { await renderer.compileAsync(scene, camera); }
+  catch (error) { console.warn('Could not finish building the opening shaders up front.', error); }
+  for (let i = 0; i < OPENING_WARM_FRAMES && stillCurrent(); i++) {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  }
+  if (!stillCurrent()) return;
+  openingHeld = false;
+  openingFrameProfile = { frames: 0, seconds: 0, maxSeconds: 0 };
+  clock.getDelta(); // loading/compile time is not cinematic playback time
+  try { opening.setAudio(openingAudio.createSession(currentRoom)); }
+  catch (error) { console.warn('Temporary opening audio unavailable; continuing silently.', error); }
+  overlay.classList.remove('loading');
+  overlay.classList.add('hidden');
+  cinematicSkip.hidden = false;
 }
 
 function disposeObject3D(root) {
@@ -3368,8 +3630,19 @@ const TURN_SHARPNESS = 14;     // higher = snappier turning
 // is sped up/slowed down by actual speed ÷ this so her feet stay planted.
 const WALK_CLIP_SPEED = 1.1; // Retain the R5-compatible 1.6 m character scale.
 const RUN_CLIP_SPEED = 2.85;
+// Measured from the clips themselves once they've loaded, if they can be.
+let walkClipSpeed = WALK_CLIP_SPEED;
+let runClipSpeed = RUN_CLIP_SPEED;
+// Her Mixamo Jumping clip (null without it): played from its take-off
+// to its landing over the jump's real airtime, 2 · JUMP_SPEED / GRAVITY,
+// then holding the landing frame for any longer fall. Each jump of a
+// double jump starts it over.
+let jumpClip = null;
+let jumpStartedFor = 0; // the jumpsUsed it last started for
+const JUMP_AIRTIME = (2 * JUMP_SPEED) / GRAVITY;
 const RUN_THRESHOLD = WALK_SPEED * 1.4; // above this she's sprinting
 const ACTION_FADE = 0.2;       // seconds to cross-fade between clips
+const JUMP_FADE = 0.08;        // into the jump: quick, she leaves the ground at once
 let animSpeed = 0;             // smoothed ground speed, so clips don't flicker
 // Fallback hop-and-waddle for a model without clips (e.g. the placeholder).
 const STEPS_PER_METRE = 1.4;
@@ -4085,8 +4358,12 @@ function clipToBedroomDoor(group) {
   });
 }
 
+// Rooms with their own door onto the hall (room.hallDoor): walked into and
+// out of through it, the hall shown behind it (Pomni's works its own way).
+const HALL_DOOR_ROOMS = new Set(['kaufmo', 'ribbit']);
+
 function updateHallLink() {
-  if (currentRoomKey === 'kaufmo') {
+  if (currentRoomInfo?.hallDoor) {
     updateDoorToHall();
     return;
   }
@@ -4200,7 +4477,7 @@ function preloadRoom(key, from) {
       const textures = new Set();
       // The hall and Kaufmo's room are each seen from the other, and the
       // one she's in may have textures it's never yet had on screen.
-      const linked = key === 'kaufmo' || currentRoomInfo?.hallDoor;
+      const linked = HALL_DOOR_ROOMS.has(key) || currentRoomInfo?.hallDoor;
       for (const root of linked ? [result.group, currentRoom] : [result.group]) {
         root.traverse((object) => {
           for (const material of [object.material].flat()) {
@@ -4221,7 +4498,7 @@ function preloadRoom(key, from) {
       const compiling = [renderer.compileAsync(staging, camera), renderer.compileAsync(player, camera, staging)];
       // The hall and Kaufmo's room show each other for real: the room she's
       // in, as it will look from this one once she's walked through.
-      if (key === 'kaufmo' || currentRoomInfo?.hallDoor) compiling.push(compileAsSeenFrom(staging));
+      if (HALL_DOOR_ROOMS.has(key) || currentRoomInfo?.hallDoor) compiling.push(compileAsSeenFrom(staging));
       // A mirror draws the room into its own texture, which needs its own
       // build of every material (compileAsync sets its programs up at once).
       const target = renderer.getRenderTarget();
@@ -4358,7 +4635,7 @@ function readyHallAhead(token) {
 }
 
 /**
- * Kaufmo's room, just loaded behind the loading screen: the hall outside
+ * Kaufmo's (or Ribbit's) room, just loaded behind the loading screen: the hall outside
  * his door is preloaded (seen from his room, as preloadRoom does), then
  * drawn as it'll be when she walks out into it (rehearseSteppingOut), and
  * only then is the loading screen let go (`ready`). Two frames more under
@@ -4367,7 +4644,7 @@ function readyHallAhead(token) {
 function readyHallBehindDoor(token, ready) {
   readyToPlay = false;
   overlay.classList.add('loading');
-  preloadRoom('dorm', 'kaufmo');
+  preloadRoom('dorm', currentRoomKey);
   const entry = roomPreload;
   entry.settled.then(() => {
     if (token !== loadToken) return;
@@ -4540,7 +4817,7 @@ function showRoomBehindDoor(entry, show) {
   group.updateMatrixWorld(true);
 }
 
-/** Puts the hall behind Kaufmo's open door (or takes it away), his door showing in the doorway. */
+/** Puts the hall behind Kaufmo's or Ribbit's open door (or takes it away), their door showing in the doorway. */
 function showHallBehindDoor(entry, show) {
   entry.peeking = show;
   const { group, walkInDoorways } = entry.result;
@@ -4833,7 +5110,10 @@ function updateMovement(deltaSeconds) {
   if (shouldShowObjective(gameplayHUDContext()) && (move.forward || move.back || move.left || move.right || padMoving)) {
     controlsTutorial.move(moved, sprinting);
   }
-  updatePomniWalk(deltaSeconds, deltaSeconds > 0 ? moved / deltaSeconds : 0);
+  // Her animation goes by the speed she'd move without the dev build's
+  // boost (DEV_SPEED_MULTIPLIER), so it looks the same in both; and she
+  // only breaks into a run when sprinting (Shift), walking otherwise.
+  updatePomniWalk(deltaSeconds, deltaSeconds > 0 ? moved / deltaSeconds / DEV_SPEED_MULTIPLIER : 0, { sprinting });
 
   checkTriggers(player, deltaSeconds);
   checkPortals();
@@ -4853,21 +5133,23 @@ function dampAngle(current, target, sharpness, dt) {
  * clips (the placeholder), walking is faked: a small hop per step plus a
  * side-to-side waddle, faded in and out with her speed.
  */
-function updatePomniWalk(dt, speed) {
+function updatePomniWalk(dt, speed, { sprinting = false } = {}) {
   if (paused) dt = 0;
   if (pomniMixer) {
     pomniSpeaking?.remove();
     pomniJump?.remove();
     pomniGaitArms?.remove();
     animSpeed = THREE.MathUtils.damp(animSpeed, speed, 12, dt);
-    if (airborne || animSpeed < 0.2) {
+    if (airborne && jumpClip && jumpsUsed > 0) {
+      playJump();
+    } else if (airborne || animSpeed < 0.2) {
       playAction('idle');
-    } else if (animSpeed > RUN_THRESHOLD && pomniActions.run) {
+    } else if (sprinting && animSpeed > RUN_THRESHOLD && pomniActions.run) {
       playAction('run');
-      pomniActions.run.timeScale = animSpeed / RUN_CLIP_SPEED;
+      pomniActions.run.timeScale = animSpeed / runClipSpeed;
     } else {
       playAction('walk');
-      pomniActions.walk.timeScale = animSpeed / WALK_CLIP_SPEED;
+      pomniActions.walk.timeScale = animSpeed / walkClipSpeed;
     }
     pomniMixer.update(dt);
     applyStagePose(dt);
@@ -4888,6 +5170,29 @@ function updatePomniWalk(dt, speed) {
   pomni.rotation.z = Math.sin(walkPhase) * WALK_SWAY * walkAmount;
   pomniGaitArms?.update(dt, speed, airborne);
   pomniJump?.update(dt, airborne, verticalVelocity, jumpsUsed, speed);
+}
+
+/** Her Jumping clip through the air (see jumpClip): started at its take-off on each jump. */
+function playJump() {
+  const jump = pomniActions.jump;
+  const { takeoff, landing } = jumpClip.userData;
+  if (currentAction !== jump || jumpsUsed !== jumpStartedFor) {
+    jumpStartedFor = jumpsUsed;
+    jump.reset();
+    jump.setLoop(THREE.LoopOnce, 1);
+    jump.clampWhenFinished = true;
+    jump.time = takeoff;
+    jump.timeScale = (landing - takeoff) / JUMP_AIRTIME;
+    if (currentAction !== jump) {
+      jump.fadeIn(JUMP_FADE).play();
+      currentAction?.fadeOut(JUMP_FADE);
+      currentAction = jump;
+    } else {
+      jump.play();
+    }
+  }
+  // Still falling past where the clip lands: hold just before touch-down.
+  if (jump.time >= landing) { jump.time = landing; jump.timeScale = 0; }
 }
 
 /** Cross-fades from whatever Pomni is playing to the named clip. */
@@ -5155,7 +5460,7 @@ function updateCamera(dt) {
   if (stageCamera) {
     camera.position.copy(stageCamera.position);
     camera.lookAt(stageCamera.target);
-    pomni.visible = true;
+    pomni.visible = !pomniAbstracted;
     return;
   }
   if (firstPerson) {
@@ -5189,7 +5494,7 @@ function updateCamera(dt) {
   camera.position.copy(cameraTarget).addScaledVector(cameraOffset, currentCameraDistance);
   camera.lookAt(cameraTarget);
 
-  pomni.visible = currentCameraDistance > MIN_VISIBLE_DISTANCE;
+  pomni.visible = currentCameraDistance > MIN_VISIBLE_DISTANCE && !pomniAbstracted;
 }
 
 /** The cinematic uses the same exact room-ray camera collision as gameplay. */
@@ -5365,6 +5670,7 @@ function animate() {
       playerActive: isLocked && readyToPlay && !dialogueUI.isActive && !activeCutscene && !stageBusy(),
     });
     mazeSounds?.update(delta, player.position);
+    abstractions.update(delta);
     updateMazeTrail(delta);
     refreshDynamicColliders();
     // Her bedroom's lighting runs the environment itself.
@@ -5417,7 +5723,8 @@ function animate() {
           updateCamera(delta);
           follow = { position: camera.position.clone(), target: cameraTarget.clone() };
         }
-        activeOpening.update(rawDelta * skipScale, follow); // animation clock is not the movement/collision step clamp
+        // Held: re-posed on its first shot each frame, its clock not moving.
+        activeOpening.update(openingHeld ? 0 : rawDelta * skipScale, follow); // animation clock is not the movement/collision step clamp
       }
     } else {
       if (stageWalk && !paused) updateStageWalk(delta * skipScale);
@@ -5480,7 +5787,7 @@ function gameplayHUDContext() {
     session: preLevel1Session, room: currentRoom, ready: readyToPlay, locked: isLocked,
     paused, cinematic: activeCinematic()?.active || Boolean(activeCutscene) || stageBusy(), dialogue: dialogueUI.isActive,
     menu: titleScreen.active || !overlay.classList.contains('hidden') || !controlsPanel.hidden
-      || !creditsPanel.classList.contains('hidden') || !titleOptions.hidden || !titleQuit.hidden,
+      || !creditsPanel.classList.contains('hidden') || !titleOptions.hidden || !titleQuit.hidden || !levelSelect.hidden,
   };
 }
 

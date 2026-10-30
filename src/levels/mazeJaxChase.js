@@ -222,6 +222,8 @@ export function runMazeJaxChase(game, room, { startTalk, onFled, fragments, capt
     get phase() { return phase; },
     /** He's run from her at least once (so she's following him now, not finding him). */
     get fled() { return phase === 'fleeing' || room.jaxStop > 0; },
+    /** He's standing at a hiding place (not fretting, running, away, or a fragment's flicker). */
+    get atHidingPlace() { return phase !== 'fretting' && phase !== 'fleeing' && jax.visible; },
     /** The fragment showing now, if any (for diagnostics). */
     get fragment() { return fragmentsPlaying ? fragmentsPlaying.lines[fragmentsPlaying.line] ?? null : null; },
     /** Leaving the maze: no caption left behind. */
@@ -260,8 +262,8 @@ export function runMazeJaxChase(game, room, { startTalk, onFled, fragments, capt
       stage.lookWithHead(null);
       if (finished) {
         phase = 'done';
-        if (outcome === 'abstracts') { jaxGlitch.setLevel(1); jaxGlitch.burst(); jaxApi.glitch(); }
-        else jaxGlitch.setLevel(.12);
+        if (outcome === 'abstracts') { jaxGlitch.setLevel(1); jaxGlitch.setSeverity(1); jaxGlitch.burst(); jaxApi.glitch(); }
+        else { jaxGlitch.setLevel(.12); jaxGlitch.setSeverity(0); }
         return;
       }
       jaxApi.engage(null);

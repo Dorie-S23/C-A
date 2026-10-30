@@ -53,7 +53,7 @@ The playable sequence is:
    Finding the fifth photo changes the instruction to **Return to Kaufmo**;
    the remaining time continues without resetting. E hands Kaufmo every held
    photo at once, which stops the clock, even with one second left. With at
-   least 4 (`PHOTO_THRESHOLD`) he plays his success scene and send-off, then
+   least 3 (`PHOTO_THRESHOLD`) he plays his success scene and send-off, then
    **Level 2 Complete** and the way into Level 3 (steps 8 to 11). With fewer
    he abstracts and the attempt ends on a
    **Retry Level 2** card. Early pickups are retained but do not bypass his
@@ -214,13 +214,13 @@ that none remain at the end of loading.
 
 Leaving the maze (both keepsakes found, Jax's conversation finished) freezes
 Pomni, fades to black and records Level 3 as complete with its ending variant,
-`saved` or `abstracted` (`storyProgress.ending`, kept in saves). A save taken
+`saved`, `abstracted` or `trapped` (`storyProgress.ending`, kept in saves). A save taken
 after that loads straight into the ending instead of the maze. `jaxOutcome()`
 in `main.js` uses the result of `level3JaxFinalDialogue`: five rounds score
 into Level 3 with the keepsakes, and the Jax gate (`passesJaxGate`) selects
 whether he stays or abstracts. `jaxFinalScene` acts out that resolution.
 
-`playEnding(variant)` plays Dorsa's ending as a conversation over 9 slides
+`playEnding(variant)` plays Dorsa's ending as a conversation over its slides
 (`src/ui/endingSlides.js`, `#ending-slides` in `index.html`), in two parts. The
 maze is unloaded first; nothing 3D plays behind them. `src/data/endingSlides.js`
 says which image goes up at which node `action`, and the script's text and voice
@@ -234,8 +234,13 @@ They go through one by one, Jax last before Pomni if he's there; then Pomni and
 Caine say goodbye, Caine takes off his hat and bows, Pomni steps through, the door
 shuts behind her, and it cuts to white. A click anywhere continues; Escape or the
 Skip button skips the rest; developer cutscene skipping skips it all. Then the
-**Level 3 Complete** card, then the title screen. The dev menu's two **Ending**
+**Level 3 Complete** card, then the title screen. The dev menu's three **Ending**
 buttons jump straight to it. The full-size images are in `docs/ending-panels/`.
+
+`trapped` is the abstracted Lobby, then the same corridor where the door won't
+open (`exitDoorTrappedDialogue`): Caine finds them and they turn back, fading to
+black, not white. It has no art of its own yet, so it reuses the slides that show
+the door shut (`abstracted-1` to `abstracted-4`, `final-2`, `final-4`).
 
 The 3D staging this replaced is still in `src/cutscenes/endingCutscene.js`, with
 `test/_verify_ending_cast.mjs` keeping it working, but nothing in the game plays it.

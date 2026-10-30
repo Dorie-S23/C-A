@@ -65,6 +65,17 @@ export function passesEscapeGate() {
   return getEscapeTotal() >= ESCAPE_PASS_MARK;
 }
 
+/**
+ * Which ending the run gets (ENDING_VARIANTS in storyProgress.js), once
+ * the Jax gate has decided whether he `stays`: with him, everyone leaves
+ * ('saved'); without him, they still leave if Gate 1 passes
+ * ('abstracted'), and if it doesn't, the door won't open ('trapped').
+ */
+export function endingFor(stays) {
+  if (stays) return 'saved';
+  return passesEscapeGate() ? 'abstracted' : 'trapped';
+}
+
 /** Levels 1 to 3's points, for the Jax gate. */
 export function getJaxTotal() {
   return totalOf(JAX_LEVELS);

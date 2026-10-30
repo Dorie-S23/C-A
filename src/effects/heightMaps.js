@@ -254,121 +254,106 @@ export function makeFluffy(mesh, { height = 0.025 } = {}) {
 
 // --- Bulging eyes in paintings ---------------------------------------------
 
-// Paintings (by their photo's name in the .glb) with googly eyes to push out.
-const EYED_PAINTINGS = ['Photo 14', 'Photo 4'];
+// Paintings (by their photo's name in the .glb) with googly eyes to push out,
+// and each eye's circle: its centre and radius as fractions of the photo's
+// width and height, from the top left. Measured off the photos, shaded rim
+// included, so the whole eyeball comes out rather than only its bright part.
+const EYED_PAINTINGS = {
+  'Photo 14': [
+    { x: 227 / 540, y: 305 / 750, radius: 104 / 540 },
+    { x: 411 / 540, y: 343 / 750, radius: 105 / 540 },
+  ],
+  'Photo 4': [
+    { x: 223 / 540, y: 360 / 750, radius: 64 / 540 },
+    { x: 316 / 540, y: 362 / 750, radius: 64 / 540 },
+  ],
+};
 const EYE_MAP_SIZE = 512;
 const EYE_GRID_SPACING = 0.012; // eyes are small: a finer grid than the rugs
-const eyeMaps = new Map(); // photo image -> its height map, worked out once
-
-/** Labels the 4-connected blobs of a size×size `mask`; returns [labels, blob areas]. */
-function labelBlobs(mask, size) {
-  const count = size * size;
-  const labels = new Int32Array(count).fill(-1), areas = [], stack = [];
-  for (let start = 0; start < count; start++) {
-    if (!mask[start] || labels[start] >= 0) continue;
-    const id = areas.length;
-    let area = 0;
-    labels[start] = id; stack.push(start);
-    while (stack.length) {
-      const i = stack.pop(); area++;
-      const x = i % size, y = (i / size) | 0;
-      const near = [x > 0 ? i - 1 : -1, x < size - 1 ? i + 1 : -1, y > 0 ? i - size : -1, y < size - 1 ? i + size : -1];
-      for (const j of near) if (j >= 0 && mask[j] && labels[j] < 0) { labels[j] = id; stack.push(j); }
-    }
-    areas.push(area);
-  }
-  return [labels, areas];
-}
-
-/** Each set pixel's distance in from the mask's edge, in pixels (two-pass chamfer). */
-function distanceInside(mask, size) {
-  const d = new Float32Array(size * size);
-  for (let i = 0; i < d.length; i++) d[i] = mask[i] ? 1e9 : 0;
-  const pass = (y, x, dx, dy) => {
-    const i = y * size + x;
-    if (!d[i]) return;
-    const step = (nx, ny, cost) => {
-      if (nx >= 0 && nx < size && ny >= 0 && ny < size) d[i] = Math.min(d[i], d[ny * size + nx] + cost);
-    };
-    step(x - dx, y, 1); step(x, y - dy, 1);
-    step(x - dx, y - dy, Math.SQRT2); step(x + dx, y - dy, Math.SQRT2);
-  };
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) pass(y, x, 1, 1);
-  for (let y = size - 1; y >= 0; y--) for (let x = size - 1; x >= 0; x--) pass(y, x, -1, -1);
-  return d;
-}
+// How far an eye stands out, against its radius: most of a half ball.
+const EYE_DEPTH = 0.75;
+const eyeMaps = new Map(); // photo image -> its height and gloss maps, worked out once
 
 /**
- * A height map of a photo's eyes, worked out from the photo itself: its eye
- * whites (bright, colourless pixels, in blobs too big to be glints), with
- * the pupils they surround filled in, each domed like an eyeball: highest
- * at its middle, falling away in a circle's curve to its rim.
+ * Height and gloss maps of a painting's `eyes`: each a dome, highest at its
+ * middle and falling away in a circle's curve to its rim, the bigger eyes
+ * standing further out (white is the biggest). The photo's aspect is
+ * `aspect` (width / height), so the circles stay round on it.
  */
-function createEyeHeightMap(image) {
-  const size = EYE_MAP_SIZE, count = size * size;
+function createEyeMaps(eyes, aspect) {
+  const size = EYE_MAP_SIZE;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
-  const context = canvas.getContext('2d', { willReadFrequently: true });
-  context.drawImage(image, 0, 0, size, size);
-  const pixels = context.getImageData(0, 0, size, size);
+  const context = canvas.getContext('2d');
+  const pixels = context.createImageData(size, size);
   const rgba = pixels.data;
-
-  // 1. Eye whites.
-  const eye = new Uint8Array(count);
-  for (let i = 0; i < count; i++) {
-    const r = rgba[i * 4], g = rgba[i * 4 + 1], b = rgba[i * 4 + 2];
-    const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    eye[i] = max > 200 && (max - min) / max < 0.18 ? 1 : 0;
-  }
-  // 2. Glints and specks are far smaller than an eye.
-  const [whiteLabels, whiteAreas] = labelBlobs(eye, size);
-  for (let i = 0; i < count; i++) if (eye[i] && whiteAreas[whiteLabels[i]] < count * 0.002) eye[i] = 0;
-  // 3. Pupils: whatever the white closes all the way round (a blob of
-  //    not-eye that never reaches the picture's edge).
-  const [holeLabels, holeAreas] = labelBlobs(eye.map((v) => 1 - v), size);
-  const reachesEdge = new Uint8Array(holeAreas.length);
-  for (let k = 0; k < size; k++) {
-    for (const i of [k, count - size + k, k * size, k * size + size - 1]) {
-      if (holeLabels[i] >= 0) reachesEdge[holeLabels[i]] = 1;
+  const biggest = Math.max(...eyes.map((eye) => eye.radius));
+  for (let py = 0; py < size; py++) {
+    for (let px = 0; px < size; px++) {
+      const u = (px + 0.5) / size, v = (py + 0.5) / size;
+      // Where eyes overlap, the one standing further out shows.
+      let height = 0;
+      for (const eye of eyes) {
+        const dx = (u - eye.x) / eye.radius, dy = (v - eye.y) / aspect / eye.radius;
+        const r2 = dx * dx + dy * dy;
+        if (r2 < 1) height = Math.max(height, Math.sqrt(1 - r2) * eye.radius / biggest);
+      }
+      const i = (py * size + px) * 4;
+      rgba[i] = rgba[i + 1] = rgba[i + 2] = height * 255;
+      rgba[i + 3] = 255;
     }
   }
-  for (let i = 0; i < count; i++) {
-    const hole = holeLabels[i];
-    if (hole >= 0 && !reachesEdge[hole] && holeAreas[hole] < count * 0.05) eye[i] = 1;
-  }
-  // 4. Domes: sqrt(1 - (1 - d/R)^2) across each eye, d in from its rim and
-  //    R its deepest point.
-  const distance = distanceInside(eye, size);
-  const [eyeLabels, eyeAreas] = labelBlobs(eye, size);
-  const radius = new Float32Array(eyeAreas.length);
-  for (let i = 0; i < count; i++) if (eye[i]) radius[eyeLabels[i]] = Math.max(radius[eyeLabels[i]], distance[i]);
-  for (let i = 0; i < count; i++) {
-    const v = eye[i] ? Math.sqrt(Math.max(0, 1 - (1 - distance[i] / radius[eyeLabels[i]]) ** 2)) * 255 : 0;
-    rgba[i * 4] = rgba[i * 4 + 1] = rgba[i * 4 + 2] = v;
-    rgba[i * 4 + 3] = 255;
-  }
   context.putImageData(pixels, 0, 0);
-  // A touch of blur rounds off the pixel steps at each rim.
-  context.filter = 'blur(3px)';
-  context.drawImage(canvas, 0, 0);
+
+  // Gloss: a roughness map, white (the painting's own roughness) everywhere
+  // but the eyes, which go glossy towards their tops like googly-eye plastic.
+  const glossCanvas = document.createElement('canvas');
+  glossCanvas.width = glossCanvas.height = size;
+  const gloss = glossCanvas.getContext('2d');
+  gloss.fillStyle = '#fff';
+  gloss.fillRect(0, 0, size, size);
+  gloss.globalCompositeOperation = 'difference';
+  gloss.globalAlpha = 0.85;
+  gloss.drawImage(canvas, 0, 0);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.NoColorSpace; // data, not colour
-  return texture;
+  const glossTexture = new THREE.CanvasTexture(glossCanvas);
+  glossTexture.colorSpace = THREE.NoColorSpace;
+  return { height: texture, gloss: glossTexture };
 }
 
-/** Pushes a flat painting's eyes `height` metres out of the canvas. */
-export function bulgeEyes(mesh, { height = 0.06 } = {}) {
+/** A copy of `texture` laid on the mesh exactly as the photo `map` is. */
+function laidLike(texture, map) {
+  const copy = texture.clone();
+  for (const key of ['flipY', 'wrapS', 'wrapT', 'channel', 'rotation', 'matrixAutoUpdate']) copy[key] = map[key];
+  copy.offset.copy(map.offset); copy.repeat.copy(map.repeat); copy.center.copy(map.center);
+  copy.matrix.copy(map.matrix);
+  copy.needsUpdate = true;
+  return copy;
+}
+
+/**
+ * Pushes a flat painting's `eyes` (see EYED_PAINTINGS) out of the canvas as
+ * whole eyeballs, the biggest standing `depth` × its radius proud.
+ */
+export function bulgeEyes(mesh, eyes, { depth = EYE_DEPTH } = {}) {
   const map = mesh.material?.map;
   if (typeof document === 'undefined' || !map?.image || !isFlatSheet(mesh.geometry) || !mesh.geometry.attributes.uv) return false;
-  if (!eyeMaps.has(map.image)) eyeMaps.set(map.image, createEyeHeightMap(map.image));
-  const heightMap = eyeMaps.get(map.image).clone();
-  // Laid on the mesh exactly as the photo is.
-  for (const key of ['flipY', 'wrapS', 'wrapT', 'channel', 'rotation', 'matrixAutoUpdate']) heightMap[key] = map[key];
-  heightMap.offset.copy(map.offset); heightMap.repeat.copy(map.repeat); heightMap.center.copy(map.center);
-  heightMap.matrix.copy(map.matrix);
-  heightMap.needsUpdate = true;
-  displaceSheet(mesh, heightMap, { height, spacing: EYE_GRID_SPACING, bumpScale: 2 });
+  const aspect = map.image.width / map.image.height;
+  if (!eyeMaps.has(map.image)) eyeMaps.set(map.image, createEyeMaps(eyes, aspect));
+  const maps = eyeMaps.get(map.image);
+  // The photo spans the painting's width: its widest flat side, in metres.
+  const { sheetScale } = sheetScales(mesh);
+  mesh.geometry.computeBoundingBox();
+  const size = mesh.geometry.boundingBox.getSize(new THREE.Vector3()).multiplyScalar(sheetScale);
+  const [long, short] = [size.x, size.y, size.z].sort((a, b) => b - a);
+  const width = aspect < 1 ? short : long;
+  const height = depth * Math.max(...eyes.map((eye) => eye.radius)) * width;
+  displaceSheet(mesh, laidLike(maps.height, map), {
+    height, spacing: EYE_GRID_SPACING, bumpScale: 4,
+    material: { roughnessMap: laidLike(maps.gloss, map) },
+  });
   return true;
 }
 
@@ -376,9 +361,9 @@ export function bulgeEyes(mesh, { height = 0.06 } = {}) {
 export function bulgePaintingEyes(root, options) {
   const paintings = [];
   root.traverse((object) => {
-    if (object.isMesh && EYED_PAINTINGS.includes(object.material?.map?.name)) paintings.push(object);
+    if (object.isMesh && EYED_PAINTINGS[object.material?.map?.name]) paintings.push(object);
   });
-  return paintings.filter((painting) => bulgeEyes(painting, options)).length;
+  return paintings.filter((painting) => bulgeEyes(painting, EYED_PAINTINGS[painting.material.map.name], options)).length;
 }
 
 /**

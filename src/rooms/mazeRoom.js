@@ -473,11 +473,15 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
     get jaxSpawned() { return jaxSpawned; },
     get jaxStop() { return jaxStop; },
     get jaxAtNook() { return atNook(); },
-    /** The way through the corridors from `position` to where Jax is (or will turn up). */
+    /**
+     * The way through the corridors, cell to neighbouring cell, from
+     * `position` to where Jax is standing (null if there's no way).
+     */
     routeToJax(position) {
-      const from = mazePlacement.cellAt(position), { cell, spot } = hideouts[jaxStop];
-      const path = from ? findMazePath(maze, from, cell) ?? [] : [];
-      return [position.clone().setY(0), ...path.slice(1, -1).map(({ r, c }) => cellCenter(r, c)), spot.clone()];
+      const from = mazePlacement.cellAt(position), to = mazePlacement.cellAt(jax.position);
+      const path = from && to ? findMazePath(maze, from, to) : null;
+      if (!path) return null;
+      return [position.clone().setY(0), ...path.slice(1, -1).map(({ r, c }) => cellCenter(r, c)), jax.position.clone().setY(0)];
     },
     /** The way (cell centres) from hiding place `from` to the next one. */
     routeOn(from) {

@@ -12,46 +12,32 @@ const fixture=()=>{const items=createMazeItems(),hints=createMazeHintProgress({h
 const roomFor=seed=>{const maze=generateMaze(13,13,createSeededRandom(seed),0);return {maze,environmentLayout:shapeMazeEnvironment(maze)};};
 const segment=points=>{const [[x,y],[a,b]]=[points.slice(0,2),points.slice(2)].sort(([x,y],[a,b])=>x-a||y-b);return [x,y,a,b].join(',');};
 
-test('four map hints come first, even before any object is found, then the last two are trails to Jax',()=>{
- const {hints}=fixture();assert.equal(MAZE_HINT_LIMIT,6);assert.equal(hints.remaining,6);assert.equal(hints.map,null);
- for(let n=1;n<=6;n++){assert.equal(hints.next.number,n);assert.equal(hints.reveal().kind,n<=4?'objects':'trail');assert.equal(hints.used,n);assert.equal(hints.remaining,6-n);}
+test('three hints: the map first, then two trails to Jax; the map stays there to look at again',()=>{
+ const {hints}=fixture();assert.equal(MAZE_HINT_LIMIT,3);assert.equal(hints.remaining,3);assert.equal(hints.map,null);
+ for(let n=1;n<=3;n++){assert.equal(hints.next.number,n);assert.equal(hints.reveal().kind,n===1?'map':'trail');assert.equal(hints.used,n);assert.equal(hints.remaining,3-n);}
  assert.equal(hints.next,null);assert.equal(hints.reveal(),null);
- assert.equal(hints.map,'objects','an unlocked map can be looked at again (trails are not maps)');
+ assert.equal(hints.map,'map','an unlocked map can be looked at again (trails are not maps)');
 });
 
-for(const found of [mug,ball])test('one collected object keeps all remaining reveals targeted at missing objects: '+found,()=>{
- const {items,hints}=fixture();items.collect(found);assert.equal(hints.remaining,6);assert.equal(hints.next.kind,'objects');
- assert.equal(hints.reveal().number,1);assert.equal(hints.remaining,5);
-});
-
-test('collection switches the remaining shared budget to Jax without skipping hint numbers',()=>{
- const {items,hints}=fixture();hints.reveal();items.collect(ball);assert.equal(hints.next.kind,'objects');hints.reveal();
- items.collect(mug);assert.equal(hints.next.kind,'jax');assert.equal(hints.next.number,3);assert.equal(hints.remaining,4);
- for(let n=3;n<=6;n++){const hint=hints.reveal();assert.equal(hint.number,n);assert.equal(hint.kind,n<=4?'jax':'trail');}assert.equal(hints.reveal(),null);
- assert.equal(hints.map,'jax','Jax’s map, once unlocked, is the one to look at again');
-});
-
-test('both objects found before any hints leaves four Jax maps and the two trails',()=>{
+test('the keepsakes found or not, the hints are the same',()=>{
  const {items,hints}=fixture();items.collect(mug);items.collect(ball);
- assert.equal(hints.remaining,6);for(let n=1;n<=6;n++){const hint=hints.reveal();assert.equal(hint.kind,n<=4?'jax':'trail');assert.equal(hint.number,n);}
- assert.equal(hints.next,null);
+ assert.deepEqual([1,2,3].map(()=>hints.reveal().kind),['map','trail','trail']);
 });
 
-test('requests are free; saves preserve the shared budget; New Game resets it',()=>{
+test('requests are free; saves preserve the budget and the map; New Game resets it',()=>{
  const {items,hints}=fixture();const inventory=items.snapshot();for(let i=0;i<8;i++)assert.equal(hints.next.number,1);assert.equal(hints.used,0);
- hints.reveal();hints.reveal();hints.reveal();const saved=hints.snapshot(),restored=createMazeHintProgress({hasCollected:id=>items.hasCollected(id)});
+ hints.reveal();hints.reveal();const saved=hints.snapshot(),restored=createMazeHintProgress();
  const records=new Map(),slots=createSaveSlots({setItem:(k,v)=>records.set(k,v),getItem:k=>records.get(k)});slots.write(1,{room:'maze',mazeHints:saved});
- restored.restore(slots.read(1).mazeHints);assert.deepEqual(restored.snapshot(),saved);assert.equal(restored.next.number,4);assert.deepEqual(items.snapshot(),inventory);
- restored.reset();assert.equal(restored.used,0);assert.equal(restored.remaining,6);assert.equal(restored.next.number,1);
+ restored.restore(slots.read(1).mazeHints);assert.deepEqual(restored.snapshot(),saved);assert.equal(restored.next.number,3);assert.equal(restored.map,'map');assert.deepEqual(items.snapshot(),inventory);
+ restored.reset();assert.equal(restored.used,0);assert.equal(restored.remaining,3);assert.equal(restored.next.number,1);assert.equal(restored.map,null);
 });
 
-test('old saves migrate spent hints; malformed counts cannot exceed the six-use budget',()=>{
- const hints=createMazeHintProgress();hints.restore({unlocked:3,selected:3,cooldown:30});assert.equal(hints.used,3);assert.equal(hints.next.number,4);
- hints.restore({version:2,stationHints:[mug,mug,ball,'bogus'],objectMaps:999,jaxMaps:999});assert.equal(hints.used,6);assert.equal(hints.next,null);
- hints.restore({version:2,stationHints:[mug],objectMaps:1,jaxMaps:0});assert.equal(hints.used,2);assert.equal(hints.next.kind,'objects');
- hints.restore({version:3,used:999});assert.equal(hints.used,6);assert.equal(hints.map,'objects','a spent map from before maps were remembered is still there');
- hints.restore({version:4,used:3,maps:['jax','bogus']});assert.equal(hints.used,3);assert.equal(hints.map,'jax');
- for(const invalid of [undefined,null,{}, {version:3,used:-1},{version:3,used:'2'}]){hints.restore(invalid);assert.equal(hints.used,0);assert.equal(hints.next.number,1);}
+test('old saves (six hints) keep what they spent, up to three, with the map if any were spent',()=>{
+ const hints=createMazeHintProgress();hints.restore({unlocked:2,selected:3,cooldown:30});assert.equal(hints.used,2);assert.equal(hints.next.kind,'trail');assert.equal(hints.map,'map');
+ hints.restore({version:2,stationHints:[mug,mug,ball,'bogus'],objectMaps:999,jaxMaps:999});assert.equal(hints.used,3);assert.equal(hints.next,null);
+ hints.restore({version:3,used:999});assert.equal(hints.used,3);assert.equal(hints.map,'map');
+ hints.restore({version:4,used:1,maps:['jax']});assert.equal(hints.used,1);assert.equal(hints.map,'map');assert.equal(hints.next.kind,'trail');
+ for(const invalid of [undefined,null,{}, {version:5,used:-1},{version:5,used:'2'}]){hints.restore(invalid);assert.equal(hints.used,0);assert.equal(hints.next.number,1);assert.equal(hints.map,null);}
 });
 
 for(const seed of [123,187])test('seed '+seed+': map reflects all final walls, only missing objects, live player position and goal-specific targets',()=>{
@@ -84,4 +70,13 @@ test('object markers use actual placed pickup anchors, including offsets from th
  room.interactables=[{prompt:()=> 'Pick up bowling ball',anchor:{updateWorldMatrix(){},matrixWorld:{elements}}}];
  const marker=mazeHintMapData(room,{missingItems:[ball]}).markers.find(m=>m.itemId===ball);
  assert.equal(marker.x,2.5);assert.equal(marker.y,4.5);
+});
+
+test('the map hint shows Jax (where he is now) with whichever keepsakes are still to find',()=>{
+ const room=roomFor(42),player={x:0,z:0};
+ const both=mazeHintMapData(room,{mode:'map',missingItems:[mug,ball],playerPosition:player});
+ assert.deepEqual(both.markers.map(m=>m.marker).sort(),['B','E','J','M','P']);
+ const found=mazeHintMapData(room,{mode:'map',missingItems:[],playerPosition:player,jaxPosition:{x:9,z:-4.5}});
+ assert.deepEqual(found.markers.map(m=>m.marker).sort(),['E','J','P']);
+ const j=found.markers.find(m=>m.marker==='J');assert.ok(Math.abs(j.x-(9+29.25)/4.5)<1e-6&&Math.abs(j.y-(-4.5+29.25)/4.5)<1e-6,'at where he is');
 });

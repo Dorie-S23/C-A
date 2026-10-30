@@ -85,6 +85,7 @@ await page.route('**/src/main.js*', async route => {
       [endingLobbyAbstractedDialogue, 'endingLobbyAbstracted'],
       [exitDoorSavedDialogue, 'exitDoorSaved'],
       [exitDoorAbstractedDialogue, 'exitDoorAbstracted'],
+      [exitDoorTrappedDialogue, 'exitDoorTrapped'],
     ]);
     const playDialogue = dialogueUI.play.bind(dialogueUI);
     dialogueUI.play = (script, options = {}) => {
@@ -182,11 +183,11 @@ const commonDoorActions = [
 async function playCompleteVariant(variant) {
   await start(variant);
   const lobbyKey = variant === 'saved' ? 'endingLobbySaved' : 'endingLobbyAbstracted';
-  const doorKey = variant === 'saved' ? 'exitDoorSaved' : 'exitDoorAbstracted';
+  const doorKey = { saved: 'exitDoorSaved', abstracted: 'exitDoorAbstracted', trapped: 'exitDoorTrapped' }[variant];
   const lobby = await state();
   assert.equal(lobby.level3Complete, true);
   assert.equal(lobby.storyEnding, variant);
-  assert.equal(lobby.jaxFate, variant);
+  assert.equal(lobby.jaxFate, variant === 'saved' ? 'saved' : 'abstracted');
   assert.equal(lobby.endingVariant, variant === 'saved' ? 'saved' : 'bittersweet');
   assert.equal(lobby.roomLoaded, false, 'the maze is gone, nothing plays behind the slides');
   await visual(`${variant}-lobby`);
@@ -201,16 +202,18 @@ async function playCompleteVariant(variant) {
   const lobbyActions = variant === 'saved'
     ? ['walkOut', 'ribbitToJax', 'kaufmoOffers', 'caineSpots', 'caineFreezes', 'kaufmoSteps', 'jaxToKaufmo', 'run', 'montageGangle', 'montageGlance', 'montageKinger']
     : ['walkOut', 'ribbitLooks', 'grief', 'ragathaHolds', 'kaufmoStares', 'caineDrifts', 'kaufmoSteps', 'run'];
-  const doorActions = variant === 'saved'
-    ? [...commonDoorActions, 'jaxLeaves', 'pomniStops', 'pomniTurns', 'caineHat', 'pomniLeaves', 'caineAlone']
-    : [...commonDoorActions, 'pomniStops', 'pomniTurns', 'caineHat', 'pomniLeaves', 'caineAlone'];
+  const doorActions = {
+    saved: [...commonDoorActions, 'jaxLeaves', 'pomniStops', 'pomniTurns', 'caineHat', 'pomniLeaves', 'caineAlone'],
+    abstracted: [...commonDoorActions, 'pomniStops', 'pomniTurns', 'caineHat', 'pomniLeaves', 'caineAlone'],
+    trapped: ['gathered', 'hush', 'pomniLooksRound', 'doorWontOpen', 'caineAppears', 'turnBack', 'pomniLingers'],
+  }[variant];
   assert.deepEqual(done.actions, [...lobbyActions, ...doorActions]);
   assert.equal(done.storyEnding, variant);
   assert.equal(done.contextLost, false);
   assert.equal(done.slidesOpen, false, 'the slides are gone by the card');
-  assert.deepEqual(await page.evaluate(() => window.__endingReview.slides.splice(0)), [
-    ...[1, 2, 3, 4, 5].map(n => `${variant}-${n}`), 'final-1', 'final-2', 'final-3', 'final-4',
-  ]);
+  assert.deepEqual(await page.evaluate(() => window.__endingReview.slides.splice(0)), variant === 'trapped'
+    ? ['abstracted-1', 'abstracted-2', 'abstracted-3', 'abstracted-4', 'final-2', 'final-4']
+    : [...[1, 2, 3, 4, 5].map(n => `${variant}-${n}`), 'final-1', 'final-2', 'final-3', 'final-4']);
   return call('checkpoint');
 }
 
@@ -244,6 +247,12 @@ try {
   const abstractedCheckpoint = await playCompleteVariant('abstracted');
   await check('Abstracted developer button plays both parts over its own slides, without Jax', async () => {
     assert.equal(abstractedCheckpoint.story.ending, 'abstracted');
+  });
+  await dismissCard();
+
+  const trappedCheckpoint = await playCompleteVariant('trapped');
+  await check('Trapped developer button plays the door that will not open, over slides with it shut', async () => {
+    assert.equal(trappedCheckpoint.story.ending, 'trapped');
   });
   await dismissCard();
 

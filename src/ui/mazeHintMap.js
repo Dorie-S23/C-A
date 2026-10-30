@@ -21,9 +21,10 @@ export function mazeHintMapData(room, { mode = 'objects', missingItems = MAZE_HI
   const atCell=cell=>({r:cell.r,c:cell.c,x:cell.c+.5,y:cell.r+.5});
   const markers=[{marker:'E',label:'Entrance',note:'From the Circus Lobby',color:'#daa94b',...atCell(maze.start)}];
   // Where he is now, if known (he moves between hiding places), else his nook.
-  if(mode==='jax') markers.push({marker:'J',label:'Jax',note:'The Last Act',color:'#b13d83',...atCell(maze.jax),
+  // 'map' (the one map hint): the keepsakes still to find and Jax, together.
+  if(mode==='jax'||mode==='map') markers.push({marker:'J',label:'Jax',note:'The Last Act',color:'#b13d83',...atCell(maze.jax),
     ...(Number.isFinite(jaxPosition?.x)&&Number.isFinite(jaxPosition?.z)?project(room,jaxPosition):{})});
-  else for(const item of MAZE_HINT_OBJECTS.filter(item=>missingItems.includes(item.id))) {
+  if(mode!=='jax') for(const item of MAZE_HINT_OBJECTS.filter(item=>missingItems.includes(item.id))) {
     const alcove=environmentLayout.alcoves[item.alcove];
     const pickup=room.interactables?.find(entry=>entry.prompt?.()===('Pick up '+(item.id==='bowling-ball'?'bowling ball':'mug of hot chocolate')));
     let point=atCell(alcove);

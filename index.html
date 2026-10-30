@@ -1536,11 +1536,13 @@
             .title-panel-box button:hover {
                 background: rgba(255, 255, 255, 0.22);
             }
-            #title-options {
+            #title-options,
+            #level-select {
                 background: radial-gradient(ellipse at center, rgba(48, 16, 62, 0.68), rgba(8, 3, 16, 0.92));
                 backdrop-filter: blur(3px);
             }
             #title-options .title-panel-box,
+            #level-select .title-panel-box,
             #controls-card {
                 position: relative;
                 isolation: isolate;
@@ -1558,6 +1560,7 @@
                 color: #fff;
             }
             #title-options .title-panel-box::before,
+            #level-select .title-panel-box::before,
             #controls-card::before {
                 content: "";
                 position: absolute;
@@ -1573,6 +1576,7 @@
                     radial-gradient(circle 0.75rem at 50% 0, #000 97%, transparent) bottom / 1.5rem 0.75rem repeat-x;
             }
             #title-options .title-panel-box h2,
+            #level-select .title-panel-box h2,
             #controls-card h2 {
                 margin: 0;
                 color: #ffd27a;
@@ -1585,8 +1589,10 @@
             #title-options .title-panel-box label { color: #f6e7c8; }
             #title-options .title-panel-box label.title-toggle { color: #eee4f4; }
             #title-options input[type="range"] { accent-color: #ffd27a; }
-            #title-options #caine-memory-note { color: #d9cde6; opacity: 1; font-size: 0.82rem; line-height: 1.4; }
+            #title-options #caine-memory-note,
+            #title-options #reset-progress-note { color: #d9cde6; opacity: 1; font-size: 0.82rem; line-height: 1.4; }
             #title-options .title-panel-box button,
+            #level-select .title-panel-box button,
             #controls-card button {
                 position: relative;
                 width: 100%;
@@ -1601,19 +1607,29 @@
                 transition: transform 0.12s ease, background-color 0.12s ease;
             }
             #title-options .title-panel-box button:hover,
+            #level-select .title-panel-box button:not(:disabled):hover,
             #controls-card button:hover {
                 transform: translateY(-2px);
                 background: #fff4dc;
             }
             #title-options #btn-options-back,
-            #title-options #btn-new-game {
+            #title-options #btn-new-game,
+            #level-select #btn-level-select-back {
                 color: #fff3d6;
                 background: #d8283c;
                 box-shadow: 0 4px 0 #79152a;
             }
             #title-options #btn-options-back:hover,
-            #title-options #btn-new-game:hover { background: #ec3b4f; }
+            #title-options #btn-new-game:hover,
+            #level-select #btn-level-select-back:hover { background: #ec3b4f; }
+            #level-select .title-panel-box button:disabled {
+                opacity: 0.45;
+                cursor: not-allowed;
+                transform: none;
+                box-shadow: 0 4px 0 #a87523;
+            }
             #title-options button:focus-visible,
+            #level-select button:focus-visible,
             #controls-card button:focus-visible {
                 outline: 3px solid #ffd27a;
                 outline-offset: 3px;
@@ -2129,6 +2145,7 @@
                     <button data-jump="level3LastAct">&#9654; Jax&rsquo;s last act</button>
                     <button id="btn-ending-saved">&#127916; Ending (Jax saved)</button>
                     <button id="btn-ending-abstracted">&#127916; Ending (Jax abstracted)</button>
+                    <button id="btn-ending-trapped">&#127916; Ending (trapped: nobody leaves)</button>
                 </section>
             </div>
             <div id="room-picker" hidden>
@@ -2221,13 +2238,24 @@
                     <input id="dev-skip-cutscenes" type="checkbox" />
                     <span>Dev mode: skip cutscenes and dialogue</span>
                 </label>
-                <button id="btn-new-game">New Game</button>
+                <button id="btn-new-game">Select Level</button>
                 <button id="btn-load-game">Load Game</button>
+                <p id="reset-progress-note">Erases every save slot and unlocked level in this browser. Can&rsquo;t be undone.</p>
+                <button id="btn-reset-progress" type="button">Reset Progress</button>
                 <button id="btn-replay-intro">&#9654; Replay intro</button>
                 <button id="btn-room-previews">Room previews</button>
                 <button id="btn-options-credits">Credits</button>
                 <button id="btn-options-controls">Controls</button>
                 <button id="btn-options-back">Back</button>
+            </div>
+        </div>
+        <div id="level-select" class="title-panel" hidden>
+            <div class="title-panel-box">
+                <h2>Select a Level</h2>
+                <button id="btn-level-1" type="button">Level 1</button>
+                <button id="btn-level-2" type="button">Level 2</button>
+                <button id="btn-level-3" type="button">Level 3</button>
+                <button id="btn-level-select-back" type="button">Back</button>
             </div>
         </div>
         <div id="save-slots" class="title-panel" hidden>
@@ -2446,6 +2474,20 @@
                                 <span class="tag">Rigged with Adobe Mixamo</span>
                             </span>
                         </li>
+                        <li class="credit credits-rise" data-icon="caine">
+                            <span class="credit-what">Caine</span>
+                            <span class="credit-who">
+                                Based on
+                                <a href="https://sketchfab.com/3d-models/caine-the-amazing-digital-circus-ed7443b225ff4422a5133f45090d3e84" target="_blank" rel="noopener">"Caine - The Amazing Digital Circus"</a>
+                            </span>
+                        </li>
+                        <li class="credit credits-rise" data-icon="ragatha">
+                            <span class="credit-what">Ragatha</span>
+                            <span class="credit-who">
+                                Based on
+                                <a href="https://sketchfab.com/3d-models/ragatha-the-amazing-digital-circus-b38bdd92d8124161939c2367f909681c" target="_blank" rel="noopener">"Ragatha - The Amazing Digital Circus"</a>
+                            </span>
+                        </li>
                         <li class="credit credits-rise" data-icon="ribbit">
                             <span class="credit-what">Ribbit</span>
                             <span class="credit-who">
@@ -2477,29 +2519,47 @@
                                 <a href="https://sketchfab.com/3d-models/jax-from-tadc-e9b38c30e4c742ca97daf5cf8e110f61" target="_blank" rel="noopener">"Jax From Tadc"</a>
                                 by
                                 <a href="https://sketchfab.com/ImOkmanChill2212" target="_blank" rel="noopener">OkManShitLol</a>
+                                ; additional source:
+                                <a href="https://sketchfab.com/3d-models/jax-the-amazing-digital-circus-universexp-518c31b2299c4f6595642a7c00f82bf8" target="_blank" rel="noopener">"Jax the Amazing Digital Circus"</a>
                             </span>
                             <span class="credit-tags">
-                                <a class="tag tag-cc" href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>
+                                <a class="tag tag-cc" href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0 (OkManShitLol model)</a>
+                            </span>
+                        </li>
+                        <li class="credit credits-rise">
+                            <span class="credit-what">C&amp;A photos and 2D character icons</span>
+                            <span class="credit-who">
+                                <a href="https://tadc.fandom.com/wiki/Category:Galleries" target="_blank" rel="noopener">The Amazing Digital Circus galleries</a>
                             </span>
                         </li>
                     </ul>
                 </section>
 
                 <section class="credits-act">
-                    <h3 class="credits-rise"><span>Act III</span> The Sets</h3>
+                    <h3 class="credits-rise"><span>Act III</span> The Sets &amp; Props</h3>
                     <ul class="credits-grid">
                         <li class="credit credits-rise">
-                            <span class="credit-what">Pomni's Room</span>
-                            <span class="credit-who">3D model</span>
+                            <span class="credit-what">Circus, rooms and title screen</span>
+                            <span class="credit-who">
+                                TADC World Pack by
+                                <a href="https://ko-fi.com/blueambiance/shop/tadcworldpack" target="_blank" rel="noopener">BlueAmbiance</a>
+                            </span>
                             <span class="credit-tags">
-                                <span class="tag tag-todo">TODO: creator, source and licence</span>
+                                <a class="tag" href="https://docs.google.com/document/d/1zo9XzH54b-cslrEggPG5oX6ikLOvPQ414tqaF2HJNMo/edit?pli=1&amp;tab=t.0" target="_blank" rel="noopener">Asset documentation</a>
                             </span>
                         </li>
                         <li class="credit credits-rise">
-                            <span class="credit-what">Circus Lobby V10</span>
-                            <span class="credit-who">Map model</span>
-                            <span class="credit-tags">
-                                <span class="tag tag-todo">TODO: creator, source and licence</span>
+                            <span class="credit-what">Gloinks</span>
+                            <span class="credit-who">
+                                Based on
+                                <a href="https://sketchfab.com/3d-models/tadc-gloinks-f81c5a5f3f3943aa8175da33400b6e4d" target="_blank" rel="noopener">"TADC Gloinks"</a>
+                            </span>
+                        </li>
+                        <li class="credit credits-rise">
+                            <span class="credit-what">Abstracted Kaufmo</span>
+                            <span class="credit-who">
+                                Based on
+                                <a href="https://sketchfab.com/3d-models/tadcabstracted-kaufmo-public-texture-fix-37a607cc949344c4889a36f9a36845af" target="_blank" rel="noopener">"TADC Abstracted Kaufmo (public texture fix)"</a>
                             </span>
                         </li>
                         <li class="credit credits-rise">
@@ -2558,6 +2618,10 @@
                                 <span class="tag">Free plan, non-commercial</span>
                             </span>
                         </li>
+                        <li class="credit credits-rise">
+                            <span class="credit-what">Background music</span>
+                            <span class="credit-who">Gooseworx</span>
+                        </li>
                     </ul>
                 </section>
 
@@ -2587,7 +2651,8 @@
 
                 <footer class="credits-footer credits-rise">
                     <p>
-                        Characters from <em>The Amazing Digital Circus</em> &copy; Glitch Productions.
+                        Inspired by <em>The Amazing Digital Circus</em>
+                        (<a href="https://www.youtube.com/show/VLPLHovnlOusNLgvAbnxluXCVB3KLj8e4QB-?sbp=KgtId0FQTGtfc1Ezd0AB" target="_blank" rel="noopener">TV series</a>), &copy; Glitch Productions.
                         A non-commercial fan project, not affiliated with or endorsed by Glitch Productions.
                     </p>
                     <p class="credits-thanks">Thanks for playing!</p>

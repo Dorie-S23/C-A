@@ -72,8 +72,10 @@ const skipsIntro = (event) => !NOT_A_SKIP.test(event.key ?? '') && !NOT_A_SKIP.t
  * The animated title screen: plays the intro from the GLB, then holds with
  * PLAY / OPTIONS / QUIT live (mouse hover + click, or arrow keys + Enter);
  * Kinger's glove points at the selected button. Clicking or pressing a key
- * during the intro skips it. Choosing PLAY plays the rest of the animation
- * — the glove's click and the fly-in to the tent — before reporting it.
+ * during the intro skips it. Choosing a button reports it (onAction) right
+ * away; the rest of the timeline — the glove's click and the fly-in to the
+ * tent — plays separately, on demand, via playOutro (for PLAY, once the
+ * caller's own menu settles on what to play).
  *
  * Owns its own scene and camera; main.js calls render() while `active`.
  *
@@ -278,20 +280,28 @@ export function createTitleScreen({ renderer, onAction, onIntroStart, onMenu, is
     gloveHopTime = GLOVE_HOP_TIME * (0.7 + 0.3 * hops);
   }
 
+  let onOutroDone = null;
+
   function activate(index) {
     const button = buttons[index];
     if (!button) return;
-    if (button.action === 'play') {
-      // The rest of the timeline is the glove clicking PLAY and the camera
-      // flying into the tent; report PLAY once it's over.
-      select(0);
-      // Hand the glove back to the timeline upright and on PLAY.
-      if (glove) glove.quaternion.copy(gloveRestQuaternion);
-      state = 'outro';
-      measureDoorway();
-      return;
-    }
     onAction(button.action);
+  }
+
+  /**
+   * The rest of the timeline — the glove clicking PLAY and the camera flying
+   * into the tent — on demand rather than tied to the PLAY click itself, so
+   * a caller can show its own menu (which level to play) first and only
+   * commit to the flight once that's chosen. `onDone` runs once it's over.
+   */
+  function playOutro(onDone) {
+    if (state !== 'menu') return;
+    select(0);
+    // Hand the glove back to the timeline upright and on PLAY.
+    if (glove) glove.quaternion.copy(gloveRestQuaternion);
+    state = 'outro';
+    measureDoorway();
+    onOutroDone = onDone;
   }
 
   function buttonAt(clientX, clientY) {
@@ -427,7 +437,9 @@ export function createTitleScreen({ renderer, onAction, onIntroStart, onMenu, is
       if (time >= END_TIME) {
         state = 'done';
         setFade(1); // finish in the dark whatever the timing
-        onAction('play');
+        const done = onOutroDone;
+        onOutroDone = null;
+        done?.();
       }
       return;
     }
@@ -550,6 +562,7 @@ export function createTitleScreen({ renderer, onAction, onIntroStart, onMenu, is
     ready,
     resize,
     update,
+    playOutro,
     get active() {
       return active;
     },

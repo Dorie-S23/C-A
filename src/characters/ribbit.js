@@ -33,6 +33,13 @@ const HEAD_DROP_PER_LEVEL = 0.1;  // radians of extra head bow
 const TREMBLE_PER_LEVEL = 0.012;  // radians of head shake amplitude
 const TREMBLE_SPEED = 28;         // radians per second
 
+// Asleep, the hunch/trembling above is zeroed out (it's written for an
+// upright body), which otherwise leaves her perfectly still — reading as
+// unconscious rather than resting. A slow, shallow spine curl, as if
+// breathing, while the sleeping clip is in effect.
+const SLEEP_BREATHE_HZ = 0.22;
+const SLEEP_BREATHE_ANGLE = THREE.MathUtils.degToRad(1.6);
+
 // The sleeping clip lies her along her own -X (head) to +X (feet) on the
 // floor. Turned a quarter, her head points along the group's -Z and she
 // faces -X, so a caller places the group where her hips go on the
@@ -195,6 +202,10 @@ export function loadRibbit() {
       bendBone(head, body, SIDEWAYS, HEAD_DROP_PER_LEVEL * shaken);
       if (shaken > 0.01) {
         bendBone(head, body, UP, Math.sin(time * TREMBLE_SPEED) * TREMBLE_PER_LEVEL * shaken);
+      }
+      const asleep = 1 - upright;
+      if (asleep > 0.01) {
+        bendBone(spine, body, SIDEWAYS, Math.sin(time * SLEEP_BREATHE_HZ * Math.PI * 2) * SLEEP_BREATHE_ANGLE * asleep);
       }
 
       if (targetYaw !== null && !(moving && move.toGroup)) {

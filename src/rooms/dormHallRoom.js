@@ -54,7 +54,7 @@ const CONNECTED_ROOMS = {};
 // Rooms whose door opens onto the real room, which main.js loads in the
 // background, shows behind the open door and swaps in as Pomni walks
 // through (see walkIntoRoom there): no portal, no loading screen.
-const WALK_IN_ROOMS = new Set(['pomni', 'kaufmo']);
+const WALK_IN_ROOMS = new Set(['pomni', 'kaufmo', 'ribbit']);
 // How close (metres from the doorway) a connected room keeps its mirrors
 // reflecting and its shadows updating while Pomni's out in the hall with
 // the door open. Each of those re-renders the whole scene, hall and all,

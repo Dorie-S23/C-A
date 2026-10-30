@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { createObjectiveController } from '../src/game/objectives.js';
 import { createStoryProgress, wayOutVariantForJaxFate } from '../src/game/storyProgress.js';
 import { parseSaveFile, saveFileContents } from '../src/game/saveGame.js';
+import { endingFor, resetEscapeThreshold, setLevelPoints } from '../src/state/escapeThreshold.js';
 
 function fixture() {
   const objectives = createObjectiveController();
@@ -79,4 +80,30 @@ test('legacy completed-story saves restore the live abstracted ending route', ()
   assert.equal(story.ending, 'abstracted');
   assert.equal(story.jaxFate, 'abstracted');
   assert.equal(story.endingVariant, 'bittersweet');
+});
+
+test('Jax decides first; without him, Gate 1 decides whether anyone leaves', () => {
+  resetEscapeThreshold();
+  setLevelPoints('level1', 0); setLevelPoints('level2', 3);
+  assert.equal(endingFor(true), 'saved');
+  assert.equal(endingFor(false), 'trapped', '3 of 9 from Levels 1 and 2: the door stays shut');
+  setLevelPoints('level1', 2); setLevelPoints('level2', 4);
+  assert.equal(endingFor(false), 'abstracted', '6 of 9: the rest still leave');
+  resetEscapeThreshold();
+});
+
+test('the trapped ending loses Jax, and survives a save file', () => {
+  const original = fixture();
+  assert.equal(original.story.finishLevel3('trapped'), true);
+  assert.equal(original.story.ending, 'trapped');
+  assert.equal(original.story.jaxFate, 'abstracted');
+  assert.equal(original.story.endingVariant, 'bittersweet');
+  const file = parseSaveFile(saveFileContents({
+    room: 'maze', objectives: original.objectives.snapshot(), story: original.story.snapshot(),
+  }));
+  const restored = fixture();
+  restored.objectives.restore(file.objectives);
+  restored.story.restore(file.story);
+  assert.equal(restored.story.ending, 'trapped');
+  assert.equal(restored.story.jaxFate, 'abstracted');
 });
