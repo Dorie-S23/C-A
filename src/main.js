@@ -2146,12 +2146,11 @@ function updateMazeSearch(deltaSeconds) {
     atJax: canReachMazeJax(),
   });
   if (result === 'reached') {
+    // The real conversation (mazeEncounter/updateMazeFinalEncounter) starts
+    // on its own from proximity + line of sight — no hint needed here, and
+    // the persistent objective HUD (mazeObjective() above) already says
+    // "Approach Jax with a clear view to begin the conversation."
     foundJax = true;
-    // His own reaction (the real payoff scene/dialogue) is still pending
-    // the team's review — see dialogues.js's level2PayoffDialogue beat
-    // that sent her in here. This is just a placeholder hint in the
-    // meantime, not a stand-in for that scene.
-    showHint('Jax reached with both keepsakes. Approach his stage to begin the conversation.', 5000);
   } else if (result === 'expired') {
     restartMazeSearch();
   }
