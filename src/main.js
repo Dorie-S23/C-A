@@ -735,6 +735,7 @@ const titleMusicToggle = document.getElementById('title-music-toggle');
 function updateTitleMusicToggle() {
   const muted = openingAudio.mainThemeMuted;
   titleMusicToggle.classList.toggle('is-muted', muted);
+  titleScreen.setMusicMuted(muted);
   titleMusicToggle.setAttribute('aria-pressed', String(muted));
   titleMusicToggle.setAttribute('aria-label', `${muted ? 'Unmute' : 'Mute'} title screen music`);
   titleMusicToggle.title = `${muted ? 'Unmute' : 'Mute'} title screen music`;
@@ -743,7 +744,16 @@ titleMusicToggle.addEventListener('click', event => {
   event.stopPropagation();
   openingAudio.setMainThemeMuted(!openingAudio.mainThemeMuted);
   updateTitleMusicToggle();
+  titleScreen.pressMusicButton();
 });
+// Focused DOM controls must not also activate the title's selected 3D button.
+titleMusicToggle.addEventListener('keydown', event => {
+  if (event.code === 'Space' || event.code === 'Enter') event.stopPropagation();
+});
+titleMusicToggle.addEventListener('pointerenter',()=>titleScreen.setMusicHovered(true));
+titleMusicToggle.addEventListener('pointerleave',()=>titleScreen.setMusicHovered(false));
+titleMusicToggle.addEventListener('blur',()=>titleScreen.setMusicHovered(false));
+titleMusicToggle.addEventListener('focus',()=>titleScreen.setMusicHovered(true));
 titleMusicToggle.addEventListener('pointermove', event => {
   titleScreen.pointGloveAt(event.clientX, event.clientY);
 });
@@ -6040,6 +6050,7 @@ function animate() {
   const showTitleMusicToggle = titleScreen.menuReady;
   titleMusicToggle.hidden = !showTitleMusicToggle;
   titleMusicToggle.classList.toggle('is-visible', showTitleMusicToggle);
+  if(showTitleMusicToggle)titleScreen.setMusicButtonBounds(titleMusicToggle.getBoundingClientRect());
   requestAnimationFrame(animate);
 }
 

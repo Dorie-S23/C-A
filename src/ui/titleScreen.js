@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createTitleMusicButton } from './titleMusicButton.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 // Exported from "TADC Intro Animation V2.blend" by
@@ -152,6 +153,9 @@ export function createTitleScreen({ renderer, onAction, onIntroStart, onMenu, is
   const fingertipOffset = new THREE.Vector3(); // glove origin minus fingertip, in its plane
   const glovePlane = new THREE.Plane();
   let active = false;
+  let musicButton = null, musicMuted = false, musicHovered = false;
+  let musicBounds = null;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   const ready = new GLTFLoader().loadAsync(TITLE_URL).then((gltf) => {
     scene.add(gltf.scene);
@@ -184,6 +188,12 @@ export function createTitleScreen({ renderer, onAction, onIntroStart, onMenu, is
       offset: new THREE.Vector3(), // from PLAY's centre to this button's, for the glove
       hover: 0,
     })).filter((button) => button.block);
+    if (buttons[0]?.block.material && buttons[0]?.label.material) {
+      musicButton = createTitleMusicButton(buttons[0].block.material, buttons[0].label.material);
+      musicButton.resize(viewport.width, viewport.height);
+      musicButton.setMuted(musicMuted);musicButton.setHovered(musicHovered);
+      if(musicBounds)musicButton.setBounds(musicBounds,viewport.height);
+    }
     glove = gltf.scene.getObjectByName(GLOVE);
     // Also on its own layer, for the pass that keeps it over the buttons.
     glove?.traverse((part) => part.layers.enable(GLOVE_LAYER));
@@ -400,6 +410,8 @@ export function createTitleScreen({ renderer, onAction, onIntroStart, onMenu, is
    */
   function resize(width, height) {
     viewport = { width, height };
+    musicButton?.resize(width,height);
+    if(musicBounds)musicButton?.setBounds(musicBounds,height);
     camera.aspect = width / height;
     const halfHeight = Math.tan(THREE.MathUtils.degToRad(authoredFov / 2));
     const neededHalfHeight = (halfHeight * authoredAspect) / camera.aspect;
@@ -445,6 +457,7 @@ export function createTitleScreen({ renderer, onAction, onIntroStart, onMenu, is
     }
 
     if (state !== 'menu') return;
+    musicButton?.update(delta,reducedMotion.matches);
     const ease = 1 - Math.exp(-HOVER_EASE * delta);
     buttons.forEach((button, index) => {
       button.hover += ((index === selected ? 1 : 0) - button.hover) * ease;
@@ -570,6 +583,10 @@ export function createTitleScreen({ renderer, onAction, onIntroStart, onMenu, is
       return active && state === 'menu';
     },
     pointGloveAt,
+    setMusicMuted(value){musicMuted=value;musicButton?.setMuted(value);},
+    setMusicHovered(value){musicHovered=value;musicButton?.setHovered(value);},
+    pressMusicButton(){musicButton?.press();},
+    setMusicButtonBounds(rect){musicBounds=rect;musicButton?.setBounds(rect,viewport.height);},
 
     /**
      * Renders with the .blend's view transform (Khronos PBR Neutral), then
@@ -586,6 +603,10 @@ export function createTitleScreen({ renderer, onAction, onIntroStart, onMenu, is
       // pass with the depth cleared draws it (and the fade) on top, while
       // its fingers still hide each other properly.
       renderer.autoClear = false;
+      // The circular music control uses PLAY's material, beneath the glove.
+      if(state==='menu'&&musicButton){
+        renderer.clearDepth();renderer.render(musicButton.scene,musicButton.camera);
+      }
       renderer.clearDepth();
       camera.layers.set(GLOVE_LAYER);
       renderer.render(scene, camera);
