@@ -28,7 +28,7 @@ import { createMusic, DEFAULT_MUSIC_VOLUME } from './audio/music.js';
 import { createTitleScreen } from './ui/titleScreen.js';
 import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold } from './state/escapeThreshold.js';
 import { createStoryProgress } from './game/storyProgress.js';
-import { createSaveSlots } from './game/saveGame.js';
+import { createSaveSlots, parseSaveFile, saveFileContents, saveFileName } from './game/saveGame.js';
 import { createLoadingBackgrounds } from './ui/loadingBackgrounds.js';
 import { createLoadingSprites } from './ui/loadingSprites.js';
 import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.js';
@@ -242,9 +242,25 @@ const retryMemoryCaption = document.getElementById('caine-retry-caption');
 const btnTitle = document.getElementById('btn-title');
 const crosshair = document.getElementById('crosshair');
 const hint = document.getElementById('hint');
+const hintText = document.getElementById('hint-text');
+const hintPortrait = document.getElementById('hint-portrait');
+const hintKicker = document.getElementById('hint-kicker');
+// Written out in full so the packager (tools/package.mjs) finds each one.
+const CAINE_HINT_IMAGES = [
+  './models/objects/caine%20hint/images.jpg',
+  './models/objects/caine%20hint/cd0a176a46b50c1866ca16e094b4f173.jpg',
+  './models/objects/caine%20hint/aaa8d0ce4ae5942a836f3135c873cac0.jpg',
+  './models/objects/caine%20hint/93bf485eb3201513f1c061b4679315c0.jpg',
+  './models/objects/caine%20hint/79e9ddff7c4b617b721e3cb5a73d4e81.jpg',
+  './models/objects/caine%20hint/33ffe84e2d0434aa12849e456528e8b3.jpg',
+  './models/objects/caine%20hint/2a0d1d8f0192690e4e155e1f94738586.jpg',
+  './models/objects/caine%20hint/261ccc01ee6dec910f904ffed42b06c3.jpg',
+];
+let nextCaineHintImage = 0;
 const interactPrompt = document.getElementById('prompt');
 const cinematicSkip = document.getElementById('cinematic-skip');
 const levelCompletePanel = document.getElementById('level-complete-panel');
+const levelCompleteCaine = document.getElementById('level-complete-caine');
 const levelCompleteTitle = document.getElementById('level-complete-title');
 const levelCompleteSubtitle = document.getElementById('level-complete-subtitle');
 const btnLevelCompleteContinue = document.getElementById('btn-level-complete-continue');
@@ -270,7 +286,7 @@ const minimap = createMinimap();
 const objectives = createObjectiveController();
 const objectiveHUD = createObjectiveHUD({ objectives, root: document.getElementById('objective-hud') });
 const controlsTutorial = createControlsTutorial();
-const tutorialHUD = createTutorialHUD({ tutorial: controlsTutorial, root: document.getElementById('tutorial-hud') });
+const tutorialHUD = createTutorialHUD({ tutorial: controlsTutorial, root: document.getElementById('tutorial-hud'), portraits: CAINE_HINT_IMAGES });
 let preLevel1Session = false;
 let storySessionId = 0;
 let morningDialoguePending = false;
@@ -324,8 +340,19 @@ function fastForwardCutscenes() {
   if (cinematic?.active && cinematic.skippable) cinematic.skip();
 }
 
-function showHint(text, durationMs = 3000) {
-  hint.textContent = text;
+function showHint(text, durationMs = 3000, { caine = false } = {}) {
+  hintText.textContent = text;
+  hint.classList.toggle('hint--caine', caine);
+  hintKicker.hidden = !caine;
+  hintPortrait.hidden = !caine;
+  if (caine) {
+    hintPortrait.src = CAINE_HINT_IMAGES[nextCaineHintImage % CAINE_HINT_IMAGES.length];
+    hintPortrait.alt = 'Caine';
+    nextCaineHintImage++;
+  } else {
+    hintPortrait.removeAttribute('src');
+    hintPortrait.alt = '';
+  }
   hint.classList.add('visible');
   clearTimeout(hintTimeout);
   hintTimeout = setTimeout(() => hint.classList.remove('visible'), durationMs);
@@ -497,8 +524,27 @@ const musicVolumeInput = document.getElementById('music-volume');
 const musicVolumeValue = document.getElementById('music-volume-value');
 const MUSIC_VOLUME_KEY = 'tadc.musicVolume';
 
+// A page opened in a background tab waits until it's actually viewed.
+let titleThemeWaiting = false;
+function startTitleTheme() {
+  if (document.hidden) {
+    if (titleThemeWaiting) return;
+    titleThemeWaiting = true;
+    document.addEventListener('visibilitychange', () => {
+      titleThemeWaiting = false;
+      if (titleScreen.active) startTitleTheme();
+    }, { once: true });
+    return;
+  }
+  openingAudio.unlock();
+  openingAudio.setMainThemeVolume(0.5);
+  openingAudio.playMainTheme();
+}
+
 const titleScreen = createTitleScreen({
   renderer,
+  onIntroStart: startTitleTheme,
+  onMenu: startTitleTheme,
   // Keys shouldn't drive the menu hidden behind an open panel.
   isBlocked: () => !titleOptions.hidden || !titleQuit.hidden || !creditsPanel.classList.contains('hidden'),
   onAction: (action) => {
@@ -514,6 +560,23 @@ const titleScreen = createTitleScreen({
     }
   },
 });
+const titleMusicToggle = document.getElementById('title-music-toggle');
+function updateTitleMusicToggle() {
+  const muted = openingAudio.mainThemeMuted;
+  titleMusicToggle.classList.toggle('is-muted', muted);
+  titleMusicToggle.setAttribute('aria-pressed', String(muted));
+  titleMusicToggle.setAttribute('aria-label', `${muted ? 'Unmute' : 'Mute'} title screen music`);
+  titleMusicToggle.title = `${muted ? 'Unmute' : 'Mute'} title screen music`;
+}
+titleMusicToggle.addEventListener('click', event => {
+  event.stopPropagation();
+  openingAudio.setMainThemeMuted(!openingAudio.mainThemeMuted);
+  updateTitleMusicToggle();
+});
+titleMusicToggle.addEventListener('pointermove', event => {
+  titleScreen.pointGloveAt(event.clientX, event.clientY);
+});
+updateTitleMusicToggle();
 titleScreen.resize(window.innerWidth, window.innerHeight);
 
 // Multiplies MOUSE_SENSITIVITY in the mouse-look handler.
@@ -713,6 +776,9 @@ titleScreen.ready
 
 /** The room/dialogue picker the PLAY button leads to. */
 function showRoomPicker() {
+  // The title music is the title screen's: it fades out here (and starts
+  // again if they go back to it, as its menu starts it).
+  openingAudio.stopMainTheme();
   overlay.classList.remove('hidden');
   overlay.classList.remove('loading');
   overlayTitle.textContent = 'Jump in';
@@ -732,6 +798,9 @@ function showRoomPicker() {
  * hatch below, which can fire before any room's ever been picked).
  */
 function returnToHome({ toRoomPicker = false } = {}) {
+  // Only restart the theme after the story faded it out; backing out of the
+  // menus (Options -> Room previews -> Title screen) keeps it playing.
+  if (openingAudio.mainThemeVolume < 0.5) openingAudio.stopMainTheme();
   pendingJumpStart = null;
   mazeHints.hide();
   mazeItemsCounter.hidden = true;
@@ -812,6 +881,7 @@ function startNewGame() {
   resetMazeAttempt();
   resetObjectiveSession(true);
   openingAudio.unlock();
+  openingAudio.setMainThemeVolume(0.5);
   if (isLocked) document.exitPointerLock();
   titleScreen.hide();
   openingCompleted = false;
@@ -849,7 +919,6 @@ function playMorningDialogue(finish) {
     onCancel: () => {
       if (!valid()) return;
       morningDialoguePending = true;
-      showHint('Morning conversation interrupted. Press T in Pomni\'s room to retry.', 8000);
       finish();
     },
   };
@@ -896,7 +965,10 @@ function pauseOpening(value) {
   overlayTitle.textContent = 'Paused';
   overlaySubtitle.textContent = pauseCaption.textContent = 'Resume the opening or return to the title screen';
   pauseMenu.hidden = !value;
-  if (value) showPauseMemory();
+  if (value) {
+    openingAudio.playIntermissionCue();
+    showPauseMemory();
+  }
   else pauseMemoryJoke.hidden = true;
 }
 
@@ -941,7 +1013,6 @@ function completeOpening() {
   const token = loadToken;
   if (currentRoom?.userData.openingInvitationCancelled) {
     resumeOpeningGameplay(token);
-    showHint('Morning conversation interrupted. Press T to continue.', 8000);
     return;
   }
   dialogueUI.play(POMNI_INVITATION, {
@@ -970,7 +1041,6 @@ function finishOpeningInvitation(token, cancelled) {
   }
   if (cancelled) {
     morningDialoguePending = true;
-    showHint('Morning conversation interrupted. Press T to continue.', 8000);
   }
   // The active bedroom entrance claims this hook; cancellation resumes play.
   if (!cancelled) {
@@ -1354,6 +1424,8 @@ function attachStoryInteractions(room, roomKey, token) {
     prompt: () => 'Knock on Ribbit’s door',
     interact() {
       if (!current() || objectives.active?.id !== 'find-ribbit') return;
+      ambience.setRoom('ribbit');
+      ambience.setRoomGain(0.5);
       runLevel1(missionApi, { hall: room, story: true, onComplete: points => storyProgress.finishRibbit(points) });
     },
   });
@@ -1869,6 +1941,9 @@ const savePanel = document.getElementById('save-slots');
 const savePanelTitle = document.getElementById('save-slots-title');
 const savePanelNote = document.getElementById('save-slots-note');
 const saveSlotList = document.getElementById('save-slot-list');
+const btnSaveFile = document.getElementById('btn-save-file');
+const btnLoadFile = document.getElementById('btn-load-file');
+const saveFileInput = document.getElementById('save-file-input');
 let savePanelMode = 'save';
 let savePanelFromTitle = false;
 
@@ -1887,6 +1962,9 @@ function renderSaveSlots(note) {
       ? `Saves your last checkpoint (${checkpoint.objectiveTitle ?? ROOM_NAMES[checkpoint.room]}).`
       : 'Nothing to save yet: the story saves from the end of the morning on.')
     : 'Pick a save to continue from.');
+  btnSaveFile.hidden = !saving;
+  btnSaveFile.disabled = !checkpoint;
+  btnLoadFile.hidden = saving;
   saveSlotList.replaceChildren(...saveSlots.list().map((data, i) => {
     const slot = i + 1;
     const button = document.createElement('button');
@@ -1917,6 +1995,52 @@ function renderSaveSlots(note) {
     return button;
   }));
 }
+
+// Save files: the same checkpoint as a .json on disk, for a backup or
+// another computer. Chrome and Edge ask where to put it; other browsers
+// download it.
+btnSaveFile.addEventListener('click', async (event) => {
+  event.stopPropagation();
+  if (!checkpoint) return;
+  const text = saveFileContents(checkpoint);
+  const name = saveFileName(checkpoint);
+  try {
+    let saved = name;
+    if (window.showSaveFilePicker) {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: name, types: [{ description: 'TADC save', accept: { 'application/json': ['.json'] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(text);
+      await writable.close();
+      saved = handle.name;
+    } else {
+      const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+      Object.assign(document.createElement('a'), { href: url, download: name }).click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    renderSaveSlots(`Saved to ${saved}.`);
+  } catch (error) {
+    if (error?.name === 'AbortError') return; // closed the dialog without saving
+    console.warn('Save to file failed', error);
+    renderSaveSlots('Couldn’t save the file.');
+  }
+});
+btnLoadFile.addEventListener('click', (event) => {
+  event.stopPropagation();
+  saveFileInput.value = ''; // picking the same file twice still loads it
+  saveFileInput.click();
+});
+saveFileInput.addEventListener('click', (event) => event.stopPropagation());
+saveFileInput.addEventListener('change', async () => {
+  const file = saveFileInput.files?.[0];
+  if (!file) return;
+  const data = parseSaveFile(await file.text());
+  if (!data) { renderSaveSlots('That file isn’t a save from this game.'); return; }
+  if (data.incompatible) { renderSaveSlots('That save is from another version of the game, so it can’t be loaded.'); return; }
+  savePanel.hidden = true;
+  loadGame(data);
+});
 
 function openSavePanel(mode, { fromTitle = false } = {}) {
   savePanelMode = mode;
@@ -2162,15 +2286,15 @@ function photoHintsActive() {
 function givePhotoHint() {
   if (!photoHintsActive()) return;
   if (currentRoomKey !== 'tadc') {
-    showHint('The photos are hidden around the Circus Lobby.', 4000);
+    showHint('The photos are hidden around the Circus Lobby.', 4000, { caine: true });
     return;
   }
   if (hintsLeft <= 0) {
-    showHint('No hints left.', 2500);
+    showHint('No hints left.', 2500, { caine: true });
     return;
   }
   if (hintCooldown > 0) {
-    showHint(`Next hint in ${Math.ceil(hintCooldown)}s.`, 2500);
+    showHint(`Next hint in ${Math.ceil(hintCooldown)}s.`, 2500, { caine: true });
     return;
   }
   const photos = currentRoomInfo?.photoPositions?.() ?? [];
@@ -2180,7 +2304,7 @@ function givePhotoHint() {
   const nearest = photos.reduce((best, photo) => (distance(photo) < distance(best) ? photo : best));
   const landmark = nearestLandmark(nearest.x, nearest.z, HINT_LANDMARK_REACH);
   const where = landmark ? ` by the ${landmark.label}` : '';
-  showHint(`A photo is${where}, ${Math.round(distance(nearest))} m ${directionTo(nearest.x - x, nearest.z - z)}.`, 6000);
+  showHint(`A photo is${where}, ${Math.round(distance(nearest))} m ${directionTo(nearest.x - x, nearest.z - z)}.`, 6000, { caine: true });
   minimap.ping(nearest.x, nearest.z, 'Photo', HINT_PING_MS);
   hintCooldown = HINT_COOLDOWN_SECONDS;
   hintsLeft--;
@@ -2345,10 +2469,15 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
   player.visible = false;
   overlayTitle.textContent = 'Loading…';
   overlaySubtitle.textContent = 'Fetching room model (0%)';
+  let titleMusicLoadProgress = 0;
 
   return Promise.all([
     loadRoom((ratio, stage) => {
       if (myToken !== loadToken) return; // a newer selectRoom()/returnToHome() superseded this one
+      if (roomKey === 'pomni' && openingMode === 'play') {
+        titleMusicLoadProgress = Math.max(titleMusicLoadProgress, Math.min(1, ratio));
+        openingAudio.setMainThemeVolume(0.5 * (1 - titleMusicLoadProgress));
+      }
       overlaySubtitle.textContent = `Fetching ${stage === 'opening' ? 'opening animation' : 'room model'} (${Math.round(ratio * 100)}%)`;
     }, roomLoadOptions(roomKey, { from, preview, openingMode })),
     pomniReady,
@@ -2439,8 +2568,14 @@ function applyLoadedRoom({
     });
     foundJax=mazeItems.jaxComplete;
   }
-  ambience.setRoom(roomKey);
-  music.setRoom(roomKey);
+  // Keep XDDCC playing through the opening Pomni/Dorm Hall story beats;
+  // entering Ribbit's room starts Still Friends for her cutscene.
+  const ambienceKey = preLevel1Session && !storyProgress.ribbitComplete
+    && (roomKey === 'pomni' || roomKey === 'dorm') ? 'pomni' : roomKey;
+  ambience.setRoomGain(1);
+  ambience.setRoom(ambienceKey);
+  // Those two songs are the room's music: no synthesized score over them.
+  music.setRoom(ambienceKey === 'pomni' || ambienceKey === 'ribbit' ? null : roomKey);
   controlsTutorial.enterRoom(roomKey);
   player.visible = true;
   scene.add(group);
@@ -2591,7 +2726,6 @@ function openCredits() {
   creditsPanel.classList.remove('hidden'); // display:none -> shown replays the entrance
   document.getElementById('credits-close').focus({ preventScroll: true });
 }
-document.getElementById('credits-btn').addEventListener('click', openCredits);
 document.getElementById('credits-close').addEventListener('click', () => {
   creditsPanel.classList.add('hidden');
 });
@@ -2601,7 +2735,7 @@ document.addEventListener('keydown', (e) => {
 
 // --- Controls panel ---
 const controlsPanel = document.getElementById('controls');
-document.getElementById('controls-btn').addEventListener('click', () => {
+document.getElementById('btn-options-controls').addEventListener('click', () => {
   controlsPanel.hidden = false;
 });
 document.getElementById('controls-close').addEventListener('click', () => {
@@ -2678,6 +2812,27 @@ if (import.meta.env.DEV) {
       lighting.reset();
       showHint('Lighting preview reset: GAMEPLAY', 3000);
     }
+  });
+  // Shift+T in the maze: jump to the next keepsake still to collect
+  // (bowling ball first, then the hot chocolate mug).
+  window.addEventListener('keydown', (event) => {
+    if (event.code !== 'KeyT' || !event.shiftKey || event.repeat || event.ctrlKey || event.altKey || event.metaKey
+      || !isLocked || !readyToPlay || paused || dialogueUI.isActive || currentRoomKey !== 'maze') return;
+    const next = MAZE_FINDABLES.find(item => !mazeItems.hasCollected(item.id));
+    if (!next) { showHint('Dev teleport: both keepsakes already collected', 3000); return; }
+    const pickup = currentRoomInfo?.interactables?.find(entry => entry.prompt?.() === `Pick up ${next.label}`);
+    if (!pickup) return;
+    event.preventDefault();
+    // Land beside it, not inside its collider: 1.2 m out along the side she
+    // came from stays inside the item's 4.5 m cell whatever the direction.
+    const at = pickup.anchor.getWorldPosition(new THREE.Vector3());
+    const away = new THREE.Vector3(player.position.x - at.x, 0, player.position.z - at.z);
+    if (away.lengthSq() < 1e-6) away.set(1, 0, 0);
+    away.normalize().multiplyScalar(1.2);
+    player.position.x = at.x + away.x;
+    player.position.z = at.z + away.z;
+    resetMoveState();
+    showHint(`Dev teleport: ${next.label}`, 2500);
   });
 }
 // A keyup can be missed entirely (Alt-tabbing away, the OS eating a key
@@ -2827,6 +2982,7 @@ function pauseRoomForMenu() {
   dialoguePicker.hidden = true;
   btnTitle.hidden = true;
   pauseMenu.hidden = false;
+  openingAudio.playIntermissionCue();
   showPauseMemory();
 }
 
@@ -2903,7 +3059,8 @@ let dynamicCollisionMeshes = [];
 // Things the player can use with E: { objects: Mesh[], prompt(): string,
 // interact(context), anchor?: Object3D, radius?: number }. Aiming at
 // `objects` focuses one; anchored ones (NPCs) also focus when Pomni stands
-// within `radius` of the anchor (see nearestInRange). interact() gets
+// within `radius` of the anchor (see nearestInRange), unless `aimOnly`,
+// where `radius` only caps how close she must be to aim at it. interact() gets
 // interactionContext, e.g. so an NPC can turn toward Pomni as she talks.
 let interactables = [];
 const interactionContext = { playerPosition: player.position };
@@ -3361,6 +3518,7 @@ function showLevelComplete(title, subtitle, { resume = true, chime = 'complete',
   // The pointer-lock event must see the card, so it never opens Pause over it.
   levelCompleteTitle.textContent = title;
   levelCompleteSubtitle.textContent = subtitle;
+  levelCompleteCaine.hidden = chime !== 'fail';
   const memoryText = caineMemory.retryCaption(memoryRetry);
   retryMemoryCaption.textContent = memoryText ?? '';
   retryMemoryCaption.hidden = !memoryText;
@@ -4652,7 +4810,7 @@ function nearestInRange(available = interactables) {
   let nearest = null;
   let nearestDistance = Infinity;
   for (const interactable of available) {
-    if (!interactable.anchor) continue;
+    if (!interactable.anchor || interactable.aimOnly) continue;
     interactable.anchor.getWorldPosition(anchorPosition);
     const feetY = player.position.y - PLAYER_HEIGHT;
     if (Math.abs(anchorPosition.y - feetY) > STOREY_TOLERANCE) continue;
@@ -4735,6 +4893,14 @@ function animate() {
       scene.environmentIntensity = THREE.MathUtils.damp(scene.environmentIntensity, environmentTarget, ENVIRONMENT_EASE, delta);
     }
   }
+  const kaufmoAudio = currentRoomKey === 'kaufmo' ? currentRoomInfo?.kaufmoApi : null;
+  let writingSoundLevel = 0;
+  if (kaufmoAudio?.activity === 'write' && !paused && !dialogueUI.isActive) {
+    const kaufmo = kaufmoAudio.kaufmo.position;
+    const distance = Math.hypot(player.position.x - kaufmo.x, player.position.z - kaufmo.z);
+    writingSoundLevel = 1 - THREE.MathUtils.smoothstep(distance, 1.5, 6.5);
+  }
+  ambience.setKaufmoProximity(writingSoundLevel);
   if (!paused && stageDelay) {
     stageDelay.remaining -= delta;
     if (stageDelay.remaining <= 0) {
@@ -4753,6 +4919,14 @@ function animate() {
           follow = { position: camera.position.clone(), target: cameraTarget.clone() };
         }
         activeEntrance.update(rawDelta, follow);
+        // She turns to Ragatha as Ragatha greets her (once she's up: until
+        // then the opening's own animation has her). The update above can
+        // end the entrance and clear activeEntrance, hence the ?.
+        const facing = activeEntrance?.pomniFacing;
+        if (facing != null && !activeOpening?.active) {
+          const turn = THREE.MathUtils.euclideanModulo(facing - pomni.rotation.y + Math.PI, Math.PI * 2) - Math.PI;
+          pomni.rotation.y += turn * (1 - Math.exp(-4 * rawDelta));
+        }
       }
     } else if (activeOpening?.active) {
       if (!paused) {
@@ -4805,6 +4979,9 @@ function animate() {
   } else {
     renderer.render(scene, camera);
   }
+  const showTitleMusicToggle = titleScreen.menuReady;
+  titleMusicToggle.hidden = !showTitleMusicToggle;
+  titleMusicToggle.classList.toggle('is-visible', showTitleMusicToggle);
   requestAnimationFrame(animate);
 }
 

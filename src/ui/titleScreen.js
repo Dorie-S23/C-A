@@ -62,6 +62,12 @@ const SUN_STRENGTH = 6.22;
 const SUN_DIRECTION = new THREE.Vector3(-0.57, -0.532, -0.626).normalize();
 const AMBIENT_STRENGTH = 0.07 * Math.PI;
 
+// Keys that aren't the player asking to skip the intro: the laptop's own
+// volume/media/brightness keys (which reach the page as keydowns),
+// modifiers held on their own, and the function row (F5, F11, F12...).
+const NOT_A_SKIP = /^(Audio|Media|Volume|Brightness|Launch|Browser|Mic)|^(Shift|Control|Alt|AltGraph|Meta|OS|Fn|FnLock|CapsLock|NumLock|ScrollLock|Unidentified|Dead|PrintScreen)$|^F\d+$/;
+const skipsIntro = (event) => !NOT_A_SKIP.test(event.key ?? '') && !NOT_A_SKIP.test(event.code ?? '');
+
 /**
  * The animated title screen: plays the intro from the GLB, then holds with
  * PLAY / OPTIONS / QUIT live (mouse hover + click, or arrow keys + Enter);
@@ -74,7 +80,7 @@ const AMBIENT_STRENGTH = 0.07 * Math.PI;
  * @param {{ renderer: THREE.WebGLRenderer, onAction: (action: string) => void,
  *   isBlocked?: () => boolean }} options  isBlocked: true while a panel covers the menu
  */
-export function createTitleScreen({ renderer, onAction, isBlocked = () => false }) {
+export function createTitleScreen({ renderer, onAction, onIntroStart, onMenu, isBlocked = () => false }) {
   const scene = new THREE.Scene();
   const ambient = new THREE.AmbientLight(0xffffff, AMBIENT_STRENGTH);
   scene.add(ambient);
@@ -253,6 +259,7 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
     if (glove) measureFingertip();
     followPointer = false;
     select(0);
+    onMenu?.();
   }
 
   function blockCenter(button) {
@@ -308,6 +315,10 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
     if (index >= 0 && index !== selected) select(index, { moveGlove: !followPointer });
   }
 
+  function pointGloveAt(clientX, clientY) {
+    onPointerMove({ clientX, clientY });
+  }
+
   /**
    * Works out where the glove's fingertip is, relative to the glove, so the
    * fingertip can sit on the pointer. The glove points up and to the left,
@@ -346,6 +357,7 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
   function onKeyDown(event) {
     if (!active || !mixer || event.repeat || isBlocked()) return;
     if (state === 'intro') {
+      if (!skipsIntro(event)) return;
       enterMenu();
       return;
     }
@@ -541,6 +553,10 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
     get active() {
       return active;
     },
+    get menuReady() {
+      return active && state === 'menu';
+    },
+    pointGloveAt,
 
     /**
      * Renders with the .blend's view transform (Khronos PBR Neutral), then
@@ -577,6 +593,7 @@ export function createTitleScreen({ renderer, onAction, isBlocked = () => false 
         skyMotion = 0; // back to the authored still sky
         skyTime = 0;
         seek(0);
+        onIntroStart?.();
       } else {
         enterMenu();
       }

@@ -332,7 +332,7 @@ function buildMaze(jaxApi, gloinkApi, mazeItems, seed, rng) {
     },
   };
 
-  const findableRoom = { group, interactables: [] };
+  const findableRoom = { group, interactables: [], colliders };
   const placedFindables = [];
   if (mazeItems) {
     const findables = [

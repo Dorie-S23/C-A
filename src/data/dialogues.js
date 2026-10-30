@@ -68,10 +68,9 @@ export const preLevel1Dialogue = [
     text: 'Thrilling. Another one of his "brilliant" ideas for more adventures.',
   },
   {
-    // The hallway cutaway plays before this brief narrative beat.
+    // Silent sync point: the hallway cutaway plays here.
     id: 'jaxPassByText',
-    type: 'beat',
-    text: 'Jax storms past.',
+    type: 'cue',
   },
   {
     id: 'afterJaxPassBy',

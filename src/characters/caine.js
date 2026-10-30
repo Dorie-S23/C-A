@@ -215,6 +215,7 @@ export function createCaineAnimator(caine) {
   let currentMood = 'happy';
   let targetMood = 'happy';
   let isSpeaking = false;
+  let jawChatterSuppressed = false;
   let time = 0;
   let jawOpen = 0;
   let floatHeight = 0;
@@ -259,6 +260,7 @@ export function createCaineAnimator(caine) {
 
   function setSpeaking(speaking) {
     isSpeaking = Boolean(speaking);
+    if (isSpeaking) jawChatterSuppressed = false;
   }
 
   function flyTo(targetWorldPos, duration = 2.0, onArrive = null) {
@@ -286,6 +288,7 @@ export function createCaineAnimator(caine) {
   /** A playful eye roll: both eyes sweep up and over the top, head tilting with them. */
   function rollEyes({ delay = 0 } = {}) {
     eyeRoll = { elapsed: -delay };
+    jawChatterSuppressed = false;
   }
 
   function update(deltaSeconds) {
@@ -321,7 +324,10 @@ export function createCaineAnimator(caine) {
     if (eyeRoll) {
       eyeRoll.elapsed += deltaSeconds;
       const s = eyeRoll.elapsed / EYE_ROLL_SECONDS;
-      if (s >= 1) eyeRoll = null;
+      if (s >= 1) {
+        eyeRoll = null;
+        jawChatterSuppressed = true;
+      }
       else if (s > 0) {
         const lift = Math.sin(Math.PI * s);
         const sweep = Math.PI * (0.85 - 0.7 * s); // left-and-up, over the top, to right-and-up
@@ -391,11 +397,11 @@ export function createCaineAnimator(caine) {
     // that happens when the lower jaw drops too far or the upper jaw tilts back
     // too far, exposing the hollow inside of the mouth.
     let targetJaw = 0;
-    if (isSpeaking) {
+    if (isSpeaking && !jawChatterSuppressed) {
       const chatter = Math.max(0, Math.sin(time * 15.0) * 0.65 + Math.sin(time * 22.0) * 0.35);
       // Reduced: 0.38 → 0.22 for speech, 0.55 → 0.32 for shocked-speech
       targetJaw = targetMood === 'shocked' ? 0.32 : chatter * 0.22;
-    } else if (targetMood === 'shocked') {
+    } else if (!jawChatterSuppressed && targetMood === 'shocked') {
       // Reduced: 0.5 → 0.28 for idle-shocked
       targetJaw = 0.28;
     }

@@ -1,11 +1,8 @@
 import { OPENING_SLEEP_SECONDS, OPENING_WAKE_SECONDS } from '../cinematics/pomniOpening.js';
-import { preLevel1Dialogue } from '../data/dialogues.js';
-
-const JAX_CAPTION = preLevel1Dialogue.find(node => node.id === 'jaxPassByText').text;
 /** Captions follow the same paused clocks as the action; no extra timers/input. */
 export function actionCaption({ opening, jaxPass, hidden = false }) {
   if (hidden) return '';
-  if (jaxPass?.active) return JAX_CAPTION;
+  if (jaxPass?.active) return '';
   if (opening?.phase === 'playing') {
     if (opening.elapsed < OPENING_SLEEP_SECONDS) return 'Snoring…';
     if (opening.elapsed < OPENING_WAKE_SECONDS + 1.2) return 'Knock, knock, knock.';
