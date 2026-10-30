@@ -5,9 +5,9 @@ import * as THREE from 'three';
 // light keeps running along it after, and the whole thing fades out, all
 // within TRAIL_SECONDS.
 
-export const TRAIL_SECONDS = 3;
+export const TRAIL_SECONDS = 6;
 const DRAW_SECONDS = 1.7;  // the head reaching him
-const FADE_FROM = 2.3;     // then it fades out by TRAIL_SECONDS
+const FADE_FROM = 5.3;     // then it fades out by TRAIL_SECONDS
 const HEIGHT = 0.18;       // metres off the floor
 const RADIUS = 0.1;        // its solid core
 const HALO_RADIUS = 0.3;   // and the soft glow round it (so it reads on the white tiles too)

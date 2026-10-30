@@ -3006,9 +3006,9 @@ function selectRoom(roomKey, { onReady, from, openingMode, preview } = {}) {
         try { rehearseBedroomFromHall(result, roomPreload); } catch (error) { console.warn('Could not rehearse her room from the hall.', error); }
       }
       const ready = onReady && (() => onReady(result));
-      // Kaufmo's room: the hall outside his door is got ready under this
+      // Kaufmo's or Ribbit's room: the hall outside the door is got ready under this
       // same loading screen, for walking out into.
-      const settle = roomKey === 'kaufmo' && ready ? () => readyHallBehindDoor(myToken, ready) : ready;
+      const settle = HALL_DOOR_ROOMS.has(roomKey) && ready ? () => readyHallBehindDoor(myToken, ready) : ready;
       applyLoadedRoom(result, settle, roomKey, openingMode === 'play');
       if (roomKey === 'maze') storyProgress.enteredMaze();
       takeCheckpoint();
@@ -4310,8 +4310,12 @@ function clipToBedroomDoor(group) {
   });
 }
 
+// Rooms with their own door onto the hall (room.hallDoor): walked into and
+// out of through it, the hall shown behind it (Pomni's works its own way).
+const HALL_DOOR_ROOMS = new Set(['kaufmo', 'ribbit']);
+
 function updateHallLink() {
-  if (currentRoomKey === 'kaufmo') {
+  if (currentRoomInfo?.hallDoor) {
     updateDoorToHall();
     return;
   }
@@ -4425,7 +4429,7 @@ function preloadRoom(key, from) {
       const textures = new Set();
       // The hall and Kaufmo's room are each seen from the other, and the
       // one she's in may have textures it's never yet had on screen.
-      const linked = key === 'kaufmo' || currentRoomInfo?.hallDoor;
+      const linked = HALL_DOOR_ROOMS.has(key) || currentRoomInfo?.hallDoor;
       for (const root of linked ? [result.group, currentRoom] : [result.group]) {
         root.traverse((object) => {
           for (const material of [object.material].flat()) {
@@ -4446,7 +4450,7 @@ function preloadRoom(key, from) {
       const compiling = [renderer.compileAsync(staging, camera), renderer.compileAsync(player, camera, staging)];
       // The hall and Kaufmo's room show each other for real: the room she's
       // in, as it will look from this one once she's walked through.
-      if (key === 'kaufmo' || currentRoomInfo?.hallDoor) compiling.push(compileAsSeenFrom(staging));
+      if (HALL_DOOR_ROOMS.has(key) || currentRoomInfo?.hallDoor) compiling.push(compileAsSeenFrom(staging));
       // A mirror draws the room into its own texture, which needs its own
       // build of every material (compileAsync sets its programs up at once).
       const target = renderer.getRenderTarget();
@@ -4583,7 +4587,7 @@ function readyHallAhead(token) {
 }
 
 /**
- * Kaufmo's room, just loaded behind the loading screen: the hall outside
+ * Kaufmo's (or Ribbit's) room, just loaded behind the loading screen: the hall outside
  * his door is preloaded (seen from his room, as preloadRoom does), then
  * drawn as it'll be when she walks out into it (rehearseSteppingOut), and
  * only then is the loading screen let go (`ready`). Two frames more under
@@ -4592,7 +4596,7 @@ function readyHallAhead(token) {
 function readyHallBehindDoor(token, ready) {
   readyToPlay = false;
   overlay.classList.add('loading');
-  preloadRoom('dorm', 'kaufmo');
+  preloadRoom('dorm', currentRoomKey);
   const entry = roomPreload;
   entry.settled.then(() => {
     if (token !== loadToken) return;
@@ -4765,7 +4769,7 @@ function showRoomBehindDoor(entry, show) {
   group.updateMatrixWorld(true);
 }
 
-/** Puts the hall behind Kaufmo's open door (or takes it away), his door showing in the doorway. */
+/** Puts the hall behind Kaufmo's or Ribbit's open door (or takes it away), their door showing in the doorway. */
 function showHallBehindDoor(entry, show) {
   entry.peeking = show;
   const { group, walkInDoorways } = entry.result;

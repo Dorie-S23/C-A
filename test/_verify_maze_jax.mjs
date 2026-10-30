@@ -214,7 +214,7 @@ test('a trail hint runs through the corridors from her to Jax, never through a w
   const mesh = room.group.getObjectByName('MazeTrailHint');
   let alive = true, t = 0, heads = [];
   while (alive && t < 10) { alive = trail.update(1 / 30); t += 1 / 30; heads.push(mesh.material.uniforms.uHead.value); }
-  assert.ok(Math.abs(t - TRAIL_SECONDS) < .05 && TRAIL_SECONDS === 3, `over in ${t.toFixed(2)} s`);
+  assert.ok(Math.abs(t - TRAIL_SECONDS) < .05 && TRAIL_SECONDS === 6, `over in ${t.toFixed(2)} s`);
   assert.ok(heads.every((v, i) => !i || v >= heads[i - 1]) && heads.at(-1) === 1, 'its head runs all the way to him');
   assert.ok(mesh.material.uniforms.uFade.value < .01, 'faded out');
   trail.dispose();

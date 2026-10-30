@@ -82,6 +82,7 @@ export function loadRibbitRoom(onProgress, { from, ribbitStory, playDialogue } =
     // Her door opens onto the Dorm Hall: walking into the doorway goes
     // back there (doors.js/portals.js), and coming from there arrives in it.
     const hinged = openHingedDoor(room.group, DOOR_FRAME_NAME, DOOR_SLAB_NAME, room.spawn, room.collisionMeshes);
+    const defaultSpawn = room.spawn.clone(); // the middle of the room, whatever `from` makes the arrival
     let portal = null;
     if (hinged) {
       portal = createDoorPortal(room.group, hinged.frameBox, room.spawn, 'dorm');
@@ -119,6 +120,17 @@ export function loadRibbitRoom(onProgress, { from, ribbitStory, playDialogue } =
       ? makeDoorOpenable(room, hinged, { portal, attach: [room.group.getObjectByName(DOOR_PLATE_NAME)] })
       : { open() {}, close() {}, lock() {}, update() {}, interactable: null };
     if (door.interactable) room.interactables = [...(room.interactables ?? []), door.interactable];
+    if (hinged) {
+      // Like Kaufmo's: for main.js to show the real Dorm Hall through it and
+      // walk her out (walkInLink.js); the portal's only taken while that's
+      // not ready. Hidden from the hall's side: its own door is in the doorway.
+      room.hallDoor = {
+        frameBox: hinged.frameBox, inside: defaultSpawn, control: door, portal,
+        parts: [hinged.frame, hinged.slab.parent, room.group.getObjectByName(DOOR_PLATE_NAME), portal.glimpse].filter(Boolean),
+      };
+      // Walking in from the hall: it stands open, as the hall's does.
+      room.openDoorway = () => door.open({ immediate: true });
+    }
 
     if (ribbitStory && playDialogue) {
       room.interactables ??= [];
