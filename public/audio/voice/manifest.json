@@ -4,21 +4,48 @@
     "caine-18ebb7ca": {
       "signature": "5650f984e690"
     },
+    "caine-3bb2a566": {
+      "signature": "0c24229ecdcd"
+    },
     "caine-520e48ba": {
       "signature": "59e385048085"
+    },
+    "caine-54ac4528": {
+      "signature": "23855e8c0838"
     },
     "caine-56354b06": {
       "signature": "19a4b9c834ed"
     },
+    "caine-57c4563b": {
+      "signature": "cadf3d2415e1"
+    },
     "caine-5cf98b34": {
       "signature": "f1a3162d94fb",
       "gain": 0.65
+    },
+    "caine-6ff0eb77": {
+      "signature": "82266f9911bb",
+      "gain": 0.65
+    },
+    "caine-78aa8c43": {
+      "signature": "f67785502ccd",
+      "gain": 0.65
+    },
+    "caine-7ea4024d": {
+      "signature": "67bc296b7ad0"
     },
     "caine-808872a2": {
       "signature": "e6d484a2560c"
     },
     "caine-977d3f70": {
       "signature": "b3fe3ba511c1"
+    },
+    "caine-afcff868": {
+      "signature": "dd468da8de95",
+      "gain": 0.65
+    },
+    "caine-be572098": {
+      "signature": "bd1d65b192f8"
     },
     "caine-e6fc8be0": {
       "signature": "650a0648f65c"
@@ -29,12 +56,107 @@
     "caine-f41e6b94": {
       "signature": "8700ada5ad16"
     },
+    "caine-fd887fd0": {
+      "signature": "d5165d8f6996"
+    },
+    "caine-fed7af5a": {
+      "signature": "f93d61e9d2fa",
+      "gain": 0.65
+    },
+    "jax-02e2fa50": {
+      "signature": "a456df48cc00"
+    },
+    "jax-03d5a128": {
+      "signature": "ade810331e43"
+    },
+    "jax-0f4437b1": {
+      "signature": "f8560d8d5234",
+      "gain": 0.65
+    },
+    "jax-24860d3a": {
+      "signature": "6cf9036f64ee"
+    },
+    "jax-2e430071": {
+      "signature": "e8cd728c30ea"
+    },
+    "jax-2e76f3e7": {
+      "signature": "9a99ec9803b1"
+    },
+    "jax-2f696090": {
+      "signature": "371380a93f38"
+    },
+    "jax-34e460e8": {
+      "signature": "f55fd753b992"
+    },
+    "jax-38f8121f": {
+      "signature": "6aaf5a1564c7"
+    },
+    "jax-391f5242": {
+      "signature": "9cc7808709cd"
+    },
+    "jax-4977248a": {
+      "signature": "2ec72e436fbd"
+    },
+    "jax-4cfb28b3": {
+      "signature": "7aa3dc4e7710"
+    },
+    "jax-4de25adb": {
+      "signature": "855663be94c9"
+    },
+    "jax-5279e3a2": {
+      "signature": "32aff4a43ac8"
+    },
+    "jax-656417c2": {
+      "signature": "2584add84470"
+    },
+    "jax-660a57d2": {
+      "signature": "c2f5da2f6662"
+    },
+    "jax-745fbacc": {
+      "signature": "66b3cf43bde1"
+    },
+    "jax-7d06ad27": {
+      "signature": "63daad7fbd52"
+    },
     "jax-7d890dc5": {
       "signature": "b8ed3548c5f6",
       "gain": 0.65
     },
+    "jax-826d80c6": {
+      "signature": "b158f29f0b25"
+    },
+    "jax-9446f1ab": {
+      "signature": "daa03384b342"
+    },
+    "jax-95ad6186": {
+      "signature": "b61fd5d78c1c"
+    },
+    "jax-96a9e921": {
+      "signature": "81d05008e48b"
+    },
+    "jax-981cc205": {
+      "signature": "66b055d569db"
+    },
+    "jax-9d9f96dd": {
+      "signature": "1a45abc5c295"
+    },
+    "jax-a82a6eb1": {
+      "signature": "61fb86215fd3"
+    },
     "jax-ab229839": {
       "signature": "221665a8d827"
+    },
+    "jax-ab3fa3fd": {
+      "signature": "8c9851c2a688"
+    },
+    "jax-ab45c9c2": {
+      "signature": "1fc454c4c9e4"
+    },
+    "jax-b84adb34": {
+      "signature": "f322219ea007"
+    },
+    "jax-baaff6f0": {
+      "signature": "fb7091a6484c"
     },
     "jax-bb5bf506": {
       "signature": "3b4ba9850b23"
@@ -42,11 +164,39 @@
     "jax-c0c429d2": {
       "signature": "6f1986ee4bfc"
     },
+    "jax-c3c812ce": {
+      "signature": "c5467e155b12"
+    },
+    "jax-c4ca4f9a": {
+      "signature": "1ed131093ba2"
+    },
+    "jax-ccd529fd": {
+      "signature": "c9f918602ab8"
+    },
+    "jax-d8f77323": {
+      "signature": "eb41f544605d"
+    },
+    "jax-da938638": {
+      "signature": "900a36107c58"
+    },
+    "jax-e3094d35": {
+      "signature": "61127208ba63"
+    },
+    "jax-eb5e6e49": {
+      "signature": "7b994511d120"
+    },
     "jax-ec59b3b3": {
       "signature": "9bad6729bf93"
     },
+    "jax-fe78c806": {
+      "signature": "4743cdcdc787",
+      "gain": 0.65
+    },
     "kaufmo-016dac26": {
       "signature": "c0cb2f39c626"
+    },
+    "kaufmo-0d528f85": {
+      "signature": "93741a94544b"
     },
     "kaufmo-0d6547d4": {
       "signature": "d418f9acd7b1"
@@ -63,6 +213,9 @@
     },
     "kaufmo-1ca0e40f": {
       "signature": "bf16eaf3ca3d"
+    },
+    "kaufmo-234e8a48": {
+      "signature": "43e83e2376b3"
     },
     "kaufmo-24f4336c": {
       "signature": "f8d74894f790"
@@ -110,6 +263,9 @@
     "kaufmo-6759d27c": {
       "signature": "40237e19903e"
     },
+    "kaufmo-6cd997ce": {
+      "signature": "453bc605df17"
+    },
     "kaufmo-6d33b27b": {
       "signature": "5d82d3ea0e75"
     },
@@ -140,6 +296,9 @@
     "kaufmo-9258158e": {
       "signature": "170b9890c241"
     },
+    "kaufmo-9c19ab69": {
+      "signature": "cbc54e83d00d"
+    },
     "kaufmo-9cc956db": {
       "signature": "de07f8d5938b"
     },
@@ -148,6 +307,12 @@
     },
     "kaufmo-b36abaaf": {
       "signature": "21dd5a6bc32f"
+    },
+    "kaufmo-b90fe88b": {
+      "signature": "b0580bbd4504"
+    },
+    "kaufmo-bd2930bc": {
+      "signature": "75188358a3f8"
     },
     "kaufmo-bed74042": {
       "signature": "7f6b4a015133"
@@ -167,6 +332,9 @@
     "kaufmo-c7e91c24": {
       "signature": "bc1ede9ddcbb"
     },
+    "kaufmo-cb52961e": {
+      "signature": "51708f03c2d7"
+    },
     "kaufmo-cdc91240": {
       "signature": "111e6a720ac9"
     },
@@ -182,14 +350,51 @@
     "kaufmo-d46ee314": {
       "signature": "14d10fdd2d8b"
     },
+    "kaufmo-d661349a": {
+      "signature": "cac2be75de97",
+      "gain": 0.65
+    },
+    "kaufmo-da7ea173": {
+      "signature": "28eabcfb275e"
+    },
     "kaufmo-dbbb830c": {
       "signature": "c9be181af6ca"
     },
     "kaufmo-e2fc6838": {
       "signature": "32539228bfb0"
     },
+    "kaufmo-ee0309e7": {
+      "signature": "52c0d8088a3d"
+    },
+    "kaufmo-f16bf226": {
+      "signature": "13f9858c72ca"
+    },
+    "kaufmo-f7f0e453": {
+      "signature": "60854ed5aa31"
+    },
+    "kaufmo-fafe7b62": {
+      "signature": "177174df4503"
+    },
+    "narrator-1da66f57": {
+      "signature": "7ca9744443c4"
+    },
+    "narrator-648009f7": {
+      "signature": "d9815dd810a7"
+    },
+    "narrator-8c0670d3": {
+      "signature": "febcb89bc0cc"
+    },
+    "narrator-dd13a6ee": {
+      "signature": "80771a84102c"
+    },
+    "narrator-e283660f": {
+      "signature": "d2550aaf3d75"
+    },
     "pomni-0113c599": {
       "signature": "e121ee95bf99"
+    },
+    "pomni-0137148c": {
+      "signature": "bf5d09b7be50"
     },
     "pomni-03f12dc9": {
       "signature": "d51520537e77"
@@ -203,6 +408,9 @@
     "pomni-0e65700e": {
       "signature": "021f2b52f018"
     },
+    "pomni-13134a09": {
+      "signature": "ec3ecbf5c11a"
+    },
     "pomni-150f30c6": {
       "signature": "e59593db98ef"
     },
@@ -212,8 +420,17 @@
     "pomni-1b11de26": {
       "signature": "782bf42170e8"
     },
-    "pomni-1dbe0a06": {
-      "signature": "33cbd29166ff"
+    "pomni-1c36423e": {
+      "signature": "7c2b43ccff60"
+    },
+    "pomni-1c65d555": {
+      "signature": "3840ea85e6e3"
+    },
+    "pomni-1ce70b60": {
+      "signature": "f21e3d3c80c7"
+    },
+    "pomni-1e4577f8": {
+      "signature": "e1d1e941f979"
     },
     "pomni-1eda82d4": {
       "signature": "bbaf871b1fca"
@@ -242,14 +459,26 @@
     "pomni-294141fb": {
       "signature": "bc59531ed872"
     },
+    "pomni-3264a791": {
+      "signature": "aa3adc941911"
+    },
     "pomni-33b45d84": {
       "signature": "fd588ce152b4"
+    },
+    "pomni-345d46df": {
+      "signature": "af6edeae2d81"
+    },
+    "pomni-3588b085": {
+      "signature": "2c6f1c323ba7"
     },
     "pomni-35a327a3": {
       "signature": "3a803bcd9cce"
     },
     "pomni-392ebb3d": {
       "signature": "80c94bfe5a66"
+    },
+    "pomni-3c3053c4": {
+      "signature": "95582dc5e365"
     },
     "pomni-41be4ccb": {
       "signature": "8ada8f1109ca"
@@ -259,6 +488,9 @@
     },
     "pomni-4a947147": {
       "signature": "449f1a97bb60"
+    },
+    "pomni-4e86e040": {
+      "signature": "20108dce57c5"
     },
     "pomni-4e883c2f": {
       "signature": "916acfb85cc6"
@@ -278,11 +510,17 @@
     "pomni-54cef048": {
       "signature": "d5bb69937ebf"
     },
+    "pomni-55785577": {
+      "signature": "751530596488"
+    },
     "pomni-5aaabbd2": {
       "signature": "2fce2427573f"
     },
     "pomni-5ca11f82": {
       "signature": "6fe8aa7e46b7"
+    },
+    "pomni-5d40dcdd": {
+      "signature": "a3f54d0cc372"
     },
     "pomni-5d796726": {
       "signature": "5264af5b5cba"
@@ -305,11 +543,17 @@
     "pomni-6aef4262": {
       "signature": "82bf91057f53"
     },
+    "pomni-6cb6335c": {
+      "signature": "ac8e1609b445"
+    },
     "pomni-6db9d958": {
       "signature": "ef846358cebd"
     },
     "pomni-6de68bea": {
       "signature": "421d8229dca0"
+    },
+    "pomni-6e8e63f8": {
+      "signature": "73133a879148"
     },
     "pomni-6f0b818f": {
       "signature": "0fed71abb32b"
@@ -317,11 +561,23 @@
     "pomni-7284523b": {
       "signature": "a1e90b1abc26"
     },
+    "pomni-72c67000": {
+      "signature": "607dab234666"
+    },
+    "pomni-755905b3": {
+      "signature": "636614834b0e"
+    },
     "pomni-76c32e53": {
       "signature": "c9f5131d7ae2"
     },
+    "pomni-76dc5215": {
+      "signature": "c8a41f8aea51"
+    },
     "pomni-78de5326": {
       "signature": "318bf61e66dc"
+    },
+    "pomni-7f38e117": {
+      "signature": "4a02c27316d7"
     },
     "pomni-7fb3fff4": {
       "signature": "e6b37c485a94"
@@ -335,6 +591,9 @@
     "pomni-859d5d79": {
       "signature": "d9d044dce618"
     },
+    "pomni-85eb30f6": {
+      "signature": "6a57f29c5e24"
+    },
     "pomni-86c26eff": {
       "signature": "8f47409e5e14"
     },
@@ -344,17 +603,42 @@
     "pomni-8d80fd2f": {
       "signature": "9ab5bd916057"
     },
+    "pomni-8daf2ee1": {
+      "signature": "95ecc3a9e869"
+    },
     "pomni-8e0480d3": {
       "signature": "ad391c7e0b89"
     },
+    "pomni-913b2a78": {
+      "signature": "17fda307cf31"
+    },
+    "pomni-914245b6": {
+      "signature": "81b05de68e8d"
+    },
+    "pomni-91d7c25e": {
+      "signature": "d0ebba6e0bfb"
+    },
     "pomni-9311bed1": {
       "signature": "19bde45d4b2f"
+    },
+    "pomni-95a6cc66": {
+      "signature": "6ad5f332cd97",
+      "gain": 0.65
+    },
+    "pomni-964c088d": {
+      "signature": "fbce01f652fd"
     },
     "pomni-97070a67": {
       "signature": "f5de89d9233b"
     },
     "pomni-989ec1c6": {
       "signature": "a872158a7bca"
+    },
+    "pomni-9a59fc77": {
+      "signature": "a46837b94c8f"
+    },
+    "pomni-9c183846": {
+      "signature": "3f548d4a26b2"
     },
     "pomni-a0e768fe": {
       "signature": "0ae9de644503"
@@ -368,17 +652,29 @@
     "pomni-a2eab068": {
       "signature": "423f2ec0786c"
     },
+    "pomni-a42567ff": {
+      "signature": "671ad21ce35d"
+    },
     "pomni-a42694eb": {
       "signature": "54661b47a5c0"
     },
+    "pomni-a94045e1": {
+      "signature": "5e6a55a63402"
+    },
     "pomni-aeb1f4e0": {
       "signature": "e64efb8cc36e"
+    },
+    "pomni-b100a71f": {
+      "signature": "66c93bdfd747"
     },
     "pomni-b57d51ab": {
       "signature": "7cff4497af08"
     },
     "pomni-b5ccb3d7": {
       "signature": "fc23659884a2"
+    },
+    "pomni-b7236d28": {
+      "signature": "064af5b625d6"
     },
     "pomni-b7d76d6a": {
       "signature": "1feb4a44a09a"
@@ -397,6 +693,9 @@
     },
     "pomni-c161a4cc": {
       "signature": "86302ca54789"
+    },
+    "pomni-c328415c": {
+      "signature": "6bb47f544c37"
     },
     "pomni-c616f6ec": {
       "signature": "1d20c46a75ad"
@@ -425,6 +724,15 @@
     "pomni-e04073af": {
       "signature": "ce4603748d72"
     },
+    "pomni-e1b781c8": {
+      "signature": "7a5e7fb90b34"
+    },
+    "pomni-e22d899e": {
+      "signature": "932e652d2c66"
+    },
+    "pomni-e41d19c0": {
+      "signature": "d59ac7aeba0a"
+    },
     "pomni-e46a7efe": {
       "signature": "bf58c081fefb"
     },
@@ -433,6 +741,12 @@
     },
     "pomni-e65d9c14": {
       "signature": "3d7352971a84"
+    },
+    "pomni-e792e009": {
+      "signature": "f73684375a43"
+    },
+    "pomni-e9657d8f": {
+      "signature": "9a7b3d695881"
     },
     "pomni-eaea4d41": {
       "signature": "a8ec6edc649f"
@@ -450,8 +764,17 @@
     "pomni-f56bfa15": {
       "signature": "81f1e2d607c1"
     },
+    "pomni-f5fe14c2": {
+      "signature": "493d250289c1"
+    },
+    "pomni-f64e0bd0": {
+      "signature": "aad48af6c828"
+    },
     "pomni-f76d6e4a": {
       "signature": "39ab7482fad5"
+    },
+    "pomni-f8223b9f": {
+      "signature": "6eefe6aad2b5"
     },
     "pomni-f8aa9769": {
       "signature": "b68847568861"
@@ -465,6 +788,12 @@
     "pomni-fc8284a9": {
       "signature": "95acd4bec710"
     },
+    "pomni-ff24bb22": {
+      "signature": "6766e09af18e"
+    },
+    "ragatha-13bbdc15": {
+      "signature": "9f160527cbe6"
+    },
     "ragatha-4b705f55": {
       "signature": "b8fc4854f962"
     },
@@ -474,11 +803,29 @@
     "ragatha-53f3684a": {
       "signature": "d1955d9925e1"
     },
+    "ragatha-65ced708": {
+      "signature": "dc2f91bfa640"
+    },
+    "ragatha-7d56fc36": {
+      "signature": "1d196031b5f6"
+    },
+    "ragatha-91d0d161": {
+      "signature": "305593a9bfb0"
+    },
     "ragatha-ea3c48c0": {
       "signature": "cfb510b4c8d9"
     },
+    "ribbit-125b0e66": {
+      "signature": "d93df2aa3ffe"
+    },
     "ribbit-16b99e75": {
       "signature": "c389ae625224"
+    },
+    "ribbit-27e614a6": {
+      "signature": "0a7170b4c5bf"
+    },
+    "ribbit-2afe5943": {
+      "signature": "23ff758a4c2f"
     },
     "ribbit-2d54923d": {
       "signature": "adc4f40ba9d8"
@@ -498,6 +845,13 @@
     "ribbit-34feeadf": {
       "signature": "1345f8b0c866"
     },
+    "ribbit-364525c8": {
+      "signature": "b2aa201d7635"
+    },
+    "ribbit-38d57385": {
+      "signature": "417f933397b4",
+      "gain": 0.65
+    },
     "ribbit-3a276d23": {
       "signature": "a8242cc6e344"
     },
@@ -510,8 +864,15 @@
     "ribbit-51982535": {
       "signature": "c2113261f196"
     },
+    "ribbit-51c8fa4f": {
+      "signature": "ce1a1b551e77",
+      "gain": 0.65
+    },
     "ribbit-54ac4528": {
       "signature": "ed20d1c92935"
+    },
+    "ribbit-54b8036c": {
+      "signature": "499677059db5"
     },
     "ribbit-5d34c265": {
       "signature": "6d1ad2a399b3"
@@ -524,6 +885,9 @@
     },
     "ribbit-64368fe2": {
       "signature": "84e55c066ecd"
+    },
+    "ribbit-6ac1fd66": {
+      "signature": "4270718b46c2"
     },
     "ribbit-6b01aa1d": {
       "signature": "456b4a449b2b"
@@ -564,11 +928,18 @@
     "ribbit-a9d75dbb": {
       "signature": "4f94a5330118"
     },
+    "ribbit-ac89d7cd": {
+      "signature": "132832abfc51",
+      "gain": 0.65
+    },
     "ribbit-b135d55d": {
       "signature": "d918071785e9"
     },
     "ribbit-b730aabc": {
       "signature": "21d21dcdee2d"
+    },
+    "ribbit-c5bddf76": {
+      "signature": "cb0462196e20"
     },
     "ribbit-d14d6786": {
       "signature": "89add23d6a0d"
@@ -581,6 +952,10 @@
     },
     "ribbit-d5e298e5": {
       "signature": "a5aeedaaf5db"
+    },
+    "ribbit-d650bd69": {
+      "signature": "5e3dbeceaa54",
+      "gain": 0.65
     },
     "ribbit-d6828ff5": {
       "signature": "287ea51c0f77"
@@ -617,6 +992,9 @@
     },
     "ribbit-fd8487fd": {
       "signature": "f5be776c19cb"
+    },
+    "ribbit-fde0a68d": {
+      "signature": "5d3f8ec0bdd6"
     },
     "ribbit-ff8ee077": {
       "signature": "952e52b53434"

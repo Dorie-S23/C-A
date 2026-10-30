@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { loadKinger } from '../src/characters/kinger.js';
 import { loadGangle } from '../src/characters/gangle.js';
 import { loadZooble } from '../src/characters/zooble.js';
-import { loadEndingCast } from '../src/characters/endingCast.js';
+import { stageLobbyEnding, lobbyEndingPlan, createExitDoorScene } from '../src/cutscenes/endingCutscene.js';
 import { createCharacterPerformance, ENDING_PERFORMANCE_ACTIONS } from '../src/cinematics/characterPerformance.js';
 import { ICONS } from '../src/ui/portraitIcons.js';
 import { SPEAKERS } from '../src/data/dialogues.js';
@@ -13,18 +13,60 @@ function advance(performance, seconds, step = 0.05) {
   for (let elapsed = 0; elapsed < seconds - 1e-8; elapsed += step) performance.update(Math.min(step, seconds - elapsed));
 }
 
-function fakeApi(key, disposed = null) {
+function fakeApi(key) {
   const root = new THREE.Group();
-  root.name = key;
+  root.name = key[0].toUpperCase() + key.slice(1);
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.5, 0.2), new THREE.MeshStandardMaterial());
   root.add(mesh);
   return {
     [key]: root,
     update() {}, setPose() {}, setActivity() {}, setListening() {}, setSpeaking() {},
     turnTowards() {}, lookTowards() {}, faceTowards() {}, stopMovement() {}, setDistress() {}, setDistressed() {},
-    moveTo(point, { onArrive }) { onArrive(true); }, isRunning() { return false; }, playPassBy() {},
-    dispose() { if (disposed) disposed.count++; },
+    moveTo(point, { onArrive }) { onArrive(true); }, isRunning() { return false; }, playPassBy() {}, setShown() {},
+    flyTo(point, duration, onArrive) { onArrive?.(); },
   };
+}
+
+function liveCast(variant = 'saved') {
+  const extras = ['kinger', 'gangle', 'zooble'].map(key => {
+    const root = new THREE.Group();
+    root.name = key[0].toUpperCase() + key.slice(1);
+    return { key, root, performance: createCharacterPerformance({ root }) };
+  });
+  const pomni = new THREE.Group();
+  pomni.name = 'Pomni';
+  return {
+    pomni: { pomni, animations: [] },
+    jaxApi: variant === 'saved' ? fakeApi('jax') : null,
+    ribbitApi: fakeApi('ribbit'), ragathaApi: fakeApi('ragatha'),
+    kaufmoApi: fakeApi('kaufmo'), caineApi: fakeApi('caine'), extras,
+  };
+}
+
+function fakeRenderer() {
+  return {
+    calls: 0,
+    getSize(target) { return target.set(1280, 720); },
+    render() { this.calls++; },
+  };
+}
+
+function makeDoor(variant = 'saved', cast = liveCast(variant), renderer = fakeRenderer()) {
+  const previousDocument = globalThis.document;
+  globalThis.document = {
+    createElement() {
+      return {
+        width: 0, height: 0,
+        getContext: () => ({ fillRect() {}, strokeRect() {}, fillText() {} }),
+      };
+    },
+  };
+  try {
+    return { door: createExitDoorScene(renderer, variant, cast), cast, renderer };
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+  }
 }
 
 test('the three original models are scaled 3D mesh rigs and Kinger owns a real pillow', async () => {
@@ -141,38 +183,98 @@ test('replacement, cancellation, and disposal resolve stale actions without furt
   assert.equal(await performance.gesture(), false);
 });
 
-test('saved and bittersweet casts have explicit membership and dispose once without owning player Pomni', async () => {
-  const disposed = { count: 0 };
-  const loaders = Object.fromEntries(['pomni', 'jax', 'ribbit', 'kaufmo', 'caine', 'ragatha', 'kinger', 'gangle', 'zooble']
-    .map(key => [key, async () => key === 'kinger' ? loadKinger() : fakeApi(key, key === 'ribbit' ? disposed : null)]));
-  const pomni = new THREE.Group();
-  pomni.name = 'Pomni';
-  const saved = await loadEndingCast({ pomni, loaders });
-  assert.deepEqual(new Set(saved.diagnostics.members), new Set(['pomni', 'jax', 'ribbit', 'kaufmo', 'caine', 'ragatha', 'kinger', 'gangle', 'zooble']));
-  assert.equal(saved.actors.get('pomni').owned, false);
-  assert.equal(saved.ensemble.getObjectByName('Pomni'), undefined);
-  saved.dispose();
-  saved.dispose();
-  assert.equal(disposed.count, 1);
-  assert.equal(saved.diagnostics.disposed, true);
-
-  const bittersweet = await loadEndingCast({ endingVariant: 'bittersweet', pomni, loaders });
-  assert.equal(bittersweet.actors.has('jax'), false);
-  assert.equal(bittersweet.diagnostics.members.length, 8);
-  bittersweet.dispose();
+test('the live Lobby stages the procedural cast and includes Jax only when saved', () => {
+  for (const variant of ['saved', 'abstracted']) {
+    const cast = liveCast(variant);
+    const room = { group: new THREE.Group(), storyUpdate: null };
+    const stage = {
+      place() {}, frame() {}, lookWithHead() {}, lookAt() {},
+      async walkTo() { return true; }, async wait() { return true; },
+    };
+    const plan = lobbyEndingPlan({ spawn: new THREE.Vector3(0, 0, 2.4), facing: 0 });
+    const lobby = stageLobbyEnding(room, stage, variant, cast, plan);
+    for (const name of ['Ribbit', 'Ragatha', 'Kaufmo', 'Kinger', 'Gangle', 'Zooble']) {
+      assert.ok(room.group.getObjectByName(name), `${variant}: ${name}`);
+    }
+    assert.equal(Boolean(room.group.getObjectByName('Jax')), variant === 'saved');
+    assert.equal(typeof room.storyUpdate, 'function');
+    lobby.detach();
+    assert.equal(room.storyUpdate, null);
+    assert.equal(room.group.children.length, 0);
+  }
 });
 
-test('a failed cast load disposes every fulfilled partial asset', async () => {
-  let resourceDisposals = 0;
-  const loaders = Object.fromEntries(['jax', 'ribbit', 'kaufmo', 'ragatha', 'kinger', 'gangle', 'zooble']
-    .map(key => [key, async () => {
-      const api = fakeApi(key);
-      api[key].traverse(object => object.geometry?.addEventListener('dispose', () => { resourceDisposals++; }));
-      return api;
-    }]));
-  loaders.caine = async () => { throw new Error('missing Caine'); };
-  await assert.rejects(() => loadEndingCast({ pomni: new THREE.Group(), loaders }), /missing Caine/);
-  assert.equal(resourceDisposals, 7);
+test('cancelling the Lobby walk cannot schedule a stale delay', async () => {
+  let finishWalk;
+  let waits = 0;
+  const room = { group: new THREE.Group(), storyUpdate: null };
+  const stage = {
+    place() {}, frame() {}, lookWithHead() {}, lookAt() {},
+    walkTo: () => new Promise(resolve => { finishWalk = resolve; }),
+    async wait() { waits++; return true; },
+  };
+  const plan = lobbyEndingPlan({ spawn: new THREE.Vector3(0, 0, 2.4), facing: 0 });
+  const lobby = stageLobbyEnding(room, stage, 'saved', liveCast(), plan);
+  const walking = lobby.onNode({ type: 'beat', action: 'walkOut' });
+  finishWalk(false);
+  assert.equal(await walking, false);
+  assert.equal(waits, 0);
+  lobby.detach();
+});
+
+test('the live exit-door scene has the full variant cast and disposes once', () => {
+  for (const variant of ['saved', 'abstracted']) {
+    const { door, renderer } = makeDoor(variant);
+    for (const name of ['Pomni', 'Ribbit', 'Ragatha', 'Kaufmo', 'Caine', 'Kinger', 'Gangle', 'Zooble']) {
+      assert.ok(door.scene.getObjectByName(name), `${variant}: ${name}`);
+    }
+    assert.equal(Boolean(door.scene.getObjectByName('Jax')), variant === 'saved');
+    door.update(1 / 60);
+    assert.equal(renderer.calls, 1);
+    door.dispose();
+    door.dispose();
+    assert.equal(door.scene.children.length, 0);
+  }
+});
+
+test('the exit-door handoff cancels Ragatha\'s previous Lobby movement', () => {
+  const cast = liveCast();
+  let stopped = false;
+  cast.ragathaApi.stopMovement = () => { stopped = true; };
+  const { door } = makeDoor('saved', cast);
+  assert.equal(stopped, true);
+  door.dispose();
+});
+
+test('exit-door disposal settles a pending walk and suppresses later actions and rendering', async () => {
+  const { door, renderer } = makeDoor();
+  const leaving = door.onNode({ type: 'beat', action: 'kaufmoLeaves' });
+  door.update(0.1);
+  assert.equal(renderer.calls, 1);
+  door.dispose();
+  assert.equal(await leaving, false);
+  assert.equal(await door.onNode({ type: 'beat', action: 'gathered' }), false);
+  door.update(1);
+  assert.equal(renderer.calls, 1);
+});
+
+test('disposing while Pomni stops at the door cannot revive Caine afterwards', async () => {
+  const cast = liveCast();
+  const { door } = makeDoor('saved', cast);
+  const stopping = door.onNode({ type: 'beat', action: 'pomniStops' });
+  door.dispose();
+  assert.equal(await stopping, false);
+  assert.equal(cast.caineApi.caine.visible, false);
+});
+
+test('Jax departure is update-driven and resolves false on disposal', async () => {
+  const cast = liveCast();
+  cast.jaxApi.isRunning = () => true;
+  const { door } = makeDoor('saved', cast);
+  const leaving = door.onNode({ type: 'beat', action: 'jaxLeaves' });
+  door.update(0.1);
+  door.dispose();
+  assert.equal(await leaving, false);
 });
 
 test('all nine ending speakers reuse registered dialogue portraits', () => {

@@ -1056,11 +1056,9 @@ export const mazePickupMugDialogue = [
 ];
 
 // Jax's glitch fragments: short stuttering lines over an audio crackle as he
-// flickers between the maze's walls, before he turns up (no dialogue box;
-// ui/glitchCaption.js). The bowling set before he first appears, the hot
-// chocolate set before he's next found, after he first runs.
+// flickers between the maze's walls (no dialogue box; ui/glitchCaption.js):
+// the hot chocolate set before he's next found, after he first runs.
 export const JAX_GLITCH_FRAGMENTS = {
-  bowling: ['…strike… every time… and nobody…', '…ten pins… all of them… down…', '…never missed one… never…'],
   mug: ['…two cups… one’s always cold…', '…wasn’t an accident… it never was…', '…she always… waited…'],
 };
 

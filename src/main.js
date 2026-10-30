@@ -27,6 +27,7 @@ import { createAmbience } from './audio/ambience.js';
 import { createMusic, DEFAULT_MUSIC_VOLUME } from './audio/music.js';
 import { createTitleScreen } from './ui/titleScreen.js';
 import { createGamepadInput } from './input/gamepad.js';
+import { createIntroStory } from './ui/introStory.js';
 import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold, setLevelPoints, passesJaxGate } from './state/escapeThreshold.js';
 import { createChoiceTally } from './dialogue/choiceTally.js';
 import { createStoryProgress, ENDING_VARIANTS } from './game/storyProgress.js';
@@ -39,10 +40,11 @@ import {createMazeEncounter} from './levels/mazeEncounter.js';
 import { runMazeJaxChase } from './levels/mazeJaxChase.js';
 import { createMazeSounds } from './audio/mazeSounds.js';
 import { createGlitchCaption } from './ui/glitchCaption.js';
+import { playMazeTrail } from './effects/mazeTrail.js';
 import {createMazeObjectiveHUD} from './ui/mazeObjectiveHUD.js';
 import { createMazeHints } from './ui/mazeHints.js';
 import './ui/mazeHints.css';
-import { createMazeItems, createMazeSearch, MAZE_FINDABLES } from './state/mazeItems.js';
+import { createMazeItems, createMazeSearch, mazeObjective, MAZE_FINDABLES } from './state/mazeItems.js';
 import { runLevel1 } from './levels/level1.js';
 import { runHallwayScene } from './levels/level3Hallway.js';
 import { runLobbyScene } from './levels/level3Lobby.js';
@@ -273,6 +275,11 @@ const CAINE_HINT_IMAGES = [
   './models/objects/caine%20hint/261ccc01ee6dec910f904ffed42b06c3.jpg',
 ];
 let nextCaineHintImage = 0;
+function nextCaineHintPortrait() {
+  const portrait = CAINE_HINT_IMAGES[nextCaineHintImage % CAINE_HINT_IMAGES.length];
+  nextCaineHintImage++;
+  return portrait;
+}
 const interactPrompt = document.getElementById('prompt');
 const cinematicSkip = document.getElementById('cinematic-skip');
 const skipCurtain = document.getElementById('skip-curtain');
@@ -288,10 +295,15 @@ const btnLevelCompleteContinue = document.getElementById('btn-level-complete-con
 
 const pictureCounter = document.getElementById('picture-counter');
 const mazeItemsCounter = document.getElementById('maze-items-counter');
+const pomniHealthHUD = document.getElementById('pomni-health');
+const pomniHearts = [...pomniHealthHUD.querySelectorAll('.heart')];
+const hurtFlash = document.getElementById('hurt-flash');
 const mazeSearchTimer = document.getElementById('maze-search-timer');
 const searchTimer = document.getElementById('search-timer');
 const hintKey = document.getElementById('hint-key');
 const dialogueVoice = createVoicePlayer();
+// The narrated backstory a new game opens with (PLAY or Options > New Game).
+const introStory = createIntroStory({ root: document.getElementById('intro-story'), voice: dialogueVoice });
 // Escape mid-game pauses (it frees the mouse) rather than backing out of a
 // conversation; it only cancels on the menu screens (dialogue previews).
 // The browser may report the unlock just before or just after the key.
@@ -395,9 +407,8 @@ function showHint(text, durationMs = 3000, { caine = false } = {}) {
   hintKicker.hidden = !caine;
   hintPortrait.hidden = !caine;
   if (caine) {
-    hintPortrait.src = CAINE_HINT_IMAGES[nextCaineHintImage % CAINE_HINT_IMAGES.length];
+    hintPortrait.src = nextCaineHintPortrait();
     hintPortrait.alt = 'Caine';
-    nextCaineHintImage++;
   } else {
     hintPortrait.removeAttribute('src');
     hintPortrait.alt = '';
@@ -422,6 +433,13 @@ dialoguePicker.querySelectorAll('button[data-story]').forEach((button) => {
     event.stopPropagation();
     startNewGame(); // the story for real, from the opening
   });
+});
+// The narrated intro panels, then on into the new game like PLAY. Always
+// plays, even with dev mode's skip-cutscenes on, since it was asked for.
+document.getElementById('btn-backstory').addEventListener('click', (event) => {
+  event.stopPropagation();
+  openingAudio.unlock(); // while this click still counts as a user gesture
+  introStory.play(() => startNewGame());
 });
 
 // --- Developer jumps ----------------------------------------------------
@@ -508,7 +526,9 @@ dialoguePicker.querySelectorAll('button[data-jump]').forEach((button) => {
 for (const variant of ENDING_VARIANTS) {
   document.getElementById(`btn-ending-${variant}`).addEventListener('click', (event) => {
     event.stopPropagation();
-    if (currentRoom) returnToHome();
+    // Also invalidate an earlier ending whose cast is still loading, before
+    // it has a room or dialogue for returnToHome's usual cleanup to find.
+    returnToHome();
     resetObjectiveSession(true);
     titleScreen.hide();
     void leaveMaze(variant);
@@ -611,7 +631,7 @@ const titleScreen = createTitleScreen({
   isBlocked: titleMenuBlocked,
   onAction: (action) => {
     if (action === 'play') {
-      startNewGame();
+      startNewGameWithStory();
     } else if (action === 'options') {
       titleOptions.hidden = false;
     } else if (action === 'quit') {
@@ -789,7 +809,7 @@ document.getElementById('btn-replay-intro').addEventListener('click', () => {
 document.getElementById('btn-new-game').addEventListener('click', (event) => {
   event.stopPropagation();
   titleOptions.hidden = true;
-  startNewGame();
+  startNewGameWithStory();
 });
 document.getElementById('btn-room-previews').addEventListener('click', () => {
   titleOptions.hidden = true;
@@ -926,9 +946,11 @@ function returnToHome({ toRoomPicker = false } = {}) {
   interactPrompt.hidden = true;
   mazeEncounter?.dispose();mazeEncounter=null;
   mazeSounds?.dispose();mazeSounds=null;mazeChase?.stop();mazeChase=null;
+  mazeTrail?.dispose();mazeTrail=null;mazeTrailPending=false;
   foundJax = false;
   reachedExit = false;
   caught = false;
+  resetPomniHealth();
   scene.environment = null;
 
   pauseMenu.hidden = true;
@@ -939,6 +961,22 @@ function returnToHome({ toRoomPicker = false } = {}) {
     overlay.classList.add('hidden');
     titleScreen.show({ playIntro: false });
   }
+}
+
+/**
+ * PLAY and Options > New Game: the intro story (src/ui/introStory.js) first,
+ * then the new game. It starts and ends on black, like the title's fade
+ * into the tent and Pomni's dark bedroom on either side of it. Dev mode's
+ * skip-cutscenes setting and the dev story button go straight to the game.
+ */
+function startNewGameWithStory() {
+  if (devSkipCutscenesInput.checked) {
+    startNewGame();
+    return;
+  }
+  openingAudio.unlock(); // while this click/keypress still counts as a user gesture
+  titleScreen.hide();
+  introStory.play(() => startNewGame());
 }
 
 /**
@@ -1898,9 +1936,11 @@ const storyProgress = createStoryProgress({ objectives, isStorySession: () => pr
 // something as she picks each up. Same shared-instance-survives-room-
 // changes lifecycle as itemState above.
 const MAZE_PICKUP_LINES = { 'bowling-ball': 'mazePickupBowling', 'hot-chocolate-mug': 'mazePickupMug' };
-let mazeEncounter=null,lastMazeExitHint=0;
+let mazeEncounter=null;
 // This maze visit's keepsake sounds and Jax chase (fragments' caption), stopped on leaving it.
 let mazeSounds=null,mazeChase=null;
+// A trail hint revealed in the hints panel runs once she's back in play.
+let mazeTrailPending=false,mazeTrail=null;
 const glitchCaption=createGlitchCaption();
 const mazeItems = createMazeItems({
   onChange(){setLevelPoints('level3',mazeItems.score);currentRoomInfo?.jaxBoundary?.sync();takeCheckpoint();},
@@ -1912,12 +1952,15 @@ let mazeAttemptSeed = null;
 let mazeClockWasPlayable = false;
 document.addEventListener('visibilitychange', () => { mazeClockWasPlayable = false; });
 
-const mazeHUD=createMazeObjectiveHUD({root:document.getElementById('maze-objective-hud'),items:mazeItems});
+const mazeHUD=createMazeObjectiveHUD({root:document.getElementById('maze-objective-hud'),items:mazeItems,jaxFled:()=>Boolean(mazeChase?.fled)});
 
 const mazeHints = createMazeHints({
   button: document.getElementById('maze-hints-button'), reminder: document.getElementById('maze-hints-reminder'), panel: document.getElementById('maze-hints-panel'),
   onOpen: openMazeHints, onClose: finishMazeHints, onChange: () => takeCheckpoint(),
+  nextPortrait: nextCaineHintPortrait,
   hasCollected: id => mazeItems.hasCollected(id),
+  onTrail: () => { mazeTrailPending = true; },
+  getJaxPosition: () => (currentRoomKey === 'maze' ? currentRoomInfo?.hideouts?.[currentRoomInfo.jaxStop]?.spot ?? null : null),
   getPlayerPosition: () => player.position,
   getPlayerFacing: () => pomni?.rotation.y ?? 0,
 });
@@ -1965,11 +2008,15 @@ const ROOM_NAMES = {
 
 function takeCheckpoint() {
   // Preserve story checkpoint rules; the raw maze review can also save its
-  // own Level 3 progression without replaying the preceding story.
-  const mazeCheckpoint=currentRoomKey==='maze';
-  if ((!preLevel1Session&&!mazeCheckpoint) || restoringSave || (!openingCompleted&&!mazeCheckpoint) || !ROOM_NAMES[currentRoomKey]) return;
+  // own Level 3 progression without replaying the preceding story. An ending
+  // jump has already torn its room down, so use the maze as its restore label;
+  // loadGame routes the completed story straight back into the ending.
+  const endingCheckpoint = storyProgress.level3Complete;
+  const mazeCheckpoint = currentRoomKey === 'maze' || endingCheckpoint;
+  if ((!preLevel1Session&&!mazeCheckpoint) || restoringSave || (!openingCompleted&&!mazeCheckpoint)
+    || (!ROOM_NAMES[currentRoomKey] && !endingCheckpoint)) return;
   checkpoint = {
-    room: currentRoomKey,
+    room: ROOM_NAMES[currentRoomKey] ? currentRoomKey : 'maze',
     from: currentRoomFrom,
     objectives: objectives.snapshot(),
     story: storyProgress.snapshot(),
@@ -1987,7 +2034,8 @@ objectives.subscribe(() => takeCheckpoint());
 /** Starts the story from a save, from the title screen or mid-game. */
 function loadGame(data) {
   if (!data || data.incompatible) return;
-  if (currentRoom) returnToHome(); // tears the current run down cleanly
+  // A cast load can still be in flight with no current room to tear down.
+  if (!titleScreen.active) returnToHome();
   restoringSave = true;
   try {
     skipIntroRequested = false;
@@ -2189,8 +2237,8 @@ function canReachMazeJax() {
 }
 
 function mazeSearchInstructions() {
-  return {title:mazeItems.jaxComplete?'Reach the exit':'Follow Jax',
-    detail:mazeItems.jaxComplete?'The conversation is complete. Leave the maze.':'Find Jax before time runs out. He runs when you get close, so follow him until he stops running, then call out to him (E).'};
+  return {title:mazeObjective(mazeItems,{jaxFled:Boolean(mazeChase?.fled)}).title,
+    detail:'Find Jax before time runs out. He runs when you get close, so follow him until he stops running, then call out to him (E).'};
 }
 
 function updateMazeSearch(deltaSeconds) {
@@ -2286,6 +2334,30 @@ function jaxFinalScene(room, handlers) {
   };
 }
 
+/** Runs a revealed trail hint once she's back in play, then clears it away. */
+function updateMazeTrail(deltaSeconds) {
+  if (mazeTrailPending && currentRoomKey === 'maze' && currentRoomInfo?.routeToJax && mazeGameplayAvailable(gameplayHUDContext())) {
+    mazeTrailPending = false;
+    mazeTrail?.dispose();
+    mazeTrail = playMazeTrail(currentRoomInfo.group, currentRoomInfo.routeToJax(player.position));
+  }
+  if (mazeTrail && !mazeTrail.update(deltaSeconds)) { mazeTrail.dispose(); mazeTrail = null; }
+}
+
+// After the talk with Jax, this long (to see him settle, or come apart)
+// before the maze fades out into the ending. There's no exit to walk to.
+const LEAVE_AFTER_TALK_SECONDS = 1.6;
+function leaveMazeAfterTalk() {
+  if (reachedExit) return;
+  reachedExit = true; // no Gloink catches her in the meantime
+  foundJax = true;
+  const token = loadToken;
+  setTimeout(() => {
+    if (token !== loadToken || currentRoomKey !== 'maze') return;
+    void leaveMaze(jaxOutcome());
+  }, LEAVE_AFTER_TALK_SECONDS * 1000);
+}
+
 /** Fades the screen to black (true) or back (false); resolves once it's there. */
 function fadeScreen(toBlack, seconds = 1.2) {
   sceneFade.style.transitionDuration = `${seconds}s`;
@@ -2330,6 +2402,7 @@ const ENDING_PARTS = {
  * Escape skips what's left; developer cutscene skipping skips it all.
  */
 async function playEnding(variant) {
+  const loadingToken = loadToken;
   sceneFade.classList.add('on');
   overlay.classList.add('hidden'); // the dev menu, when it's jumped here from there
   if (!skippingCutscenes()) {
@@ -2337,21 +2410,33 @@ async function playEnding(variant) {
     try {
       cast = await loadEndingCast(variant);
     } catch (error) {
-      console.warn('Ending cast unavailable; showing its card.', error);
+      if (loadingToken === loadToken) console.warn('Ending cast unavailable; showing its card.', error);
     }
-    if (cast && await playEndingLobby(variant, cast)) {
-      const token = loadToken;
-      let door = null;
-      try {
-        door = createExitDoorScene(renderer, variant, cast);
-      } catch (error) {
-        console.warn('Exit door scene unavailable; showing its card.', error);
+    if (loadingToken !== loadToken) {
+      if (cast) disposeEndingCast(cast);
+      return;
+    }
+    if (cast) {
+      const finished = await playEndingLobby(variant, cast);
+      if (finished === null) return; // Home or a newer room superseded it
+      if (finished) {
+        const token = loadToken;
+        let door = null;
+        try {
+          door = createExitDoorScene(renderer, variant, cast);
+        } catch (error) {
+          console.warn('Exit door scene unavailable; showing its card.', error);
+        }
+        if (door) {
+          await playEndingScene(door, ENDING_PARTS[variant].door);
+          door.dispose();
+        }
+        if (token !== loadToken) return;
+      } else {
+        // Escape or a missing Lobby ends this ending before the exit-door
+        // scene can take ownership of the separately loaded Pomni and Caine.
+        disposeEndingCast(cast);
       }
-      if (door) {
-        await playEndingScene(door, ENDING_PARTS[variant].door);
-        door.dispose();
-      }
-      if (token !== loadToken) return;
     }
   }
   const token = loadToken;
@@ -2361,18 +2446,35 @@ async function playEnding(variant) {
   returnToHome();
 }
 
+/** Releases a cast whose assets finished loading after its ending was cancelled. */
+function disposeEndingCast(cast) {
+  const roots = [
+    cast.pomni?.pomni, cast.jaxApi?.jax, cast.ribbitApi?.ribbit,
+    cast.ragathaApi?.ragatha, cast.kaufmoApi?.kaufmo, cast.caineApi?.caine,
+    ...(cast.extras ?? []).map(extra => extra.root),
+  ];
+  for (const root of roots) if (root) disposeObject3D(root);
+}
+
 /**
  * The ending's first part, in the loaded Lobby outside the maze door.
  * Resolves true once Kaufmo's led them off (the screen black again),
- * false if it was skipped or the game moved on.
+ * false if it was skipped or unavailable, or null if the game moved on.
  */
 async function playEndingLobby(variant, cast) {
-  const room = await selectRoom('tadc', {
+  const loading = selectRoom('tadc', {
     from: 'maze',
     onReady() { overlay.classList.add('hidden'); btnTitle.hidden = true; },
   });
-  if (!room || room !== currentRoomInfo) return false;
+  // selectRoom invalidates the maze synchronously; this is the Lobby's token.
   const token = loadToken;
+  const room = await loading;
+  if (token !== loadToken) {
+    // The load was superseded before any cast member entered the room.
+    disposeEndingCast(cast);
+    return null;
+  }
+  if (!room || room !== currentRoomInfo) return false;
   resetMoveState();
   stage.hold(true);
   music.setRoom(ENDING_PARTS[variant].music);
@@ -2393,9 +2495,21 @@ async function playEndingLobby(variant, cast) {
     });
     if (!started) resolve(false);
   });
-  if (token !== loadToken) return false;
+  if (token !== loadToken) {
+    // Room teardown owns everyone staged in the Lobby; these two roots were
+    // never parented there and need their own cleanup after detaching actors.
+    lobby.detach();
+    disposeObject3D(cast.pomni.pomni);
+    disposeObject3D(cast.caineApi.caine);
+    return null;
+  }
   await fadeScreen(true, 1.2);
-  if (token !== loadToken) return false;
+  if (token !== loadToken) {
+    lobby.detach();
+    disposeObject3D(cast.pomni.pomni);
+    disposeObject3D(cast.caineApi.caine);
+    return null;
+  }
   lobby.detach();
   stage.releaseCamera();
   stage.lookWithHead(null);
@@ -2415,6 +2529,9 @@ function playEndingScene(ending, dialogueKey) {
       void fadeScreen(false, 1.6);
       // The script's last direction: cut to white.
       const close = async () => {
+        // Home cancels the cutscene before it cancels this dialogue. In that
+        // case the old conversation must not fade the new title back to black.
+        if (finished || token !== loadToken) { stop(); return; }
         sceneFade.classList.add('white');
         await fadeScreen(true, 2);
         stop();
@@ -2600,6 +2717,7 @@ function mazeGameplayAvailable(context) {
 
 function updateMazeItemsCounter(context) {
   const visible = mazeGameplayAvailable(context);
+  updateHealthHUD(visible);
 
   // No keepsake count: nothing on screen asks for them (only "Follow Jax").
   if (!mazeItemsCounter.hidden) mazeItemsCounter.hidden = true;
@@ -2699,9 +2817,11 @@ function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
   interactPrompt.hidden = true;
   mazeEncounter?.dispose();mazeEncounter=null;
   mazeSounds?.dispose();mazeSounds=null;mazeChase?.stop();mazeChase=null;
+  mazeTrail?.dispose();mazeTrail=null;mazeTrailPending=false;
   foundJax = false;
   reachedExit = false;
   caught = false;
+  resetPomniHealth();
   return myToken;
 }
 
@@ -2833,7 +2953,7 @@ function applyLoadedRoom({
   currentRoom = group;
   currentRoomKey = roomKey;
   if(roomKey==='maze'){
-    // Finding him (mazeJaxChase.js): he turns up a minute in, mumbles and
+    // Finding him (mazeJaxChase.js): he's there from the start, mumbles and
     // bolts twice, then in his nook she calls out (E) and they talk here.
     const mazeRoom=currentRoomInfo;
     const listener=openingAudio.listener;
@@ -2852,7 +2972,10 @@ function applyLoadedRoom({
       outcome:()=>passesJaxGate()?'stays':'abstracts',
       // Talked through, he stays turned to her (how he is depends on the
       // outcome); left, he's back to his wall.
-      onRelease:()=>chase.talkEnded(mazeItems.jaxComplete,mazeItems.jaxOutcome),
+      onRelease:()=>{
+        chase.talkEnded(mazeItems.jaxComplete,mazeItems.jaxOutcome);
+        if(mazeItems.jaxComplete)leaveMazeAfterTalk();
+      },
     });
     foundJax=mazeItems.jaxComplete;
     mazeRoom.interactables.push({
@@ -2947,7 +3070,7 @@ function applyLoadedRoom({
       mazeAttemptSeed = currentRoomInfo.mazeSeed;
       mazeSearch.start();
     }
-    if(mazeItems.jaxComplete)mazeSearch.tick(0,{playable:true,atJax:true});
+    if(mazeItems.jaxComplete){mazeSearch.tick(0,{playable:true,atJax:true});leaveMazeAfterTalk();} // a save taken just after the talk
     if(mazeItems.jaxOutcome==='abstracts')currentRoomInfo.jaxApi?.setShown(false); // gone since Ending B
     foundJax = mazeSearch.status === 'reached';
   }
@@ -3092,6 +3215,19 @@ window.addEventListener('keydown', (e) => {
   }
 });
 window.addEventListener('keyup', (e) => setMove(e.code, false));
+
+window.addEventListener('wheel', (e) => {
+  if (!isLocked || !readyToPlay || paused || dialogueUI.isActive || activeCutscene || stageBusy() || stageCamera) return;
+  const zoomingIn = e.deltaY < 0;
+  if (firstPerson) {
+    // Out of her eyes, back to the nearest stop behind her.
+    if (!zoomingIn) { firstPerson = false; zoomTarget = cameraZoom = currentCameraDistance = ZOOM_MIN; }
+    return;
+  }
+  if (zoomingIn && zoomTarget <= ZOOM_MIN + 1e-3) { firstPerson = true; return; }
+  const notches = THREE.MathUtils.clamp(Math.abs(e.deltaY) / 100, 0.25, 3);
+  zoomTarget = THREE.MathUtils.clamp(zoomTarget * ZOOM_STEP ** (zoomingIn ? -notches : notches), ZOOM_MIN, ZOOM_MAX);
+}, { passive: true });
 
 // --- Controller ---
 // Right stick look speed at full tilt, radians per second (scaled by the
@@ -3293,6 +3429,14 @@ const cameraOffset = new THREE.Vector3();
 const cameraHitPoint = new THREE.Vector3();
 const cameraRaycaster = new THREE.Raycaster();
 let currentCameraDistance = CAMERA_DISTANCE;
+// Mouse-wheel zoom: the wheel sets zoomTarget, and the camera's distance
+// (cameraZoom) glides after it. Scrolling in past the nearest stop goes to
+// first person; scrolling out of first person comes back to the nearest stop.
+const ZOOM_MIN = 1.4, ZOOM_MAX = 7;
+const ZOOM_STEP = 1.15;       // each wheel notch moves the camera this many times nearer/farther
+const ZOOM_SHARPNESS = 10;    // how fast the camera glides to the new distance
+let zoomTarget = CAMERA_DISTANCE;
+let cameraZoom = CAMERA_DISTANCE;
 
 // Pomni turning and her walk animation (see updatePomniWalk).
 const TURN_SHARPNESS = 14;     // higher = snappier turning
@@ -3441,6 +3585,63 @@ const SCREEN_CENTER = new THREE.Vector2(0, 0);
 let foundJax = false;
 let reachedExit = false;
 let caught = false;
+// Level 3 health: each Gloink (or hazard) touch costs a heart, then she
+// can't be hurt again for HURT_COOLDOWN while she's knocked back out of
+// reach. Losing the last one is the old instant catch: Gloinked, and the
+// level restarts. Full again every time the maze loads.
+const MAX_HEALTH = 3;
+const HURT_COOLDOWN = 2;           // seconds
+const KNOCKBACK_DISTANCE = 1.6;    // metres
+const KNOCKBACK_SECONDS = .25;
+let pomniHealth = MAX_HEALTH;
+let hurtCooldown = 0;
+let knockbackLeft = 0;
+const knockbackDirection = new THREE.Vector3();
+
+function resetPomniHealth() {
+  pomniHealth = MAX_HEALTH;
+  hurtCooldown = knockbackLeft = 0;
+  hurtFlash.classList.remove('shown');
+  updateHealthHUD(false);
+}
+
+function updateHealthHUD(visible) {
+  if (pomniHealthHUD.hidden === visible) pomniHealthHUD.hidden = !visible;
+  pomniHearts.forEach((heart, i) => heart.classList.toggle('lost', i >= pomniHealth));
+  pomniHealthHUD.setAttribute('aria-label', `Pomni's health: ${pomniHealth} of ${MAX_HEALTH}`);
+}
+
+/** One hit from `hazard`. Returns true if that was her last heart. */
+function hurtPomni(hazard) {
+  pomniHealth = Math.max(0, pomniHealth - 1);
+  updateHealthHUD(!pomniHealthHUD.hidden);
+  pomniHealthHUD.classList.remove('hit');
+  void pomniHealthHUD.offsetWidth; // restart the shake on a second hit
+  pomniHealthHUD.classList.add('hit');
+  hurtFlash.classList.add('shown');
+  requestAnimationFrame(() => requestAnimationFrame(() => hurtFlash.classList.remove('shown')));
+  if (pomniHealth === 0) return true;
+  openingAudio.playChime('fail');
+  hurtCooldown = HURT_COOLDOWN;
+  knockbackLeft = KNOCKBACK_SECONDS;
+  knockbackDirection.set(player.position.x - hazard.mesh.position.x, 0, player.position.z - hazard.mesh.position.z);
+  // Right on top of it: back the way she's facing.
+  if (knockbackDirection.lengthSq() < 1e-6) knockbackDirection.set(Math.sin(cameraYaw), 0, Math.cos(cameraYaw));
+  knockbackDirection.normalize();
+  const left = pomniHealth === 1 ? '1 heart left' : `${pomniHealth} hearts left`;
+  showHint(`${hazard.mesh.userData?.isGloink ? 'A Gloink got you!' : 'Ouch!'} ${left}.`, 2500);
+  return false;
+}
+
+/** Slides her back from whatever hit her, through the same wall checks as walking. */
+function applyKnockback(deltaSeconds) {
+  if (knockbackLeft <= 0) return;
+  const step = Math.min(deltaSeconds, knockbackLeft);
+  knockbackLeft -= step;
+  const distance = KNOCKBACK_DISTANCE * (step / KNOCKBACK_SECONDS);
+  if (collisionMeshes.length > 0) moveWithCollisions(player, knockbackDirection, distance);
+  else moveWithBoxCollisions(player, knockbackDirection, distance);
+}
 
 /**
  * Steps every patrolling NPC/hazard along its waypoint loop, ping-ponging
@@ -4580,41 +4781,33 @@ function travelTo(roomKey) {
   });
 }
 
-function checkTriggers(player) {
+function checkTriggers(player, deltaSeconds = 0) {
   if (currentRoomKey !== 'maze' || caught || reachedExit) return;
+  hurtCooldown = Math.max(0, hurtCooldown - deltaSeconds);
+  applyKnockback(deltaSeconds);
 
   for (const hazard of hazards) {
+    if (hurtCooldown > 0) break;
     const dx = player.position.x - hazard.mesh.position.x;
     const dz = player.position.z - hazard.mesh.position.z;
     if (Math.hypot(dx, dz) < hazard.radius + PLAYER_RADIUS) {
+      if (!hurtPomni(hazard)) break;
       caught = true;
-      // A hazard catch fails the attempt outright, same as the countdown
-      // expiring: retryMaze shows the fail card, then reseeds (a fresh
-      // layout, both keepsakes back) and restarts the full countdown.
+      // Out of hearts fails the attempt, same as the countdown expiring:
+      // retryMaze shows the fail card, then reseeds (a fresh layout, both
+      // keepsakes back) and restarts the full countdown.
       const title = hazard.mesh.userData?.isGloink ? 'Gloinked!' : 'Abstracted!';
       const subtitle = hazard.mesh.userData?.isGloink
-        ? 'A patrolling gloink caught you — try again.'
-        : 'A patrolling hazard caught you — try again.';
+        ? 'The Gloinks got you three times. The maze starts over.'
+        : 'A patrolling hazard got you three times. The maze starts over.';
       void retryMaze(title, subtitle);
       return;
     }
   }
 
+  // No exit to walk to: she leaves once she's talked to Jax (leaveMazeAfterTalk).
   if (!triggers) return;
-  triggerProbe.set(player.position.x, floorY + 0.5, player.position.z);
-
-
   updateMazeSearch(0);
-  if (triggers.exit.containsPoint(triggerProbe)) {
-    if(!mazeItems.jaxComplete){
-      const now=performance.now();
-      if(!lastMazeExitHint||now-lastMazeExitHint>3000){showHint("Find Jax and talk to him before leaving.");lastMazeExitHint=now;}
-      return;
-    }
-    foundJax=true;
-    reachedExit = true;
-    void leaveMaze(jaxOutcome());
-  }
 }
 
 function updateMovement(deltaSeconds) {
@@ -4718,7 +4911,7 @@ function updateMovement(deltaSeconds) {
   }
   updatePomniWalk(deltaSeconds, deltaSeconds > 0 ? moved / deltaSeconds : 0);
 
-  checkTriggers(player);
+  checkTriggers(player, deltaSeconds);
   checkPortals();
   updateHallLink();
   updateHallDoorways();
@@ -5063,7 +5256,8 @@ function updateCamera(dt) {
 
   // Snap in instantly when a wall gets in the way (so it never clips through),
   // but ease back out smoothly once it's clear.
-  const allowed = cameraCollisionDistance(cameraTarget, cameraOffset, CAMERA_DISTANCE);
+  cameraZoom = THREE.MathUtils.damp(cameraZoom, zoomTarget, ZOOM_SHARPNESS, dt);
+  const allowed = cameraCollisionDistance(cameraTarget, cameraOffset, cameraZoom);
   currentCameraDistance = allowed < currentCameraDistance
     ? allowed
     : THREE.MathUtils.damp(currentCameraDistance, allowed, CAMERA_RETURN_SHARPNESS, dt);
@@ -5235,6 +5429,7 @@ function animate() {
   updateCaineArrival(delta);
   updateSearchTimer(delta);
   updateMazeSearch(rawDelta);
+  introStory.update(delta);
   fastForwardCutscenes();
   // Black until she's playable, then the curtain fades off the room.
   skipCurtain.classList.toggle('shown', skipIntroRequested && !paused);
@@ -5246,6 +5441,7 @@ function animate() {
       playerActive: isLocked && readyToPlay && !dialogueUI.isActive && !activeCutscene && !stageBusy(),
     });
     mazeSounds?.update(delta, player.position);
+    updateMazeTrail(delta);
     refreshDynamicColliders();
     // Her bedroom's lighting runs the environment itself.
     if (!currentRoomInfo?.lighting) {
@@ -5378,6 +5574,14 @@ export function setDormHallPreviewForReview(visible) {
   const preview = currentRoom?.userData.dormHallPreview;
   preview?.setVisible(Boolean(visible));
   return Boolean(preview);
+}
+
+/** Development-only health review: puts the first Gloink right on Pomni; returns her hearts. */
+export function gloinkPomniForReview() {
+  if (!import.meta.env.DEV) return null;
+  const gloink = hazards.find(hazard => hazard.mesh.userData?.isGloink) ?? hazards[0];
+  if (gloink) gloink.mesh.position.set(player.position.x, gloink.mesh.position.y, player.position.z);
+  return { health: pomniHealth, caught, hudHidden: pomniHealthHUD.hidden };
 }
 
 /** Read-only development diagnostics for story and room browser regressions. */

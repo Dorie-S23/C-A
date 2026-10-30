@@ -1,7 +1,6 @@
 import * as THREE from 'three';
-import { JAX_SPAWN_SECONDS } from '../rooms/mazeRoom.js';
 
-// Finding Jax in the maze (Level 3). He turns up a minute in (mazeRoom.js),
+// Finding Jax in the maze (Level 3). He's there from the start (mazeRoom.js),
 // pacing in a dead end with his back to the way in. Twice, when Pomni
 // spots him she stops and he's heard mumbling to himself; if she then gets
 // close he frets and bolts, off round the corners to his next hiding
@@ -9,8 +8,7 @@ import { JAX_SPAWN_SECONDS } from '../rooms/mazeRoom.js';
 // to him (E), he turns to face her, she walks up and they talk. Whatever
 // keepsakes she has (if any).
 //
-// Before he first turns up, and again while he's away after first
-// running, his glitch fragments play: stuttering lines (no dialogue box)
+// While he's away after first running, his glitch fragments play: stuttering lines (no dialogue box)
 // over a crackle, and he flickers into sight down the corridor she's
 // looking along, there and gone.
 
@@ -36,7 +34,7 @@ const FLICKER_FARTHEST = 13;
  * @param {object} game main.js's missionApi
  * @param {object} room the loaded maze (mazeRoom.js)
  * @param {{ startTalk: () => boolean, onFled?: (stop: number) => void,
- *   fragments?: { bowling: string[], mug: string[] },
+ *   fragments?: { mug: string[] },
  *   caption?: { show(text: string, seconds: number): void, hide(): void },
  *   crackle?: () => void }} options
  *   startTalk: begins the final conversation (main.js's maze encounter);
@@ -200,11 +198,7 @@ export function runMazeJaxChase(game, room, { startTalk, onFled, fragments, capt
   room.storyUpdate = (deltaSeconds, playerPosition) => {
     if (!live() || !playerPosition) return;
     advanceFragments(deltaSeconds);
-    if (!room.jaxSpawned) {
-      // The bowling fragments, as his first minute runs out.
-      if (room.jaxWait >= JAX_SPAWN_SECONDS - fragmentsLength(fragments?.bowling ?? []) - .5) playFragments('bowling');
-      return;
-    }
+    if (!room.jaxSpawned) return;
     if (phase === 'fleeing' && run) {
       if (run.gone) {
         if (fragmentsPlaying || (run.reappearIn -= deltaSeconds) > 0) return;
@@ -226,6 +220,8 @@ export function runMazeJaxChase(game, room, { startTalk, onFled, fragments, capt
 
   const controller = {
     get phase() { return phase; },
+    /** He's run from her at least once (so she's following him now, not finding him). */
+    get fled() { return phase === 'fleeing' || room.jaxStop > 0; },
     /** The fragment showing now, if any (for diagnostics). */
     get fragment() { return fragmentsPlaying ? fragmentsPlaying.lines[fragmentsPlaying.line] ?? null : null; },
     /** Leaving the maze: no caption left behind. */

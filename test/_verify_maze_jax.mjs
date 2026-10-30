@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import fs from 'node:fs';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { loadMazeRoom, JAX_SPAWN_SECONDS } from '../src/rooms/mazeRoom.js';
+import { loadMazeRoom } from '../src/rooms/mazeRoom.js';
 import { createMazeItems } from '../src/state/mazeItems.js';
 
 globalThis.ProgressEvent ??= class {};
@@ -21,21 +21,13 @@ GLTFLoader.prototype.load = function (url, onLoad, _progress, onError) {
 
 const player = new THREE.Vector3(0, 1.6, 0);
 
-test('Jax turns up in his hideout only after a minute of her actually being in the maze', async () => {
+test('Jax is in his first hideout as soon as she arrives in the maze', async () => {
   const room = await loadMazeRoom(null, { seed: 42, mazeItems: createMazeItems() });
   const { jax } = room.jaxApi;
   const blocking = () => room.jaxBoundary.colliders.filter(box => room.colliders.includes(box)).length;
   room.update(0, player);
-  assert.equal(jax.visible, false); assert.equal(room.jaxSpawned, false);
-  assert.equal(blocking(), 0, 'No invisible barrier where he will be, before he is');
-  assert.equal(room.jaxEncounter.enabled(), false);
-  // Menus and conversations don't count.
-  for (let i = 0; i < 120; i++) room.update(1, player, { playerActive: false });
-  assert.equal(room.jaxSpawned, false);
-  for (let t = 0; t < JAX_SPAWN_SECONDS - 1; t += .5) room.update(.5, player);
-  assert.equal(room.jaxSpawned, false);
-  room.update(1.01, player);
   assert.equal(room.jaxSpawned, true); assert.equal(jax.visible, true);
+  assert.ok(jax.position.distanceTo(room.hideouts[0].spot) < 1e-6, 'at his first hiding place');
   assert.equal(room.jaxEncounter.enabled(), false, 'Reaching him (for the countdown) only counts at his nook');
   assert.equal(blocking(), 0, 'Where he first turns up he just runs off: no barrier');
   room.placeJax(room.hideouts.length - 1); room.update(0, player);
@@ -93,6 +85,7 @@ test('found, he mumbles; close, he bolts to the next hiding place; the third tim
   const { jax } = room.jaxApi;
   const tick = async (seconds = 1 / 30) => { room.update(seconds, her); await Promise.resolve(); await Promise.resolve(); };
   assert.equal(room.hideouts.length, 3);
+  assert.equal(chase.fled, false, 'Find Jax, until he runs');
   assert.equal(new Set(room.hideouts.map(h => h.cell)).size, 3, 'three different hiding places');
   for (const [stop, mumble] of [[0, 'level3JaxMumble1'], [1, 'level3JaxMumble2']]) {
     const { spot, wayIn, cell } = room.hideouts[stop];
@@ -111,6 +104,7 @@ test('found, he mumbles; close, he bolts to the next hiding place; the third tim
     her.set(spot.x + wayIn.x * 2.6, 1.6, spot.z + wayIn.z * 2.6);
     await tick();
     assert.equal(chase.phase, 'fleeing');
+    assert.equal(chase.fled, true, 'then Follow Jax');
     let ran = 0;
     for (let i = 0; i < 600 && chase.phase === 'fleeing'; i++) {
       await tick();
@@ -138,7 +132,7 @@ test('found, he mumbles; close, he bolts to the next hiding place; the third tim
   assert.ok(room.jaxGlitch.uniforms.uGlitch.value <= .121, 'staying himself, he settles (even his bursts are small)'); assert.deepEqual(log.at(-1), ['release']); assert.equal(held, false);
 });
 
-test('his glitch fragments: the bowling set as his first minute runs out, the hot chocolate set while he is away after first running; he flickers into sight', async () => {
+test('his glitch fragments: the hot chocolate set while he is away after first running; he is there from the start', async () => {
   const { runMazeJaxChase } = await import('../src/levels/mazeJaxChase.js');
   const { JAX_GLITCH_FRAGMENTS } = await import('../src/data/dialogues.js');
   const room = await loadMazeRoom(null, { seed: 42, mazeItems: createMazeItems() });
@@ -147,7 +141,7 @@ test('his glitch fragments: the bowling set as his first minute runs out, the ho
   // Down the corridor out of his first dead end, looking along it.
   const her = spot0.spot.clone().addScaledVector(spot0.wayIn, 5.6).setY(1.6);
   const shown = [];
-  let crackles = 0, flickers = 0, wasVisible = false;
+  let crackles = 0;
   const game = {
     token: 1, isRoom: () => true, playing: true, playerPosition: her, viewDirection: spot0.wayIn.clone().negate(),
     showHint() {}, playDialogue: (key, handlers) => { handlers.onComplete(); return true; },
@@ -159,22 +153,17 @@ test('his glitch fragments: the bowling set as his first minute runs out, the ho
   });
   const tick = async (seconds = 1 / 30) => {
     room.update(seconds, her);
-    if (jax.visible && !wasVisible && !room.jaxSpawned) flickers++;
-    wasVisible = jax.visible;
     await Promise.resolve(); await Promise.resolve();
   };
-  for (let t = 0; t < 45; t += .5) await tick(.5);
-  assert.deepEqual(shown, [], 'nothing for most of the minute');
-  while (!room.jaxSpawned) await tick();
-  assert.deepEqual(shown, JAX_GLITCH_FRAGMENTS.bowling, 'the bowling fragments, then he turns up');
-  assert.equal(crackles, 3, 'each over a crackle');
-  assert.ok(flickers >= 3, `he flickers into sight while they play (${flickers})`);
-  assert.equal(jax.visible, true); assert.ok(jax.position.distanceTo(spot0.spot) < 1e-6, 'and is then at his hiding place');
+  await tick();
+  assert.equal(jax.visible, true); assert.ok(jax.position.distanceTo(spot0.spot) < 1e-6, 'at his hiding place from the start');
+  assert.deepEqual(shown, [], 'no fragments before he is first found');
   // Found, he mumbles (completed straight away here); close, he runs.
   for (let i = 0; i < 3; i++) await tick();
   her.copy(spot0.spot).addScaledVector(spot0.wayIn, 2.6).setY(1.6);
   for (let i = 0; i < 900 && !(chase.phase === 'hiding' && room.jaxStop === 1); i++) await tick();
-  assert.deepEqual(shown.slice(3), JAX_GLITCH_FRAGMENTS.mug, 'the hot chocolate fragments while he is away');
+  assert.deepEqual(shown, JAX_GLITCH_FRAGMENTS.mug, 'the hot chocolate fragments while he is away');
+  assert.equal(crackles, JAX_GLITCH_FRAGMENTS.mug.length, 'each over a crackle');
   assert.equal(room.jaxStop, 1); assert.equal(jax.visible, true);
   assert.ok(jax.position.distanceTo(room.hideouts[1].spot) < 1e-6);
 });
@@ -192,4 +181,27 @@ test('the Jax gate: Levels 1 to 3 reaching 75% of what they could earn keeps him
   assert.equal(gate.passesJaxGate(), true, '12 of 16');
   assert.equal(gate.getEscapeTotal(), 8, 'the escape gate is still Levels 1 and 2 only');
   gate.resetEscapeThreshold();
+});
+
+test('a trail hint runs through the corridors from her to Jax and is gone after three seconds', async () => {
+  const { playMazeTrail, TRAIL_SECONDS } = await import('../src/effects/mazeTrail.js');
+  const room = await loadMazeRoom(null, { seed: 42, mazeItems: createMazeItems() });
+  const her = new THREE.Vector3(...room.spawn.toArray());
+  const route = room.routeToJax(her);
+  assert.ok(route[0].distanceTo(her.clone().setY(0)) < 1e-6, 'from her');
+  assert.ok(route.at(-1).distanceTo(room.hideouts[room.jaxStop].spot) < 1e-6, 'to where he is (or will turn up)');
+  for (let i = 1; i < route.length - 1; i++) {
+    const from = room.mazePlacement.cellAt(route[i]), to = room.mazePlacement.cellAt(route[i + 1]);
+    if (i < route.length - 2) assert.equal(Math.abs(from.r - to.r) + Math.abs(from.c - to.c), 1, 'cell to neighbouring cell, never through a wall');
+  }
+  const trail = playMazeTrail(room.group, route);
+  const mesh = room.group.getObjectByName('MazeTrailHint');
+  assert.ok(mesh, 'laid in the maze');
+  let alive = true, t = 0, heads = [];
+  while (alive && t < 10) { alive = trail.update(1 / 30); t += 1 / 30; heads.push(mesh.material.uniforms.uHead.value); }
+  assert.ok(Math.abs(t - TRAIL_SECONDS) < .05 && TRAIL_SECONDS === 3, `over in ${t.toFixed(2)} s`);
+  assert.ok(heads.every((v, i) => !i || v >= heads[i - 1]) && heads.at(-1) === 1, 'its head runs all the way to him');
+  assert.ok(mesh.material.uniforms.uFade.value < .01, 'faded out');
+  trail.dispose();
+  assert.equal(room.group.getObjectByName('MazeTrailHint'), undefined);
 });
