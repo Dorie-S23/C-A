@@ -214,9 +214,38 @@ test('a trail hint runs through the corridors from her to Jax, never through a w
   const mesh = room.group.getObjectByName('MazeTrailHint');
   let alive = true, t = 0, heads = [];
   while (alive && t < 10) { alive = trail.update(1 / 30); t += 1 / 30; heads.push(mesh.material.uniforms.uHead.value); }
-  assert.ok(Math.abs(t - TRAIL_SECONDS) < .05 && TRAIL_SECONDS === 3, `over in ${t.toFixed(2)} s`);
+  assert.ok(Math.abs(t - TRAIL_SECONDS) < .05 && TRAIL_SECONDS === 6, `over in ${t.toFixed(2)} s`);
   assert.ok(heads.every((v, i) => !i || v >= heads[i - 1]) && heads.at(-1) === 1, 'its head runs all the way to him');
   assert.ok(mesh.material.uniforms.uFade.value < .01, 'faded out');
   trail.dispose();
   assert.equal(room.group.getObjectByName('MazeTrailHint'), undefined);
+});
+
+test('wrong answers make his glitching worse: more of it, more often, for the rest of the talk', async () => {
+  const { applyJaxGlitch } = await import('../src/shaders/jaxGlitch.js');
+  const glitch = applyJaxGlitch(new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial()));
+  const sample = () => {
+    let sum = 0, bursts = 0, was = false;
+    for (let i = 0; i < 600; i++) { // ten seconds
+      glitch.update(1 / 60);
+      const value = glitch.uniforms.uGlitch.value;
+      sum += value;
+      // Above his steady hum for this level and severity (see jaxGlitch.js's HUM / SEVERE_*).
+      const hum = (2 / 3) * (.18 + (.5 - .18) * glitch.severity) * (1 + .9 * glitch.severity);
+      const flaring = value > hum * 1.05;
+      if (flaring && !was) bursts++;
+      was = flaring;
+    }
+    return { mean: sum / 600, bursts };
+  };
+  glitch.setLevel(2 / 3); // a distressed line
+  const calm = sample();
+  const steps = [calm];
+  for (let wrong = 1; wrong <= 3; wrong++) { glitch.setSeverity(glitch.severity + .34); steps.push(sample()); }
+  for (let i = 1; i < steps.length; i++) assert.ok(steps[i].mean > steps[i - 1].mean, `wrong answer ${i}: more glitched (${steps.map(s => s.mean.toFixed(2))})`);
+  assert.equal(calm.bursts, 0, 'calm: no bursts of its own');
+  assert.ok(steps[3].bursts >= 6, `three wrong: bursts all the time (${steps[3].bursts} in 10 s)`);
+  assert.equal(glitch.severity, 1, 'and it tops out');
+  glitch.setSeverity(0);
+  assert.ok(Math.abs(sample().mean - calm.mean) < .02, 'steadied, it settles back');
 });

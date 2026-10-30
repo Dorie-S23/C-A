@@ -262,8 +262,8 @@ export function runMazeJaxChase(game, room, { startTalk, onFled, fragments, capt
       stage.lookWithHead(null);
       if (finished) {
         phase = 'done';
-        if (outcome === 'abstracts') { jaxGlitch.setLevel(1); jaxGlitch.burst(); jaxApi.glitch(); }
-        else jaxGlitch.setLevel(.12);
+        if (outcome === 'abstracts') { jaxGlitch.setLevel(1); jaxGlitch.setSeverity(1); jaxGlitch.burst(); jaxApi.glitch(); }
+        else { jaxGlitch.setLevel(.12); jaxGlitch.setSeverity(0); }
         return;
       }
       jaxApi.engage(null);
