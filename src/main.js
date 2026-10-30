@@ -354,6 +354,8 @@ const tutorialHUD = createTutorialHUD({
 let preLevel1Session = false;
 let storySessionId = 0;
 let morningDialoguePending = false;
+// The controls card has popped up after the opening once this run (resumeOpeningGameplay).
+let openingControlsShown = false;
 // Saving (see takeCheckpoint): the latest checkpoint, and how Pomni came
 // into the current room (a loaded save arrives the same way).
 let checkpoint = null;
@@ -1103,6 +1105,7 @@ function resetObjectiveSession(active = false) {
   morningDialoguePending = false;
   objectives.reset(); objectiveHUD.hide();
   controlsTutorial.reset(); tutorialHUD.hide();
+  openingControlsShown = false;
   checkpoint = null; // a new session has nothing to save until its first checkpoint
 }
 
@@ -1267,6 +1270,12 @@ function resumeOpeningGameplay(token) {
   overlay.classList.remove('hidden');
   overlayTitle.textContent = 'Click to Play';
   overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact';
+  // Her wake-up and Ragatha's visit are over: the controls, once a run,
+  // before she's first let loose. Closing them leaves Click to Play.
+  if (!openingControlsShown) {
+    openingControlsShown = true;
+    controlsPanel.hidden = false;
+  }
 }
 
 window.addEventListener(RAGATHA_ENTRANCE_EVENT, (event) => {
