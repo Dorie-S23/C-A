@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { getReachableCells } from '../maze/mazePlacements.js';
+import { makeFluffy } from '../effects/heightMaps.js';
 
 const SIDES = [
   { wall: 'top', nx: 0, nz: 1 }, { wall: 'right', nx: -1, nz: 0 },
@@ -255,6 +256,9 @@ export function createMazeEnvironment({ maze, layout, cellCenter, cellSize }) {
     }
     const rug = mesh(p, geometry.disc, palette.red, 0, 0.009, 2.13, 1.0, 1.0, 1); rug.rotation.x = -Math.PI / 2;
     p.updateMatrixWorld(true);
+    // Its own copy of the shared disc and red, so the pile can't spread to them.
+    rug.geometry = rug.geometry.clone(); rug.material = rug.material.clone();
+    makeFluffy(rug, { height: 0.03 });
     if (index < 2) views[index === 0 ? 'bowling' : 'mug'] = {
       position: p.localToWorld(new THREE.Vector3(0, 1.8, 5.6)).toArray(),
       target: p.localToWorld(new THREE.Vector3(0, 1.3, 1.0)).toArray(),

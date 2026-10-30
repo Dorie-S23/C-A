@@ -55,9 +55,13 @@ export function createMazeItems({ onCollect=()=>{}, onChange=()=>{} }={}) {
     reset(){collected.clear();seed=null;jaxComplete=false;choicePoints=0;jaxOutcome=null;onChange();},
   };
 }
-/** On screen, only ever "Follow Jax" (then the way out): the keepsakes aren't asked for. */
-export function mazeObjective(items){
-  return {title:items.jaxComplete?'Reach the exit':'Follow Jax',complete:items.jaxComplete};
+/**
+ * On screen: "Find Jax", then "Follow Jax" once he's run from her
+ * (`jaxFled`). The keepsakes are never asked for, and there's no exit to
+ * reach: talking to him ends the level.
+ */
+export function mazeObjective(items,{jaxFled=false}={}){
+  return {title:jaxFled?'Follow Jax':'Find Jax',complete:items.jaxComplete};
 }
 
 export const MAZE_SEARCH_SECONDS = 300;
