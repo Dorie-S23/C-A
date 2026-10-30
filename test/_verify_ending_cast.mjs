@@ -184,7 +184,7 @@ test('replacement, cancellation, and disposal resolve stale actions without furt
 });
 
 test('the live Lobby stages the procedural cast and includes Jax only when saved', () => {
-  for (const variant of ['saved', 'abstracted']) {
+  for (const variant of ['saved', 'abstracted', 'trapped']) {
     const cast = liveCast(variant);
     const room = { group: new THREE.Group(), storyUpdate: null };
     const stage = {
@@ -223,7 +223,7 @@ test('cancelling the Lobby walk cannot schedule a stale delay', async () => {
 });
 
 test('the live exit-door scene has the full variant cast and disposes once', () => {
-  for (const variant of ['saved', 'abstracted']) {
+  for (const variant of ['saved', 'abstracted', 'trapped']) {
     const { door, renderer } = makeDoor(variant);
     for (const name of ['Pomni', 'Ribbit', 'Ragatha', 'Kaufmo', 'Caine', 'Kinger', 'Gangle', 'Zooble']) {
       assert.ok(door.scene.getObjectByName(name), `${variant}: ${name}`);

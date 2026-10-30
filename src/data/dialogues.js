@@ -810,7 +810,7 @@ export const ribbitFollowupDialogue = [
 
 // --- Level 2: returning with the pictures ------------------------------
 // Pomni hands Kaufmo everything she's found in one go (see pickKaufmoScript
-// in src/state/level2Items.js): PHOTO_THRESHOLD (4) or more plays
+// in src/state/level2Items.js): PHOTO_THRESHOLD (3) or more plays
 // level2Return then level2Sendoff; fewer plays level2Abstraction, which
 // ends in Game Over and a fresh search. `distress` on a line shakes the
 // dialogue box (DialogueUI's distress levels 1-3) as he comes apart.
@@ -1080,7 +1080,8 @@ export const level3JaxMumble2Dialogue = [
 // out (with Jax, if he was won over), they talk, and Kaufmo leads them off
 // at a run. Then a quiet corridor at the far edge of the circus, a single
 // red door at its end, where they leave one by one and Pomni says goodbye
-// to Caine. One of each per ENDING_VARIANTS entry.
+// to Caine (or, trapped, it won't open). One of each per ENDING_VARIANTS
+// entry; trapped shares the abstracted Lobby scene.
 export const endingLobbySavedDialogue = [
   { type: 'beat', action: 'walkOut', text: 'Pomni and Jax step out of the maze together. Everyone is gathered outside. Caine hovers a little apart, hands wringing.' },
   // Ending A's arrival: Ribbit and Kaufmo are waiting at the entrance.
@@ -1188,4 +1189,29 @@ export const exitDoorAbstractedDialogue = [
   ...exitDoorArrival,
   ...exitDoorDecision,
   ...exitDoorFarewell,
+];
+
+// Ending C: Jax is gone, and the door won't open for the rest of them
+// either (Gate 1 not reached: Levels 1 and 2 went too badly). Caine finds
+// them there, and they turn back into the circus.
+export const exitDoorTrappedDialogue = [
+  ...exitDoorArrival,
+  { type: 'line', action: 'pomniLooksRound', speaker: 'pomni', side: 'left', mood: 'worried', direction: 'looking at each of them', text: 'Is everyone sure? Once we go through, there’s no coming back.' },
+  { type: 'line', speaker: 'zooble', side: 'right', text: 'I’ve never been more sure of anything.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'neutral', direction: 'holding the pictures to his chest', text: 'Let’s go home.' },
+  { type: 'beat', action: 'doorWontOpen', text: 'Kaufmo turns the handle. It doesn’t move. He tries again, harder. The door rattles in its frame and stays shut.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'worried', direction: 'his voice rising', text: 'No. No, no, no. It was right here. The pictures said it was right here.' },
+  { type: 'line', speaker: 'gangle', side: 'right', direction: 'barely audible', text: 'It’s just another room. I knew it.' },
+  { type: 'line', speaker: 'ribbit', side: 'right', direction: 'her voice shaking', text: 'Maybe it’s us. Maybe we weren’t… enough.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'sad', direction: 'looking down at the pictures', text: 'Or I didn’t bring back enough of them. I got it wrong. I got all of it wrong.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'sad', text: 'You didn’t get it wrong, Kaufmo. We just… didn’t get there together.' },
+  { type: 'beat', action: 'caineAppears', text: 'Behind them, Caine floats into the corridor, hat in his hands.' },
+  { type: 'line', speaker: 'caine', side: 'right', mood: 'sad', direction: 'quiet', text: 'Ah. There you all are.' },
+  { type: 'line', speaker: 'pomni', side: 'left', mood: 'worried', direction: 'turning to him', text: 'Caine… did you know it wouldn’t open?' },
+  { type: 'line', speaker: 'caine', side: 'right', mood: 'sad', direction: 'the showman gone', text: 'I hoped it would. I truly did. But the circus doesn’t let go of anyone who isn’t ready to leave it. Not yet.' },
+  { type: 'line', speaker: 'kinger', side: 'right', direction: 'softly, to no one', text: 'Another day, then. And another after that.' },
+  { type: 'line', speaker: 'ragatha', side: 'right', direction: 'putting a hand on Ribbit’s shoulder', text: 'Come on. Let’s not stand here.' },
+  { type: 'line', speaker: 'caine', side: 'right', mood: 'happy', direction: 'too bright, a beat too late', text: 'Well! Who’s up for an adventure tomorrow? I have a wonderful one planned.' },
+  { type: 'beat', action: 'turnBack', text: 'Nobody answers. One by one, they turn away from the red door and walk back towards the lights of the circus.' },
+  { type: 'beat', action: 'pomniLingers', text: 'Pomni stays a moment longer, one hand on the door. Then she lets go, and follows them.', next: null },
 ];

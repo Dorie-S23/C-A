@@ -6,8 +6,16 @@ export function wayOutVariantForJaxFate(fate) {
   return null;
 }
 
-/** How Level 3 can end for Jax; the ending plays the matching variant. */
-export const ENDING_VARIANTS = ['saved', 'abstracted'];
+/**
+ * How the game can end; the ending plays the matching variant. 'saved':
+ * Jax comes out and everyone leaves. 'abstracted': Jax is lost, the rest
+ * leave. 'trapped': Jax is lost and the door won't open (endingFor in
+ * escapeThreshold.js picks).
+ */
+export const ENDING_VARIANTS = ['saved', 'abstracted', 'trapped'];
+const JAX_FATES = ['saved', 'abstracted'];
+/** What happened to Jax in an ending: he's lost in both sad ones. */
+const jaxFateOf = (ending) => (ending === 'trapped' ? 'abstracted' : ending);
 
 /** Story milestones survive room loads; previews never complete them. */
 export function createStoryProgress({ objectives, isStorySession }) {
@@ -75,12 +83,12 @@ export function createStoryProgress({ objectives, isStorySession }) {
     },
     get jaxFate() { return jaxFate; },
     /** The room-scoped variant ('saved' or 'bittersweet') that matches `ending`. */
-    get endingVariant() { return ending ? wayOutVariantForJaxFate(ending) : null; },
-    /** Pomni has left the maze; `outcome` is how it went for Jax. Once per run. */
+    get endingVariant() { return ending ? wayOutVariantForJaxFate(jaxFate) : null; },
+    /** Pomni has left the maze; `outcome` is the ending it led to (ENDING_VARIANTS). Once per run. */
     finishLevel3(outcome) {
       if (!isStorySession() || ending !== null || !ENDING_VARIANTS.includes(outcome)) return false;
       ending = outcome;
-      jaxFate = outcome;
+      jaxFate = jaxFateOf(outcome);
       objectives.complete('enter-maze');
       return true;
     },
@@ -104,8 +112,8 @@ export function createStoryProgress({ objectives, isStorySession }) {
       kaufmoIntroduced = Boolean(saved.kaufmoIntroduced);
       // Older dev/Tjeding saves recorded level3Complete + jaxFate instead of `ending`.
       ending = ENDING_VARIANTS.includes(saved.ending) ? saved.ending
-        : saved.level3Complete && ENDING_VARIANTS.includes(saved.jaxFate) ? saved.jaxFate : null;
-      jaxFate = ENDING_VARIANTS.includes(saved.jaxFate) ? saved.jaxFate : ending;
+        : saved.level3Complete && JAX_FATES.includes(saved.jaxFate) ? saved.jaxFate : null;
+      jaxFate = JAX_FATES.includes(saved.jaxFate) ? saved.jaxFate : jaxFateOf(ending);
     },
   };
 }

@@ -28,7 +28,7 @@ import { createMusic, DEFAULT_MUSIC_VOLUME } from './audio/music.js';
 import { createTitleScreen } from './ui/titleScreen.js';
 import { createGamepadInput } from './input/gamepad.js';
 import { createIntroStory } from './ui/introStory.js';
-import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold, setLevelPoints, passesJaxGate } from './state/escapeThreshold.js';
+import { resetEscapeThreshold, snapshotEscapeThreshold, restoreEscapeThreshold, setLevelPoints, passesJaxGate, endingFor } from './state/escapeThreshold.js';
 import { createChoiceTally } from './dialogue/choiceTally.js';
 import { createStoryProgress, ENDING_VARIANTS } from './game/storyProgress.js';
 import { createSaveSlots, parseSaveFile, saveFileContents, saveFileName } from './game/saveGame.js';
@@ -68,7 +68,7 @@ import {
   level2IdleDialogue, level2CompleteDialogue, level2ReturnAndSendoffDialogue, level2AbstractionDialogue,
   level2TimeUpDialogue, level3HallwayDialogue, level3JaxDialogue, level3JaxFinalDialogue,
   level3JaxMumble1Dialogue, level3JaxMumble2Dialogue, mazePickupBowlingDialogue, mazePickupMugDialogue, JAX_GLITCH_FRAGMENTS,
-  endingLobbySavedDialogue, endingLobbyAbstractedDialogue, exitDoorSavedDialogue, exitDoorAbstractedDialogue,
+  endingLobbySavedDialogue, endingLobbyAbstractedDialogue, exitDoorSavedDialogue, exitDoorAbstractedDialogue, exitDoorTrappedDialogue,
   level2HallwayDialogue, level2RoomOpeningDialogue, ribbitFollowupDialogue,
 } from './data/dialogues.js';
 
@@ -106,6 +106,7 @@ const DIALOGUE_SCRIPTS = {
   endingLobbyAbstracted: { script: endingLobbyAbstractedDialogue, room: 'tadc' },
   exitDoorSaved: { script: exitDoorSavedDialogue, room: null },
   exitDoorAbstracted: { script: exitDoorAbstractedDialogue, room: null },
+  exitDoorTrapped: { script: exitDoorTrappedDialogue, room: null },
 };
 
 const ROOM_LOADERS = {
@@ -2407,12 +2408,13 @@ async function retryMaze(title, subtitle) {
 }
 
 /**
- * How Level 3 went for Jax, for the ending (see ENDING_VARIANTS in
- * storyProgress.js): what the Jax gate decided as his final conversation
- * ended (Levels 1 to 3's points reaching 75%, escapeThreshold.js).
+ * Which ending the run has earned (see ENDING_VARIANTS in storyProgress.js):
+ * what the Jax gate decided as his final conversation ended (Levels 1 to
+ * 3's points reaching 75%), then, if he's lost, whether Gate 1 (Levels 1
+ * and 2's) still lets the others leave (endingFor, escapeThreshold.js).
  */
 function jaxOutcome() {
-  return mazeItems.jaxOutcome === 'abstracts' ? 'abstracted' : 'saved';
+  return endingFor(mazeItems.jaxOutcome !== 'abstracts');
 }
 
 /**
@@ -2538,7 +2540,7 @@ function leaveMazeAfterTalk() {
   setTimeout(() => {
     if (token !== loadToken || currentRoomKey !== 'maze') return;
     void leaveMaze(jaxOutcome());
-  }, (jaxOutcome() === 'abstracted' ? LEAVE_AFTER_ABSTRACTING_SECONDS : LEAVE_AFTER_TALK_SECONDS) * 1000);
+  }, (jaxOutcome() !== 'saved' ? LEAVE_AFTER_ABSTRACTING_SECONDS : LEAVE_AFTER_TALK_SECONDS) * 1000);
 }
 
 /** Fades the screen to black (true) or back (false); resolves once it's there. */
@@ -2570,19 +2572,23 @@ async function leaveMaze(variant) {
 const ENDING_CARDS = {
   saved: 'Pomni and Jax step out of the maze together.',
   abstracted: 'Pomni steps out of the maze alone.',
+  trapped: 'The door never opened. Nobody leaves the circus.',
 };
 // Each part's conversation (DIALOGUE_SCRIPTS) and the music under both.
 const ENDING_PARTS = {
   saved: { lobby: 'endingLobbySaved', door: 'exitDoorSaved', music: 'endingSaved' },
   abstracted: { lobby: 'endingLobbyAbstracted', door: 'exitDoorAbstracted', music: 'endingAbstracted' },
+  // The same goodbye in the Lobby; at the red door, it won't open.
+  trapped: { lobby: 'endingLobbyAbstracted', door: 'exitDoorTrapped', music: 'endingAbstracted' },
 };
 
 /**
- * The end of the game for `variant` ('saved' or 'abstracted'), in two
- * scenes (cutscenes/endingCutscene.js): the Circus Lobby just outside the
- * maze door, where Pomni comes out to the others and they talk until
- * Kaufmo says he's found the exit; then the exit door, a set of its own,
- * where they leave one by one. Then the card, then the title screen.
+ * The end of the game for `variant` (ENDING_VARIANTS), in two scenes
+ * (cutscenes/endingCutscene.js): the Circus Lobby just outside the maze
+ * door, where Pomni comes out to the others and they talk until Kaufmo
+ * says he's found the exit; then the exit door, a set of its own, where
+ * they leave one by one (or, trapped, find it won't open and turn back).
+ * Then the card, then the title screen.
  * Escape skips what's left; developer cutscene skipping skips it all.
  */
 async function playEnding(variant) {

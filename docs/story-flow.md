@@ -53,7 +53,7 @@ The playable sequence is:
    Finding the fifth photo changes the instruction to **Return to Kaufmo**;
    the remaining time continues without resetting. E hands Kaufmo every held
    photo at once, which stops the clock, even with one second left. With at
-   least 4 (`PHOTO_THRESHOLD`) he plays his success scene and send-off, then
+   least 3 (`PHOTO_THRESHOLD`) he plays his success scene and send-off, then
    **Level 2 Complete** and the way into Level 3 (steps 8 to 11). With fewer
    he abstracts and the attempt ends on a
    **Retry Level 2** card. Early pickups are retained but do not bypass his

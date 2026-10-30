@@ -78,10 +78,10 @@ for (let count = 1; count <= PHOTO_COUNT; count++) {
   });
 }
 
-test('the threshold is 4 of 5: 3 is too few, 4 is enough', () => {
-  assert.equal(PHOTO_THRESHOLD, 4);
-  assert.equal(outcome(3), 'level2Abstraction');
-  assert.equal(outcome(4), 'level2Return');
+test('the threshold is 3 of 5: 2 is too few, 3 is enough', () => {
+  assert.equal(PHOTO_THRESHOLD, 3);
+  assert.equal(outcome(2), 'level2Abstraction');
+  assert.equal(outcome(3), 'level2Return');
 });
 
 test('a handed-in picture cannot be collected or scored again', () => {
