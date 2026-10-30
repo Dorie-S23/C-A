@@ -6,19 +6,23 @@ export function wayOutVariantForJaxFate(fate) {
   return null;
 }
 
+/** How Level 3 can end for Jax; the ending plays the matching variant. */
+export const ENDING_VARIANTS = ['saved', 'abstracted'];
+
 /** Story milestones survive room loads; previews never complete them. */
 export function createStoryProgress({ objectives, isStorySession }) {
   let ribbitPoints = null;
   let hallwaySeen = false;
   let kaufmoIntroduced = false;
-  let level3Complete = false;
+  let ending = null; // set once Pomni leaves the maze (see ENDING_VARIANTS)
   let jaxFate = null;
-  let endingVariant = null;
   return {
     get ribbitComplete() { return isStorySession() && objectives.isComplete('find-ribbit'); },
     get ribbitPoints() { return ribbitPoints; },
     get hallwayPending() { return this.ribbitComplete && !hallwaySeen && !kaufmoIntroduced; },
     get kaufmoIntroduced() { return kaufmoIntroduced; },
+    get level3Complete() { return ending !== null; },
+    get ending() { return ending; },
     finishRibbit(points) {
       if (!isStorySession() || objectives.active?.id !== 'find-ribbit') return false;
       ribbitPoints = points;
@@ -69,15 +73,14 @@ export function createStoryProgress({ objectives, isStorySession }) {
     enteredMaze() {
       return isStorySession() && objectives.complete('enter-maze');
     },
-    get level3Complete() { return level3Complete; },
     get jaxFate() { return jaxFate; },
-    get endingVariant() { return endingVariant; },
-    finishLevel3(fate) {
-      const variant = wayOutVariantForJaxFate(fate);
-      if (!isStorySession() || level3Complete || !variant) return false;
-      level3Complete = true;
-      jaxFate = fate;
-      endingVariant = variant;
+    /** The room-scoped variant ('saved' or 'bittersweet') that matches `ending`. */
+    get endingVariant() { return ending ? wayOutVariantForJaxFate(ending) : null; },
+    /** Pomni has left the maze; `outcome` is how it went for Jax. Once per run. */
+    finishLevel3(outcome) {
+      if (!isStorySession() || ending !== null || !ENDING_VARIANTS.includes(outcome)) return false;
+      ending = outcome;
+      jaxFate = outcome;
       objectives.complete('enter-maze');
       return true;
     },
@@ -93,20 +96,16 @@ export function createStoryProgress({ objectives, isStorySession }) {
       });
       return true;
     },
-    reset() {
-      ribbitPoints = null; hallwaySeen = false; kaufmoIntroduced = false;
-      level3Complete = false; jaxFate = null; endingVariant = null;
-    },
-    snapshot() {
-      return { ribbitPoints, hallwaySeen, kaufmoIntroduced, level3Complete, jaxFate, endingVariant };
-    },
+    reset() { ribbitPoints = null; hallwaySeen = false; kaufmoIntroduced = false; ending = null; jaxFate = null; },
+    snapshot() { return { ribbitPoints, hallwaySeen, kaufmoIntroduced, ending, jaxFate }; },
     restore(saved = {}) {
       ribbitPoints = saved.ribbitPoints ?? null;
       hallwaySeen = Boolean(saved.hallwaySeen);
       kaufmoIntroduced = Boolean(saved.kaufmoIntroduced);
-      level3Complete = Boolean(saved.level3Complete);
-      jaxFate = wayOutVariantForJaxFate(saved.jaxFate) ? saved.jaxFate : null;
-      endingVariant = level3Complete ? wayOutVariantForJaxFate(jaxFate) : null;
+      // Older dev/Tjeding saves recorded level3Complete + jaxFate instead of `ending`.
+      ending = ENDING_VARIANTS.includes(saved.ending) ? saved.ending
+        : saved.level3Complete && ENDING_VARIANTS.includes(saved.jaxFate) ? saved.jaxFate : null;
+      jaxFate = ENDING_VARIANTS.includes(saved.jaxFate) ? saved.jaxFate : ending;
     },
   };
 }

@@ -158,6 +158,10 @@ export const ROOM_TRACKS = {
   ribbit: 'lullaby',
   kaufmo: 'polka',
   maze: 'maze',
+  // The ending (main.js playEnding): the theme on a music box if Jax made
+  // it out, the lullaby if he didn't.
+  endingSaved: 'musicBox',
+  endingAbstracted: 'lullaby',
 };
 
 const PITCH_CLASSES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
