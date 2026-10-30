@@ -495,6 +495,8 @@ export function createDialogueUI({ speakers, voice = null, escapeCancels = () =>
     // Lets a caller bail out of a conversation it started (e.g. the room
     // unloading from under it) without faking a normal completion.
     cancel: cancelDialogue,
+    /** What a click on the box does, for a full-screen scene that takes clicks anywhere. */
+    advance,
     /**
      * Runs the rest of the script at once, as if played through: every node
      * still reaches onNode (so the scene's cues and actions happen), each

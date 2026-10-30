@@ -1074,14 +1074,14 @@ export const level3JaxMumble2Dialogue = [
 ];
 
 // --- Ending (Dorsa's "End of game script") ---------------------------------
-// After the maze exit (main.js leaveMaze/playEnding), acted out by
-// cutscenes/endingCutscene.js (each node's `action`). First the maze
-// entrance, in the Circus Lobby just outside the maze door: Pomni comes
-// out (with Jax, if he was won over), they talk, and Kaufmo leads them off
-// at a run. Then a quiet corridor at the far edge of the circus, a single
-// red door at its end, where they leave one by one and Pomni says goodbye
-// to Caine (or, trapped, it won't open). One of each per ENDING_VARIANTS
-// entry; trapped shares the abstracted Lobby scene.
+// After the maze exit (main.js leaveMaze/playEnding), played over its slides:
+// data/endingSlides.js says which image goes up at which node's `action`.
+// First the maze entrance, in the Circus Lobby just outside the maze door:
+// Pomni comes out (with Jax, if he was won over), they talk, and Kaufmo leads
+// them off at a run. Then a quiet corridor at the far edge of the circus, a
+// single red door at its end, where they leave one by one and Pomni says
+// goodbye to Caine (or, trapped, it won't open). One of each per
+// ENDING_VARIANTS entry; trapped shares the abstracted Lobby scene.
 export const endingLobbySavedDialogue = [
   { type: 'beat', action: 'walkOut', text: 'Pomni and Jax step out of the maze together. Everyone is gathered outside. Caine hovers a little apart, hands wringing.' },
   // Ending A's arrival: Ribbit and Kaufmo are waiting at the entrance.
@@ -1198,7 +1198,7 @@ export const exitDoorTrappedDialogue = [
   ...exitDoorArrival,
   { type: 'line', action: 'pomniLooksRound', speaker: 'pomni', side: 'left', mood: 'worried', direction: 'looking at each of them', text: 'Is everyone sure? Once we go through, there’s no coming back.' },
   { type: 'line', speaker: 'zooble', side: 'right', text: 'I’ve never been more sure of anything.' },
-  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'neutral', direction: 'holding the pictures to his chest', text: 'Let’s go home.' },
+  { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'happy', direction: 'holding the pictures to his chest', text: 'Let’s go home.' },
   { type: 'beat', action: 'doorWontOpen', text: 'Kaufmo turns the handle. It doesn’t move. He tries again, harder. The door rattles in its frame and stays shut.' },
   { type: 'line', speaker: 'kaufmo', side: 'right', mood: 'worried', direction: 'his voice rising', text: 'No. No, no, no. It was right here. The pictures said it was right here.' },
   { type: 'line', speaker: 'gangle', side: 'right', direction: 'barely audible', text: 'It’s just another room. I knew it.' },
