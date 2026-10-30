@@ -598,6 +598,64 @@ function updateMemoryCaption(delta, context) {
 // --- Title screen ---
 const titleOptions = document.getElementById('title-options');
 const titleQuit = document.getElementById('title-quit');
+const levelSelect = document.getElementById('level-select');
+const levelButtons = { 1: document.getElementById('btn-level-1'), 2: document.getElementById('btn-level-2'), 3: document.getElementById('btn-level-3') };
+
+// Which levels have ever been completed in this browser — separate from any
+// save file, so the level select stays unlocked even from a cold start.
+const LEVEL_COMPLETE_KEY = 'tadc.levelComplete';
+function loadLevelCompletion() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LEVEL_COMPLETE_KEY) ?? '{}');
+    return { 1: Boolean(saved[1]), 2: Boolean(saved[2]), 3: Boolean(saved[3]) };
+  } catch {
+    return { 1: false, 2: false, 3: false };
+  }
+}
+let levelCompletion = loadLevelCompletion();
+function markLevelComplete(level) {
+  if (levelCompletion[level]) return;
+  levelCompletion = { ...levelCompletion, [level]: true };
+  try {
+    localStorage.setItem(LEVEL_COMPLETE_KEY, JSON.stringify(levelCompletion));
+  } catch {
+    // Storage blocked — the unlock just won't persist past this page.
+  }
+  refreshLevelSelect();
+}
+function refreshLevelSelect() {
+  levelButtons[2].disabled = !levelCompletion[1];
+  levelButtons[2].title = levelCompletion[1] ? '' : 'Complete Level 1 first';
+  levelButtons[2].textContent = levelCompletion[1] ? 'Level 2' : 'Level 2 🔒';
+  levelButtons[3].disabled = !levelCompletion[2];
+  levelButtons[3].title = levelCompletion[2] ? '' : 'Complete Level 2 first';
+  levelButtons[3].textContent = levelCompletion[2] ? 'Level 3' : 'Level 3 🔒';
+}
+refreshLevelSelect();
+levelButtons[1].addEventListener('click', (event) => {
+  event.stopPropagation();
+  levelSelect.hidden = true;
+  // The authored glove-click + fly-into-the-tent plays now, since this is
+  // genuinely the start of the story; Level 2/3 skip straight in instead,
+  // the same as Load Game does.
+  titleScreen.playOutro(() => startNewGameWithStory());
+});
+levelButtons[2].addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (levelButtons[2].disabled) return;
+  levelSelect.hidden = true;
+  devJump('level2Search');
+});
+levelButtons[3].addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (levelButtons[3].disabled) return;
+  levelSelect.hidden = true;
+  devJump('level3');
+});
+document.getElementById('btn-level-select-back').addEventListener('click', (event) => {
+  event.stopPropagation();
+  levelSelect.hidden = true;
+});
 const sensitivityInput = document.getElementById('sensitivity');
 const sensitivityValue = document.getElementById('sensitivity-value');
 const SENSITIVITY_KEY = 'tadc.mouseSensitivity';
@@ -630,7 +688,7 @@ function startTitleTheme() {
 }
 
 // Keys shouldn't drive the menu hidden behind an open panel.
-const titleMenuBlocked = () => !titleOptions.hidden || !titleQuit.hidden || !creditsPanel.classList.contains('hidden');
+const titleMenuBlocked = () => !titleOptions.hidden || !titleQuit.hidden || !levelSelect.hidden || !creditsPanel.classList.contains('hidden');
 const titleScreen = createTitleScreen({
   renderer,
   onIntroStart: startTitleTheme,
@@ -638,7 +696,8 @@ const titleScreen = createTitleScreen({
   isBlocked: titleMenuBlocked,
   onAction: (action) => {
     if (action === 'play') {
-      startNewGameWithStory();
+      refreshLevelSelect();
+      levelSelect.hidden = false;
     } else if (action === 'options') {
       titleOptions.hidden = false;
     } else if (action === 'quit') {
@@ -817,7 +876,8 @@ document.getElementById('btn-replay-intro').addEventListener('click', () => {
 document.getElementById('btn-new-game').addEventListener('click', (event) => {
   event.stopPropagation();
   titleOptions.hidden = true;
-  startNewGameWithStory();
+  refreshLevelSelect();
+  levelSelect.hidden = false;
 });
 document.getElementById('btn-room-previews').addEventListener('click', () => {
   titleOptions.hidden = true;
@@ -963,7 +1023,10 @@ function returnToHome({ toRoomPicker = false } = {}) {
 
   pauseMenu.hidden = true;
   crosshair.hidden = true;
-  if (toRoomPicker) {
+  // The dev room/dialogue picker only stands in for the title screen in dev
+  // mode; everyone else's "Back to Home" goes to the real title screen (and
+  // from there, PLAY, into the level select).
+  if (toRoomPicker && devSkipIntroInput.checked) {
     showRoomPicker();
   } else {
     overlay.classList.add('hidden');
@@ -1563,7 +1626,10 @@ function attachStoryInteractions(room, roomKey, token) {
       if (!current() || objectives.active?.id !== 'find-ribbit') return;
       ambience.setRoom('ribbit');
       ambience.setRoomGain(0.5);
-      runLevel1(missionApi, { hall: room, story: true, onComplete: points => storyProgress.finishRibbit(points) });
+      runLevel1(missionApi, {
+        hall: room, story: true,
+        onComplete: points => { storyProgress.finishRibbit(points); markLevelComplete(1); },
+      });
     },
   });
 }
@@ -1739,6 +1805,7 @@ function talkToKaufmo(kaufmoApi, token) {
     if (key === 'level2Return' && !itemState.isDone()) {
       // Before the card, so a save from here on picks up the way into Level 3.
       storyProgress.finishLevel2();
+      markLevelComplete(2);
       itemState.markDone();
       void finishKaufmoLevel(token);
     } else if (key === 'level2Abstraction') {
@@ -2485,6 +2552,7 @@ async function leaveMaze(variant) {
   await fadeScreen(true);
   if (token !== loadToken) return;
   storyProgress.finishLevel3(variant);
+  markLevelComplete(3);
   takeCheckpoint();
   await playEnding(variant);
 }
@@ -5711,7 +5779,7 @@ function gameplayHUDContext() {
     session: preLevel1Session, room: currentRoom, ready: readyToPlay, locked: isLocked,
     paused, cinematic: activeCinematic()?.active || Boolean(activeCutscene) || stageBusy(), dialogue: dialogueUI.isActive,
     menu: titleScreen.active || !overlay.classList.contains('hidden') || !controlsPanel.hidden
-      || !creditsPanel.classList.contains('hidden') || !titleOptions.hidden || !titleQuit.hidden,
+      || !creditsPanel.classList.contains('hidden') || !titleOptions.hidden || !titleQuit.hidden || !levelSelect.hidden,
   };
 }
 
