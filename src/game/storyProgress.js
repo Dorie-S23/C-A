@@ -1,5 +1,11 @@
 import { PHOTO_THRESHOLD } from '../state/level2Items.js';
 
+export function wayOutVariantForJaxFate(fate) {
+  if (fate === 'saved') return 'saved';
+  if (fate === 'abstracted') return 'bittersweet';
+  return null;
+}
+
 /** How Level 3 can end for Jax; the ending plays the matching variant. */
 export const ENDING_VARIANTS = ['saved', 'abstracted'];
 
@@ -9,6 +15,7 @@ export function createStoryProgress({ objectives, isStorySession }) {
   let hallwaySeen = false;
   let kaufmoIntroduced = false;
   let ending = null; // set once Pomni leaves the maze (see ENDING_VARIANTS)
+  let jaxFate = null;
   return {
     get ribbitComplete() { return isStorySession() && objectives.isComplete('find-ribbit'); },
     get ribbitPoints() { return ribbitPoints; },
@@ -66,6 +73,17 @@ export function createStoryProgress({ objectives, isStorySession }) {
     enteredMaze() {
       return isStorySession() && objectives.complete('enter-maze');
     },
+    get jaxFate() { return jaxFate; },
+    /** The room-scoped variant ('saved' or 'bittersweet') that matches `ending`. */
+    get endingVariant() { return ending ? wayOutVariantForJaxFate(ending) : null; },
+    /** Pomni has left the maze; `outcome` is how it went for Jax. Once per run. */
+    finishLevel3(outcome) {
+      if (!isStorySession() || ending !== null || !ENDING_VARIANTS.includes(outcome)) return false;
+      ending = outcome;
+      jaxFate = outcome;
+      objectives.complete('enter-maze');
+      return true;
+    },
     /** Back to the start of Level 2 (Ribbit done, Kaufmo yet to hurry past), Level 1 kept. */
     restartLevel2() {
       if (!this.ribbitComplete) return false;
@@ -78,19 +96,16 @@ export function createStoryProgress({ objectives, isStorySession }) {
       });
       return true;
     },
-    /** Pomni has left the maze; `variant` is how it went for Jax. Once per run. */
-    finishLevel3(variant) {
-      if (!isStorySession() || ending !== null || !ENDING_VARIANTS.includes(variant)) return false;
-      ending = variant;
-      return true;
-    },
-    reset() { ribbitPoints = null; hallwaySeen = false; kaufmoIntroduced = false; ending = null; },
-    snapshot() { return { ribbitPoints, hallwaySeen, kaufmoIntroduced, ending }; },
+    reset() { ribbitPoints = null; hallwaySeen = false; kaufmoIntroduced = false; ending = null; jaxFate = null; },
+    snapshot() { return { ribbitPoints, hallwaySeen, kaufmoIntroduced, ending, jaxFate }; },
     restore(saved = {}) {
       ribbitPoints = saved.ribbitPoints ?? null;
       hallwaySeen = Boolean(saved.hallwaySeen);
       kaufmoIntroduced = Boolean(saved.kaufmoIntroduced);
-      ending = ENDING_VARIANTS.includes(saved.ending) ? saved.ending : null;
+      // Older dev/Tjeding saves recorded level3Complete + jaxFate instead of `ending`.
+      ending = ENDING_VARIANTS.includes(saved.ending) ? saved.ending
+        : saved.level3Complete && ENDING_VARIANTS.includes(saved.jaxFate) ? saved.jaxFate : null;
+      jaxFate = ENDING_VARIANTS.includes(saved.jaxFate) ? saved.jaxFate : ending;
     },
   };
 }

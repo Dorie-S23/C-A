@@ -126,6 +126,7 @@ export function loadRagatha() {
     let lookPoint = null;
     let walkTarget = null;
     let onArrive = null;
+    let walkSpeed = WALK_SPEED;
     let walkWeight = 0;
     let walkPhase = 0;
     const toTarget = new THREE.Vector3();
@@ -137,14 +138,14 @@ export function loadRagatha() {
 
       if (walkTarget) {
         toTarget.subVectors(walkTarget, ragatha.position).setY(0);
-        const step = WALK_SPEED * deltaSeconds;
+        const step = walkSpeed * deltaSeconds;
         if (toTarget.length() <= step) {
           ragatha.position.x = walkTarget.x;
           ragatha.position.z = walkTarget.z;
           walkTarget = null;
           const callback = onArrive;
           onArrive = null;
-          callback?.();
+          callback?.(true);
         } else {
           targetYaw = Math.atan2(toTarget.x, toTarget.z);
           ragatha.position.addScaledVector(toTarget.normalize(), step);
@@ -200,8 +201,23 @@ export function loadRagatha() {
     }
 
     function walkTo(point, callback) {
+      moveTo(point, { onArrive: callback });
+    }
+
+    /** Ending performances may choose a run speed without changing walkTo callers. */
+    function moveTo(point, { speed = WALK_SPEED, onArrive: callback = null } = {}) {
       walkTarget = point.clone();
-      onArrive = callback ?? null;
+      walkSpeed = speed;
+      onArrive = callback;
+    }
+
+    function stopMovement() {
+      if (!walkTarget) return;
+      walkTarget = null;
+      walkSpeed = WALK_SPEED;
+      const callback = onArrive;
+      onArrive = null;
+      callback?.(false);
     }
 
     /** Turns her (smoothly, in update) toward a world point; null stops turning. */
@@ -219,7 +235,7 @@ export function loadRagatha() {
       lookPoint = worldPoint ? worldPoint.clone() : null;
     }
 
-    return { ragatha, collider, update, setPose, setSpeaking, walkTo, faceTowards, lookTowards };
+    return { ragatha, collider, update, setPose, setSpeaking, walkTo, moveTo, stopMovement, faceTowards, lookTowards };
   });
 }
 

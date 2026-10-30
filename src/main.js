@@ -4747,11 +4747,14 @@ const stage = {
   lookWithHead(point) {
     stageHeadAt = point ? headLookPoint.copy(point) : null;
   },
+
+  lowerArms(value) { pomniGaitArms?.setLowered(value); },
 };
 
 /** Cancels anything staged; on room change and when a room resets its scene. */
 function resetStage() {
   pomniSpeaking?.reset();
+  pomniGaitArms?.setLowered(false);
   stageWalk?.resolve(false);
   stageGesture?.resolve(false);
   stageDelay?.resolve(false);
@@ -5253,6 +5256,8 @@ export function getOpeningDiagnostics() {
     cutsceneActive: Boolean(activeCutscene),
     ribbitComplete: storyProgress.ribbitComplete, ribbitPoints: storyProgress.ribbitPoints,
     hallwayPending: storyProgress.hallwayPending, kaufmoIntroduced: storyProgress.kaufmoIntroduced,
+    level3Complete: storyProgress.level3Complete, jaxFate: storyProgress.jaxFate,
+    endingVariant: storyProgress.endingVariant, ending: storyProgress.ending,
     picturesHeld: itemState.heldCount(), picturesPresented: itemState.totalPresented(),
     // The room waiting behind a doorway, and whether it's the Dorm Hall with
     // Level 3's Jax (and Ribbit) in it.

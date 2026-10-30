@@ -41,6 +41,7 @@ export function createPomniGaitArms(pomni, clips) {
   let applied = false;
   let weight = 0;
   let phase = 0;
+  let lowered = false;
   function remove() {
     if (!applied) return;
     for (const entry of posture) entry.bone.quaternion.copy(entry.base);
@@ -50,25 +51,27 @@ export function createPomniGaitArms(pomni, clips) {
 
   return {
     remove,
+    get diagnostics() { return { lowered, weight }; },
+    setLowered(value) { lowered = Boolean(value); },
     update(dt, speed, airborne) {
       dt = Math.max(0, dt);
       const moving = !airborne && speed > 0.15;
-      weight = THREE.MathUtils.damp(weight, moving ? 1 : 0, 10, dt);
+      weight = THREE.MathUtils.damp(weight, lowered || moving ? 1 : 0, 10, dt);
       phase += Math.max(0, speed) * dt * Math.PI * 1.04;
       if (weight < 0.001) return;
 
       const run = THREE.MathUtils.smoothstep(speed, 3.2, 5.2);
-      const swing = THREE.MathUtils.lerp(0.17, 0.4, run);
-      const elbow = THREE.MathUtils.lerp(0.14, 0.42, run);
-      const elbowPump = THREE.MathUtils.lerp(0.06, 0.14, run);
-      const spread = THREE.MathUtils.lerp(0.025, 0.055, run);
+      const swing = lowered ? 0 : THREE.MathUtils.lerp(0.17, 0.4, run);
+      const elbow = lowered ? 0 : THREE.MathUtils.lerp(0.14, 0.42, run);
+      const elbowPump = lowered ? 0 : THREE.MathUtils.lerp(0.06, 0.14, run);
+      const spread = lowered ? 0 : THREE.MathUtils.lerp(0.025, 0.055, run);
       for (const entry of entries) {
         entry.base.copy(entry.bone.quaternion);
         entry.bone.quaternion.copy(entry.idle);
       }
       for (const entry of posture) entry.base.copy(entry.bone.quaternion);
       for (const [side, sign] of [['Left', 1], ['Right', -1]]) {
-        const cycle = Math.sin(phase) * sign;
+        const cycle = lowered ? 0 : Math.sin(phase) * sign;
         const arm = bones[`${side}Arm`];
         const forearm = bones[`${side}ForeArm`];
         bendBone(arm, pomni, SIDEWAYS, -cycle * swing);

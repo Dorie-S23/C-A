@@ -13,4 +13,7 @@ export const ICONS = {
   ragatha: `${DIR}Ragatha.webp`,
   jax: `${DIR}Jax.webp`,
   ribbit: `${DIR}ribbit.png`,
+  kinger: `${DIR}kinger.webp`,
+  gangle: `${DIR}gangle.webp`,
+  zooble: `${DIR}zooble.webp`,
 };

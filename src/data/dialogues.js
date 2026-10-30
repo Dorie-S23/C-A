@@ -12,6 +12,9 @@ export const SPEAKERS = {
   kaufmo: { name: 'Kaufmo', initials: 'K', color: '#e0a868' },
   ribbit: { name: 'Ribbit', initials: 'R', color: '#5d9b3c' },
   jax: { name: 'Jax', initials: 'J', color: '#9b7fd4' },
+  kinger: { name: 'Kinger', initials: 'K', color: '#e5d7b5' },
+  gangle: { name: 'Gangle', initials: 'G', color: '#b92f50' },
+  zooble: { name: 'Zooble', initials: 'Z', color: '#8b4f91' },
 };
 
 // --- Pre-Level 1: "Business as Usual" ---------------------------------
@@ -1010,8 +1013,8 @@ export const level3JaxMumble2Dialogue = [
 // Lobby, just outside the maze door: Pomni comes out, with Jax or alone,
 // the others are waiting, and they talk until Kaufmo says he's found the
 // exit. Then the exit door itself, where they leave one by one. One of each
-// per ENDING_VARIANTS entry. Gangle, Zooble and Kinger have no lines until
-// their models exist (KAN-90).
+// per ENDING_VARIANTS entry. Gangle, Zooble and Kinger appear with the
+// others now that their procedural models exist (KAN-90), but stay silent.
 export const endingLobbySavedDialogue = [
   { type: 'beat', action: 'walkOut', text: 'Pomni and Jax step out of the maze door into the circus lobby. Everyone is waiting.' },
   { type: 'line', action: 'groupReacts', speaker: 'ragatha', side: 'right', direction: 'rushing forward', text: 'Pomni! Jax! You’re both okay!' },
@@ -1049,6 +1052,9 @@ const exitDoorOpening = [
   { type: 'beat', action: 'kaufmoLeaves', text: 'Kaufmo goes first, without looking back.' },
   { type: 'beat', action: 'ribbitLeaves', text: 'Ribbit follows him through.' },
   { type: 'beat', action: 'ragathaLeaves', text: 'Ragatha squeezes Pomni’s hand, and goes.' },
+  { type: 'beat', action: 'gangleLeaves', text: 'Gangle slips through after her, ribbons trailing.' },
+  { type: 'beat', action: 'zoobleLeaves', text: 'Zooble follows, piece by piece.' },
+  { type: 'beat', action: 'kingerLeaves', text: 'Kinger shuffles through last, still holding his pillow.' },
 ];
 
 export const exitDoorSavedDialogue = [

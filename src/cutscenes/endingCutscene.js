@@ -5,6 +5,10 @@ import { loadRibbit } from '../characters/ribbit.js';
 import { loadRagatha } from '../characters/ragatha.js';
 import { loadKaufmoTalk } from '../characters/kaufmoTalk.js';
 import { loadCaine } from '../characters/caine.js';
+import { loadKinger } from '../characters/kinger.js';
+import { loadGangle } from '../characters/gangle.js';
+import { loadZooble } from '../characters/zooble.js';
+import { createCharacterPerformance } from '../cinematics/characterPerformance.js';
 
 // The ending (KAN-85, KAN-89, KAN-95), in two parts. main.js (playEnding)
 // runs them in turn, playing a conversation over each and feeding its
@@ -18,8 +22,9 @@ import { loadCaine } from '../characters/caine.js';
 //    Pomni last. What's on the other side is never shown.
 //
 // The same cast plays both: loaded once, staged in the Lobby, then moved
-// into the exit door's scene. Gangle, Zooble and Kinger aren't in it yet:
-// they have no models (KAN-90).
+// into the exit door's scene. Gangle, Zooble and Kinger join via their
+// procedural rigs (KAN-90); they stay silent but idle, react and leave
+// with the others, driven by cinematics/characterPerformance.js.
 
 const GATE_Z = -8; // the exit door's wall, along x; the door at x = 0, facing +Z
 const POMNI_WALK = { saved: 1.5, abstracted: 0.9 }; // m/s out of the maze, by variant
@@ -34,10 +39,19 @@ const yawTo = (from, to) => Math.atan2(to.x - from.x, to.z - from.z);
 
 /** Loads everyone in the ending: Jax only if he was saved; a Pomni of its own for the exit door. */
 export async function loadEndingCast(variant) {
-  const [pomni, jaxApi, ribbitApi, ragathaApi, kaufmoApi, caineApi] = await Promise.all([
+  const [pomni, jaxApi, ribbitApi, ragathaApi, kaufmoApi, caineApi, kingerApi, gangleApi, zoobleApi] = await Promise.all([
     loadPomni(), variant === 'saved' ? loadJax() : null, loadRibbit(), loadRagatha(), loadKaufmoTalk(), loadCaine(),
+    loadKinger(), loadGangle(), loadZooble(),
   ]);
-  return { pomni, jaxApi, ribbitApi, ragathaApi, kaufmoApi, caineApi };
+  // The cast without authored lines: the procedural Kinger, Gangle and
+  // Zooble (KAN-90), driven by the shared performance system.
+  const extras = [
+    { key: 'kinger', root: kingerApi.kinger, rig: { ...kingerApi.rig, prop: kingerApi.pillow } },
+    { key: 'gangle', root: gangleApi.gangle, rig: gangleApi.rig },
+    { key: 'zooble', root: zoobleApi.zooble, rig: zoobleApi.rig },
+  ].map(({ key, root, rig }) => ({ key, root, performance: createCharacterPerformance({ root, rig }) }));
+  extras[0].performance.clutch(); // Kinger holds his pillow through both scenes
+  return { pomni, jaxApi, ribbitApi, ragathaApi, kaufmoApi, caineApi, extras };
 }
 
 // --- Part 1: the Lobby, outside the maze door ------------------------------
@@ -63,6 +77,9 @@ export function lobbyEndingPlan({ spawn, facing }) {
     ragathaRush: at(3.7, 1.0),
     kaufmo: at(6.5, -1.2),
     ribbit: at(5.8, -2.8),
+    gangle: at(6.7, -3.6),
+    zooble: at(7.3, -0.4),
+    kinger: at(8.0, 1.8),
     shots: {
       // From among the group, back at the maze door as she comes out.
       walkOut: { position: at(9.5, 0.6, 2.0), target: at(0, 0, 1.3) },
@@ -83,7 +100,7 @@ export function lobbyEndingPlan({ spawn, facing }) {
  * (place, walkTo, frame, lookAt, lookWithHead, wait).
  */
 export function stageLobbyEnding(room, stage, variant, cast, plan) {
-  const { jaxApi, ribbitApi, ragathaApi, kaufmoApi } = cast;
+  const { jaxApi, ribbitApi, ragathaApi, kaufmoApi, extras } = cast;
   const { ribbit } = ribbitApi;
   const { ragatha } = ragathaApi;
   const { kaufmo } = kaufmoApi;
@@ -100,6 +117,11 @@ export function stageLobbyEnding(room, stage, variant, cast, plan) {
   ragathaApi.setPose('watch');
   kaufmoApi.setPose('worried');
   room.group.add(ribbit, ragatha, kaufmo);
+  for (const extra of extras) {
+    extra.root.position.copy(plan[extra.key]);
+    extra.root.rotation.y = yawTo(plan[extra.key], plan.door);
+    room.group.add(extra.root);
+  }
   if (jaxApi) {
     jaxApi.jax.visible = false;
     room.group.add(jaxApi.jax);
@@ -141,10 +163,12 @@ export function stageLobbyEnding(room, stage, variant, cast, plan) {
         kaufmoApi.setPose('happy');
         kaufmoApi.faceTowards(pomniAt);
         ribbitApi.faceTowards(pomniAt);
+        for (const extra of extras) void extra.performance.turnTowards(pomniAt);
         break;
       case 'groupRealises':
         ragathaApi.setPose('worried');
         kaufmoApi.setPose('shocked');
+        for (const extra of extras) void extra.performance.react('surprise');
         break;
       case 'grief':
         frame('group');
@@ -152,6 +176,7 @@ export function stageLobbyEnding(room, stage, variant, cast, plan) {
         kaufmoApi.setPose('sad');
         ribbitApi.setDistress(2);
         bowHead();
+        for (const extra of extras) void extra.performance.comfort();
         return stage.wait(GRIEF_SECONDS);
       case 'jaxLooksAway':
         jaxApi?.faceTowards(plan.ribbit.clone().addScaledVector(plan.out, -6));
@@ -162,6 +187,7 @@ export function stageLobbyEnding(room, stage, variant, cast, plan) {
         stage.lookWithHead(null);
         stage.lookAt(plan.kaufmo);
         for (const api of [ragathaApi, ribbitApi, jaxApi]) api?.faceTowards(plan.kaufmo);
+        for (const extra of extras) void extra.performance.turnTowards(plan.kaufmo);
         break;
       default:
     }
@@ -174,6 +200,7 @@ export function stageLobbyEnding(room, stage, variant, cast, plan) {
     ribbitApi.update(deltaSeconds);
     ragathaApi.update(deltaSeconds);
     kaufmoApi.update(deltaSeconds);
+    for (const extra of extras) extra.performance.update(deltaSeconds);
   };
 
   return {
@@ -185,6 +212,7 @@ export function stageLobbyEnding(room, stage, variant, cast, plan) {
       kaufmoApi.setSpeaking(false);
       kaufmoApi.setListening(false);
       for (const object of [ribbit, ragatha, kaufmo, jaxApi?.jax]) object?.removeFromParent();
+      for (const extra of extras) extra.root.removeFromParent();
     },
   };
 }
@@ -385,6 +413,9 @@ export function exitDoorPlan() {
     ragatha: v(1.7, 0, -4.1),
     jax: v(-1.3, 0, -3.2),
     pomni: v(0.4, 0, -2.8),
+    kinger: v(-3.4, 0, -3.5),
+    gangle: v(3.2, 0, -3.4),
+    zooble: v(2.6, 0, -4.7),
     // A little apart from them, floating, once he's popped in.
     caine: v(4.0, 0.6, -4.2),
     caineFrom: v(6.5, 8, -6),
@@ -454,7 +485,7 @@ export function createExitDoorScene(renderer, variant, cast) {
   scene.add(buildExitDoorSet());
 
   const camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 200);
-  const { jaxApi, ribbitApi, ragathaApi, kaufmoApi, caineApi } = cast;
+  const { jaxApi, ribbitApi, ragathaApi, kaufmoApi, caineApi, extras } = cast;
   const pomni = stagePomni(cast.pomni);
   const sad = variant === 'abstracted';
   const door = v(0, 0, GATE_Z);
@@ -487,6 +518,7 @@ export function createExitDoorScene(renderer, variant, cast) {
   caineApi.caine.position.copy(plan.caineFrom);
   caineApi.caine.visible = false;
   scene.add(caineApi.caine);
+  for (const extra of extras) place(extra.root, plan[extra.key]);
 
   // --- camera
   let shot = null;
@@ -552,6 +584,7 @@ export function createExitDoorScene(renderer, variant, cast) {
     caineApi.caine.visible = true;
     caineApi.setPose(sad ? 'worried' : 'shocked');
     for (const api of [ragathaApi, kaufmoApi, ribbitApi, jaxApi]) api?.faceTowards(plan.caine);
+    for (const extra of extras) void extra.performance.turnTowards(plan.caine);
     return new Promise((resolve) => {
       caineApi.flyTo(plan.caine, CAINE_FLIGHT_SECONDS, () => {
         caineApi.faceTowards(plan.pomni);
@@ -594,6 +627,15 @@ export function createExitDoorScene(renderer, variant, cast) {
         ragathaApi.faceTowards(null);
         ragathaApi.setPose('idle');
         return walkThrough(ragathaApi.ragatha);
+      case 'gangleLeaves':
+      case 'zoobleLeaves':
+      case 'kingerLeaves': {
+        const extra = extras.find(entry => entry.key === node.action.replace('Leaves', '').toLowerCase());
+        if (!extra) return undefined;
+        cut('leaving');
+        return extra.performance.walkTo(plan.approach, { speed: LEAVE_SPEED * 0.9 })
+          .then(() => walkThrough(extra.root, { speed: LEAVE_SPEED * 0.75 }));
+      }
       case 'jaxLeaves': {
         if (!jaxApi) return undefined;
         cut('leaving');
@@ -635,6 +677,7 @@ export function createExitDoorScene(renderer, variant, cast) {
     ragathaApi.update(deltaSeconds);
     kaufmoApi.update(deltaSeconds);
     caineApi.update(deltaSeconds);
+    for (const extra of extras) extra.performance.update(deltaSeconds);
 
     const size = renderer.getSize(new THREE.Vector2());
     if (size.y > 0 && Math.abs(camera.aspect - size.x / size.y) > 1e-3) {
@@ -648,6 +691,7 @@ export function createExitDoorScene(renderer, variant, cast) {
   function dispose() {
     walkers.clear();
     timer = null;
+    for (const extra of extras) extra.performance.dispose();
     scene.traverse((child) => {
       child.geometry?.dispose();
       for (const material of [child.material].flat()) {
