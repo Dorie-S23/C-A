@@ -505,10 +505,12 @@ const DEV_JUMPS = {
   level1: { checkpoint: storyAt('find-ribbit', { room: 'dorm', from: 'ribbit' }), start: knockOnRibbitsDoor },
   // Level 1 -> 2: Kaufmo hurrying past in the hall, then on into his room.
   kaufmoHallway: { checkpoint: storyAt('find-kaufmo', { room: 'dorm' }), start: () => playKaufmoHallway() },
-  // Level 2: his introduction, the search on its own, and the hand-in scene.
+  // Level 2: his introduction, the search on its own, the hand-in scene, and
+  // the hand-in one photo short of PHOTO_THRESHOLD, where he abstracts.
   level2Intro: { checkpoint: storyAt('find-kaufmo', { room: 'kaufmo', from: 'dorm', story: { hallwaySeen: true } }), start: talkToKaufmoNow },
   level2Search: { checkpoint: storyAt('collect-photos', { room: 'tadc' }) },
   level2HandIn: { checkpoint: storyAt('collect-photos', { room: 'kaufmo', from: 'dorm', items: { collected: ALL_PHOTOS } }), start: talkToKaufmoNow },
+  level2Abstraction: { checkpoint: storyAt('collect-photos', { room: 'kaufmo', from: 'dorm', items: { collected: ALL_PHOTOS.slice(0, PHOTO_THRESHOLD - 1) } }), start: talkToKaufmoNow },
   // Level 2 -> 3: Jax bolting down the hall, then his corner of the Lobby and the maze door.
   jaxHallway: { checkpoint: storyAt('find-jax', { room: 'dorm', from: 'kaufmo' }) },
   jaxLobby: { checkpoint: storyAt('follow-jax', { room: 'tadc', from: 'dorm' }) },
