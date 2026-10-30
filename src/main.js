@@ -289,6 +289,9 @@ const btnLevelCompleteContinue = document.getElementById('btn-level-complete-con
 
 const pictureCounter = document.getElementById('picture-counter');
 const mazeItemsCounter = document.getElementById('maze-items-counter');
+const pomniHealthHUD = document.getElementById('pomni-health');
+const pomniHearts = [...pomniHealthHUD.querySelectorAll('.heart')];
+const hurtFlash = document.getElementById('hurt-flash');
 const mazeSearchTimer = document.getElementById('maze-search-timer');
 const searchTimer = document.getElementById('search-timer');
 const hintKey = document.getElementById('hint-key');
@@ -939,6 +942,7 @@ function returnToHome({ toRoomPicker = false } = {}) {
   foundJax = false;
   reachedExit = false;
   caught = false;
+  resetPomniHealth();
   scene.environment = null;
 
   pauseMenu.hidden = true;
@@ -2640,6 +2644,7 @@ function mazeGameplayAvailable(context) {
 
 function updateMazeItemsCounter(context) {
   const visible = mazeGameplayAvailable(context);
+  updateHealthHUD(visible);
 
   // No keepsake count: nothing on screen asks for them (only "Follow Jax").
   if (!mazeItemsCounter.hidden) mazeItemsCounter.hidden = true;
@@ -2742,6 +2747,7 @@ function leaveCurrentRoom({ keepMoving = false, keepRoom = false } = {}) {
   foundJax = false;
   reachedExit = false;
   caught = false;
+  resetPomniHealth();
   return myToken;
 }
 
@@ -3505,6 +3511,63 @@ const SCREEN_CENTER = new THREE.Vector2(0, 0);
 let foundJax = false;
 let reachedExit = false;
 let caught = false;
+// Level 3 health: each Gloink (or hazard) touch costs a heart, then she
+// can't be hurt again for HURT_COOLDOWN while she's knocked back out of
+// reach. Losing the last one is the old instant catch: Gloinked, and the
+// level restarts. Full again every time the maze loads.
+const MAX_HEALTH = 3;
+const HURT_COOLDOWN = 2;           // seconds
+const KNOCKBACK_DISTANCE = 1.6;    // metres
+const KNOCKBACK_SECONDS = .25;
+let pomniHealth = MAX_HEALTH;
+let hurtCooldown = 0;
+let knockbackLeft = 0;
+const knockbackDirection = new THREE.Vector3();
+
+function resetPomniHealth() {
+  pomniHealth = MAX_HEALTH;
+  hurtCooldown = knockbackLeft = 0;
+  hurtFlash.classList.remove('shown');
+  updateHealthHUD(false);
+}
+
+function updateHealthHUD(visible) {
+  if (pomniHealthHUD.hidden === visible) pomniHealthHUD.hidden = !visible;
+  pomniHearts.forEach((heart, i) => heart.classList.toggle('lost', i >= pomniHealth));
+  pomniHealthHUD.setAttribute('aria-label', `Pomni's health: ${pomniHealth} of ${MAX_HEALTH}`);
+}
+
+/** One hit from `hazard`. Returns true if that was her last heart. */
+function hurtPomni(hazard) {
+  pomniHealth = Math.max(0, pomniHealth - 1);
+  updateHealthHUD(!pomniHealthHUD.hidden);
+  pomniHealthHUD.classList.remove('hit');
+  void pomniHealthHUD.offsetWidth; // restart the shake on a second hit
+  pomniHealthHUD.classList.add('hit');
+  hurtFlash.classList.add('shown');
+  requestAnimationFrame(() => requestAnimationFrame(() => hurtFlash.classList.remove('shown')));
+  if (pomniHealth === 0) return true;
+  openingAudio.playChime('fail');
+  hurtCooldown = HURT_COOLDOWN;
+  knockbackLeft = KNOCKBACK_SECONDS;
+  knockbackDirection.set(player.position.x - hazard.mesh.position.x, 0, player.position.z - hazard.mesh.position.z);
+  // Right on top of it: back the way she's facing.
+  if (knockbackDirection.lengthSq() < 1e-6) knockbackDirection.set(Math.sin(cameraYaw), 0, Math.cos(cameraYaw));
+  knockbackDirection.normalize();
+  const left = pomniHealth === 1 ? '1 heart left' : `${pomniHealth} hearts left`;
+  showHint(`${hazard.mesh.userData?.isGloink ? 'A Gloink got you!' : 'Ouch!'} ${left}.`, 2500);
+  return false;
+}
+
+/** Slides her back from whatever hit her, through the same wall checks as walking. */
+function applyKnockback(deltaSeconds) {
+  if (knockbackLeft <= 0) return;
+  const step = Math.min(deltaSeconds, knockbackLeft);
+  knockbackLeft -= step;
+  const distance = KNOCKBACK_DISTANCE * (step / KNOCKBACK_SECONDS);
+  if (collisionMeshes.length > 0) moveWithCollisions(player, knockbackDirection, distance);
+  else moveWithBoxCollisions(player, knockbackDirection, distance);
+}
 
 /**
  * Steps every patrolling NPC/hazard along its waypoint loop, ping-ponging
@@ -4644,21 +4707,25 @@ function travelTo(roomKey) {
   });
 }
 
-function checkTriggers(player) {
+function checkTriggers(player, deltaSeconds = 0) {
   if (currentRoomKey !== 'maze' || caught || reachedExit) return;
+  hurtCooldown = Math.max(0, hurtCooldown - deltaSeconds);
+  applyKnockback(deltaSeconds);
 
   for (const hazard of hazards) {
+    if (hurtCooldown > 0) break;
     const dx = player.position.x - hazard.mesh.position.x;
     const dz = player.position.z - hazard.mesh.position.z;
     if (Math.hypot(dx, dz) < hazard.radius + PLAYER_RADIUS) {
+      if (!hurtPomni(hazard)) break;
       caught = true;
-      // A hazard catch fails the attempt outright, same as the countdown
-      // expiring: retryMaze shows the fail card, then reseeds (a fresh
-      // layout, both keepsakes back) and restarts the full countdown.
+      // Out of hearts fails the attempt, same as the countdown expiring:
+      // retryMaze shows the fail card, then reseeds (a fresh layout, both
+      // keepsakes back) and restarts the full countdown.
       const title = hazard.mesh.userData?.isGloink ? 'Gloinked!' : 'Abstracted!';
       const subtitle = hazard.mesh.userData?.isGloink
-        ? 'A patrolling gloink caught you — try again.'
-        : 'A patrolling hazard caught you — try again.';
+        ? 'The Gloinks got you three times. The maze starts over.'
+        : 'A patrolling hazard got you three times. The maze starts over.';
       void retryMaze(title, subtitle);
       return;
     }
@@ -4770,7 +4837,7 @@ function updateMovement(deltaSeconds) {
   }
   updatePomniWalk(deltaSeconds, deltaSeconds > 0 ? moved / deltaSeconds : 0);
 
-  checkTriggers(player);
+  checkTriggers(player, deltaSeconds);
   checkPortals();
   updateHallLink();
   updateHallDoorways();
@@ -5432,6 +5499,14 @@ export function setDormHallPreviewForReview(visible) {
   const preview = currentRoom?.userData.dormHallPreview;
   preview?.setVisible(Boolean(visible));
   return Boolean(preview);
+}
+
+/** Development-only health review: puts the first Gloink right on Pomni; returns her hearts. */
+export function gloinkPomniForReview() {
+  if (!import.meta.env.DEV) return null;
+  const gloink = hazards.find(hazard => hazard.mesh.userData?.isGloink) ?? hazards[0];
+  if (gloink) gloink.mesh.position.set(player.position.x, gloink.mesh.position.y, player.position.z);
+  return { health: pomniHealth, caught, hudHidden: pomniHealthHUD.hidden };
 }
 
 /** Read-only development diagnostics for story and room browser regressions. */

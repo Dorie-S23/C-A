@@ -468,6 +468,28 @@
                 pointer-events: none;
                 z-index: 5;
             }
+            /* Level 3: Pomni's hearts (main.js, hurtPomni), bottom left, just
+               above the maze's "H: Hints · Esc: Pause" reminder. */
+            #pomni-health { position: fixed; left: max(16px, env(safe-area-inset-left));
+                bottom: calc(max(16px, env(safe-area-inset-bottom)) + 40px); z-index: 6;
+                display: flex; align-items: center; gap: .6rem; padding: .5rem .85rem;
+                color: #fff8e9; background: rgba(10, 8, 14, .75);
+                border: 1px solid rgba(255, 210, 122, .55); border-radius: 10px;
+                font: 600 .85rem/1 system-ui, sans-serif; letter-spacing: .04em; }
+            #pomni-health[hidden] { display: none; }
+            #pomni-health .health-hearts { display: flex; gap: .3rem; font-size: 1.6rem; }
+            #pomni-health .heart { color: #ff3b5c; text-shadow: 0 0 8px rgba(255, 59, 92, .6);
+                transition: color .25s, text-shadow .25s, transform .25s; }
+            #pomni-health .heart.lost { color: transparent; text-shadow: none;
+                -webkit-text-stroke: 1.5px rgba(255, 255, 255, .45); transform: scale(.85); }
+            #pomni-health.hit { animation: health-shake .45s; }
+            @keyframes health-shake { 0%, 100% { transform: none; } 20% { transform: translateX(-6px); }
+                40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(3px); } }
+            #hurt-flash { position: fixed; inset: 0; z-index: 5; pointer-events: none; opacity: 0;
+                background: radial-gradient(ellipse at center, transparent 45%, rgba(220, 20, 50, .65));
+                transition: opacity .6s ease-out; }
+            #hurt-flash.shown { opacity: 1; transition: none; }
+            @media (prefers-reduced-motion: reduce) { #pomni-health.hit { animation: none; } }
             #search-timer, #maze-search-timer, #hint-key {
                 position: fixed;
                 top: calc(1em + 2.6em);
@@ -1980,6 +2002,11 @@
             <p class="maze-kicker">LEVEL 3: THE LAST ACT</p>
             <h2 data-maze-title></h2><p id="maze-items-counter" data-maze-count hidden></p><p id="maze-search-timer" role="timer" aria-live="off" hidden></p><ul data-maze-checklist></ul>
         </aside>
+        <div id="pomni-health" role="status" aria-live="polite" hidden>
+            <span class="health-label">Pomni</span>
+            <span class="health-hearts" aria-hidden="true"><span class="heart">&#9829;</span><span class="heart">&#9829;</span><span class="heart">&#9829;</span></span>
+        </div>
+        <div id="hurt-flash" aria-hidden="true"></div>
         <aside id="caine-memory-caption" class="caine-memory-text" role="status" aria-live="polite" aria-atomic="true" hidden></aside>
         <aside id="objective-hud" role="status" aria-live="polite" aria-atomic="true" hidden>
             <div class="objective-label"><span aria-hidden="true">&#10022; </span>Current objective</div>
