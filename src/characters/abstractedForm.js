@@ -7,7 +7,7 @@ import { createAbstractionEffect } from '../effects/abstraction.js';
 // the maze, Kaufmo, Jax). The shared abstraction effect eats them away from
 // the head down (effects/abstraction.js), then this, the abstracted form,
 // rises up where they stood (its "spawn" animation) and stays, idling.
-const FORM_URL = './models/characters/abstracted form/abstracted_kaufmo.glb';
+const FORM_URL = './models/characters/abstracted%20form/abstracted_kaufmo.glb';
 const SPAWN = 'ABS_Rig|spawn';
 const IDLE = 'Idle';
 export const FORM_HEIGHT = 2.6;   // metres: a good head taller than any of them
@@ -22,7 +22,7 @@ const IDLE_BLEND = 0.5;
  * @returns {Promise<object | null>} the parsed glTF (null if it failed)
  */
 export function loadAbstractedForm() {
-  return new GLTFLoader().loadAsync(encodeURI(FORM_URL)).then((gltf) => {
+  return new GLTFLoader().loadAsync(FORM_URL).then((gltf) => {
     if (keepBody(gltf)) return gltf;
     console.warn('The abstracted form model has no body to show; abstraction will only show the void effect.');
     return null;

@@ -28,12 +28,14 @@ import { createCharacterPerformance } from '../cinematics/characterPerformance.j
 // driven by cinematics/characterPerformance.js.
 
 const GATE_Z = -8; // the red door's end wall, along x; the door at x = 0, facing +Z
-const POMNI_WALK = { saved: 1.5, abstracted: 0.9 }; // m/s out of the maze, by variant
+const POMNI_WALK = { saved: 1.5, abstracted: 0.9, trapped: 0.9 }; // m/s out of the maze, by variant
 const RUN_SPEED = 4.2;     // m/s, everyone after Kaufmo
 const RUN_DISTANCE = 13;   // metres on from the group, out into the Lobby
 const CAINE_DRIFT_SECONDS = 1.6;
 const LEAVE_SPEED = 1.4;   // m/s, walking to the red door
 const DOOR_SWING_SECONDS = 1.1;
+const RATTLE_SECONDS = 1.8; // the trapped ending: the door shaking in its frame, shut
+const BACK_Z = 3.6;         // turning back: up the corridor, past the camera
 const MAZE_DOOR_ARRIVAL = 2.4; // lobbyMazeDoor.js ARRIVAL_DISTANCE: its spawn, this far out of the doorway
 const ACTION_FADE = 0.3;
 const SPEAKING_EXTRAS = ['gangle', 'zooble', 'kinger'];
@@ -147,7 +149,7 @@ export function stageLobbyEnding(room, stage, variant, cast, plan) {
   const { ragatha } = ragathaApi;
   const { kaufmo } = kaufmoApi;
   const { caine } = caineApi;
-  const sad = variant === 'abstracted';
+  const sad = variant !== 'saved';
   const pomniAt = plan.pomniWalk[1];
   const extra = key => extras.find(entry => entry.key === key);
 
@@ -389,8 +391,8 @@ function checkerTexture() {
  * A quiet corridor at the far edge of the circus, carnival-striped walls
  * and a checkered floor, and at its end a single red door, out of place
  * against the colours. Returns the set's Group and the door
- * ({ setOpen(open), update(deltaSeconds) }), which swings open into the
- * light behind it and closes again.
+ * ({ setOpen(open), rattle(seconds), update(deltaSeconds) }), which swings
+ * open into the light behind it and closes again, or shakes, locked.
  */
 export function buildExitCorridor() {
   const set = new THREE.Group();
@@ -510,14 +512,21 @@ export function buildExitCorridor() {
 
   let openness = 0; // 0 shut .. 1 wide open
   let target = 0;
+  let rattleLeft = 0;
+  let rattleTime = 0;
   const door = {
     setOpen(open) { target = open ? 1 : 0; },
+    rattle(seconds) { rattleLeft = seconds; },
     get settled() { return openness === target; },
     update(deltaSeconds) {
       const step = deltaSeconds / DOOR_SWING_SECONDS;
       openness = target > openness ? Math.min(target, openness + step) : Math.max(target, openness - step);
       const eased = THREE.MathUtils.smootherstep(openness, 0, 1);
-      hinge.rotation.y = eased * 1.75;
+      rattleLeft = Math.max(0, rattleLeft - deltaSeconds);
+      rattleTime += deltaSeconds;
+      // A locked door shaking against its latch: a few millimetres, no more.
+      const jolt = rattleLeft > 0 ? Math.sin(rattleTime * 55) * Math.sin(rattleTime * 9) * 0.012 : 0;
+      hinge.rotation.y = eased * 1.75 + jolt;
       spill.intensity = eased * 16;
     },
   };
@@ -605,7 +614,7 @@ export function createExitDoorScene(renderer, variant, cast) {
   const camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 200);
   const { jaxApi, ribbitApi, ragathaApi, kaufmoApi, caineApi, extras } = cast;
   const pomni = stagePomni(cast.pomni);
-  const sad = variant === 'abstracted';
+  const sad = variant !== 'saved';
   let disposed = false;
   const doorAt = v(0, 0, GATE_Z);
 
@@ -790,6 +799,67 @@ export function createExitDoorScene(renderer, variant, cast) {
         });
       case 'caineAlone':
         return wait(2.5);
+      // --- trapped: the door won't open, and they turn back
+      case 'doorWontOpen':
+        kaufmoApi.setActivity('walk');
+        return walkTo(kaufmoApi.kaufmo, [plan.approach], { speed: 1.2 }).then((completed) => {
+          kaufmoApi.setActivity(null);
+          if (!completed || disposed) return false;
+          kaufmoApi.faceTowards(doorAt);
+          door.rattle(RATTLE_SECONDS);
+          return wait(RATTLE_SECONDS + 0.5);
+        }).then((completed) => {
+          if (!completed || disposed) return false;
+          kaufmoApi.setPose('sad');
+          kaufmoApi.faceTowards(plan.pomni);
+          ribbitApi.setDistress(2);
+          pomni.setDroop(0.5);
+          return true;
+        });
+      case 'caineAppears':
+        caine.visible = true;
+        caineApi.setPose('sad');
+        caineApi.faceTowards(plan.pomni);
+        return wait(1.2);
+      case 'turnBack': {
+        // Back up the corridor and out of shot under the camera, Kaufmo last.
+        const leave = (object, x, options) => walkTo(object, [v(x, 0, BACK_Z)], { speed: LEAVE_SPEED * 0.85, ...options })
+          .then((completed) => { if (completed && !disposed) object.visible = false; });
+        ragathaApi.faceTowards(null);
+        ragathaApi.setPose('idle');
+        void leave(ragathaApi.ragatha, 1.3);
+        void leave(ribbitApi.ribbit, 0.9, {
+          speed: LEAVE_SPEED * 0.75,
+          onStep: (dt) => { ribbitStep += dt; ribbitApi.ribbit.position.y = Math.abs(Math.sin(ribbitStep * 6)) * 0.05; },
+        });
+        for (const entry of extras) {
+          void entry.performance.walkTo(v(plan[entry.key].x, 0, BACK_Z), { speed: LEAVE_SPEED * 0.75 })
+            .then((completed) => { if (completed && !disposed) entry.root.visible = false; });
+        }
+        caineApi.flyTo(v(-1.5, plan.caine.y, BACK_Z), 4, () => { if (!disposed) caine.visible = false; });
+        kaufmoApi.setActivity('walk');
+        void leave(kaufmoApi.kaufmo, -0.8, { speed: LEAVE_SPEED * 0.7 })
+          .then(() => kaufmoApi.setActivity(null));
+        return wait(3.2);
+      }
+      case 'pomniLingers':
+        // Up to the door, a moment's stillness, then she follows them.
+        pomni.play('walk', 0.8);
+        return walkTo(pomni.model, [plan.pomniAtDoor], { speed: 1.1 }).then((completed) => {
+          if (!completed || disposed) return false;
+          pomni.play('idle');
+          pomni.model.rotation.y = yawTo(plan.pomniAtDoor, doorAt);
+          return wait(1.8);
+        }).then((completed) => {
+          if (!completed || disposed) return false;
+          pomni.setDroop(0.6);
+          pomni.play('walk', 0.75);
+          return walkTo(pomni.model, [v(0.3, 0, BACK_Z)], { speed: 1.3 });
+        }).then((completed) => {
+          if (!completed || disposed) return false;
+          pomni.model.visible = false;
+          return wait(1.2);
+        });
       default:
     }
     return undefined;

@@ -3,7 +3,7 @@ import { setLevelPoints } from './escapeThreshold.js';
 /** How many office photos Level 2's search is actually looking for. */
 export const PHOTO_COUNT = 5;
 /** How many Kaufmo needs: bringing back fewer and he abstracts (Game Over). */
-export const PHOTO_THRESHOLD = 4;
+export const PHOTO_THRESHOLD = 3;
 
 /**
  * Each photo's image. Spelled out in full, not built from the id: the

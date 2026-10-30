@@ -27,9 +27,9 @@ test('Caine → Ribbit → hallway → Kaufmo → photos advances once and survi
   assert.equal(progress.finishKaufmoIntro(), true);
   assert.equal(objectives.active.id, 'collect-photos');
   assert.equal(progress.finishKaufmoIntro(), false);
-  progress.presentedPhotos(3);
+  progress.presentedPhotos(2);
   assert.equal(objectives.active.id, 'collect-photos');
-  progress.presentedPhotos(4);
+  progress.presentedPhotos(3);
   assert.equal(objectives.active.id, 'check-kaufmo');
   progress.presentedPhotos(5);
   assert.equal(objectives.active.id, 'check-kaufmo');
