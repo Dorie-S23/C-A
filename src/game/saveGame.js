@@ -1,16 +1,26 @@
 /**
  * Manual save slots, kept in the browser (localStorage). A save is the
  * game's latest checkpoint (see main.js takeCheckpoint): plain JSON of the
- * story state plus which room Pomni was in, never anything mid-scene.
+ * story state plus which room Pomni was in and, if she was free to walk
+ * about when it was saved, exactly where (`pose`). Never anything mid-scene.
  *
  * SAVE_VERSION: bump it whenever a checkpoint's shape changes in a way old
  * saves can't load into. Saves from another version show as incompatible
- * rather than loading half-right.
+ * rather than loading half-right. `pose` didn't need a bump: a save without
+ * one arrives at the room's usual spot.
  */
 export const SAVE_VERSION = 1;
 export const SLOT_COUNT = 3;
 
 const key = (slot) => `tadc.save.${slot}`;
+
+const POSE_FIELDS = ['x', 'y', 'z', 'yaw', 'pomniYaw', 'pitch'];
+
+/** Where a save left Pomni, or null if it doesn't say (an older save, one taken mid-scene, a damaged one). */
+export function savedPose(data) {
+  const pose = data?.pose;
+  return pose && POSE_FIELDS.every((field) => Number.isFinite(pose[field])) ? pose : null;
+}
 
 /**
  * @param {Storage} [storage] localStorage, or a stand-in (tests)
