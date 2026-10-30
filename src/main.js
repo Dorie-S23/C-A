@@ -826,6 +826,14 @@ musicVolumeInput.addEventListener('input', () => {
 // way it's remembered in this browser.
 const DEV_SKIP_INTRO_KEY = 'tadc.devSkipIntro';
 const devSkipIntroInput = document.getElementById('dev-skip-intro');
+const roomPreviewsButton = document.getElementById('btn-room-previews');
+
+// Room previews is the dev room/dialogue picker (every room, no story) —
+// only useful, and only shown, in Dev mode; everyone else plays through the
+// level select instead.
+function refreshRoomPreviewsButton() {
+  roomPreviewsButton.hidden = !devSkipIntroInput.checked;
+}
 
 function setDevSkipIntro(on) {
   devSkipIntroInput.checked = on;
@@ -835,6 +843,7 @@ function setDevSkipIntro(on) {
   } catch {
     // Storage blocked — it just won't persist past this page.
   }
+  refreshRoomPreviewsButton();
 }
 const devParam = new URLSearchParams(window.location.search).get('dev');
 // Development-only reproduction of a reported Level 3 layout. Normal loads
@@ -856,6 +865,7 @@ if (devParam !== null) {
   } catch {
     devSkipIntroInput.checked = false;
   }
+  refreshRoomPreviewsButton();
 }
 devSkipIntroInput.addEventListener('change', () => setDevSkipIntro(devSkipIntroInput.checked));
 
