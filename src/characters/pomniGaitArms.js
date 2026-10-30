@@ -16,6 +16,9 @@ export function createPomniGaitArms(pomni, clips) {
   const entries = Object.entries(bones)
     .filter(([, bone]) => bone)
     .map(([name, bone]) => ({ name, bone, idle: new THREE.Quaternion(), base: new THREE.Quaternion(), target: new THREE.Quaternion() }));
+  const posture = ['Spine1', 'Spine2']
+    .map((name) => ({ name, bone: pomni.getObjectByName(`mixamorig${name}`), base: new THREE.Quaternion() }))
+    .filter(({ bone }) => bone);
 
   // Sample the relaxed arm pose once. This gives the procedural swing a
   // stable hanging-arm base even when a Walk/Run clip has a very different
@@ -40,6 +43,7 @@ export function createPomniGaitArms(pomni, clips) {
   let phase = 0;
   function remove() {
     if (!applied) return;
+    for (const entry of posture) entry.bone.quaternion.copy(entry.base);
     for (const entry of entries) entry.bone.quaternion.copy(entry.base);
     applied = false;
   }
@@ -54,24 +58,30 @@ export function createPomniGaitArms(pomni, clips) {
       if (weight < 0.001) return;
 
       const run = THREE.MathUtils.smoothstep(speed, 3.2, 5.2);
-      const swing = THREE.MathUtils.lerp(0.18, 0.42, run);
-      const elbow = THREE.MathUtils.lerp(0.12, 0.32, run);
-      const spread = THREE.MathUtils.lerp(0.025, 0.075, run);
+      const swing = THREE.MathUtils.lerp(0.17, 0.4, run);
+      const elbow = THREE.MathUtils.lerp(0.14, 0.42, run);
+      const elbowPump = THREE.MathUtils.lerp(0.06, 0.14, run);
+      const spread = THREE.MathUtils.lerp(0.025, 0.055, run);
       for (const entry of entries) {
         entry.base.copy(entry.bone.quaternion);
         entry.bone.quaternion.copy(entry.idle);
       }
+      for (const entry of posture) entry.base.copy(entry.bone.quaternion);
       for (const [side, sign] of [['Left', 1], ['Right', -1]]) {
         const cycle = Math.sin(phase) * sign;
         const arm = bones[`${side}Arm`];
         const forearm = bones[`${side}ForeArm`];
         bendBone(arm, pomni, SIDEWAYS, -cycle * swing);
         bendBone(arm, pomni, FORWARD, sign * spread);
-        bendBone(forearm, pomni, SIDEWAYS, -elbow - Math.max(0, cycle) * elbow * 0.45);
+        bendBone(forearm, pomni, SIDEWAYS, -elbow - Math.max(0, cycle) * elbowPump);
       }
       for (const entry of entries) {
         entry.target.copy(entry.bone.quaternion);
         entry.bone.quaternion.copy(entry.base).slerp(entry.target, weight);
+      }
+      for (const entry of posture) {
+        const correction = entry.name === 'Spine1' ? 0.045 : 0.07;
+        bendBone(entry.bone, pomni, SIDEWAYS, -correction * run * weight);
       }
       applied = true;
     },
