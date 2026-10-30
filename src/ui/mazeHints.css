@@ -4,8 +4,9 @@
   color: #c8c2dc; background: #17182dcc; font: .72rem system-ui,sans-serif; pointer-events: none;
 }
 #maze-hints-reminder[hidden], #maze-hints-button[hidden], #maze-hints-panel [hidden] { display: none; }
-#pause-menu #maze-hints-button { color: #eae6e2; background: #30233f; border-color: #765194; }
-#pause-menu #maze-hints-button:hover { background: #493052; }
+/* A purple admission ticket among the pause menu's (index.html styles their shape). */
+#pause-menu #maze-hints-button { --ticket: #7b4fa3; --ink: #fff3d6; }
+#pause-menu #maze-hints-button:hover { --ticket: #9163bb; }
 #maze-hints-panel button:focus-visible { outline: 2px solid #daa94b; outline-offset: 4px; }
 #maze-hints-panel {
   box-sizing: border-box; width: min(560px,calc(100vw - 32px)); max-height: calc(100dvh - 40px);

@@ -100,6 +100,7 @@ export function loadDormHallRoom(onProgress, { from, items, travel, jaxHallway }
     room.mapMarkers = [];
     const joins = [];
     let arrival = null;
+    let outsideKaufmo = null; // where she steps out of his room, for the Jax hall scene
     for (const { frame, slab, icon, to } of ROOM_DOORS) {
       const frameObject = room.group.getObjectByName(frame);
       if (!frameObject) continue;
@@ -134,6 +135,7 @@ export function loadDormHallRoom(onProgress, { from, items, travel, jaxHallway }
         const intoHall = new THREE.Vector3(Math.sign(HALL_CENTRE_X - centre.x), 0, 0);
         if (doorway) joins.push({ guest, control, hostDoor: { frameBox: door.frameBox, intoRoom: intoHall }, doorway });
         room.mapMarkers.push({ to, box: door.frameBox });
+        if (to === 'kaufmo') outsideKaufmo = sill(door.frameBox).addScaledVector(intoHall, ARRIVAL_DISTANCE);
         // Back from the room played on its own (the room picker / a
         // dialogue preview): out in the hall by its door, which is open.
         if (from === to) {
@@ -178,8 +180,9 @@ export function loadDormHallRoom(onProgress, { from, items, travel, jaxHallway }
       room.spawn = bedroom.arrival.spawn;
       room.spawnFacing = bedroom.arrival.facing;
     }
-    const kaufmoDoor = portals.find((portal) => portal.to === 'kaufmo');
-    if (cast && kaufmoDoor) addJaxHallway(room, cast, kaufmoDoor.arrival.spawn);
+    // His room's a walk-in now (no portal), so its doorway gives her mark.
+    outsideKaufmo ??= portals.find((portal) => portal.to === 'kaufmo')?.arrival.spawn ?? null;
+    if (cast && outsideKaufmo) addJaxHallway(room, cast, outsideKaufmo);
     return room;
   });
 }

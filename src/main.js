@@ -31,7 +31,7 @@ import { createSaveSlots } from './game/saveGame.js';
 import { createLoadingBackgrounds } from './ui/loadingBackgrounds.js';
 import { createLoadingSprites } from './ui/loadingSprites.js';
 import { installGltfBlobCleanup, releaseTextures } from './rooms/assetLifecycle.js';
-import { createLevel2Items, pickKaufmoScript, photoUrls, PHOTO_COUNT, PHOTO_THRESHOLD } from './state/level2Items.js';
+import { createLevel2Items, pickKaufmoScript, photoUrls, PHOTO_COUNT, PHOTO_THRESHOLD, PHOTO_URLS } from './state/level2Items.js';
 import {createMazeEncounter} from './levels/mazeEncounter.js';
 import {createMazeObjectiveHUD} from './ui/mazeObjectiveHUD.js';
 import { createMazeHints } from './ui/mazeHints.js';
@@ -229,6 +229,7 @@ createLoadingSprites(overlay);
 const roomPicker = document.getElementById('room-picker');
 const dialoguePicker = document.getElementById('dialogue-picker');
 const pauseMenu = document.getElementById('pause-menu');
+const pauseCaption = document.getElementById('pause-caption');
 const btnResume = document.getElementById('btn-resume');
 const btnHome = document.getElementById('btn-home');
 const caineMemory = createCaineMemory();
@@ -337,56 +338,90 @@ roomPicker.querySelectorAll('button[data-room]').forEach((button) => {
   });
 });
 
-dialoguePicker.querySelectorAll('button:not(#btn-level2):not(#btn-level3)').forEach((button) => {
+dialoguePicker.querySelectorAll('button[data-story]').forEach((button) => {
   button.addEventListener('click', (event) => {
     event.stopPropagation();
-    // The story runs for real from the start; levels are played for real
-    // (src/levels/); the rest are text previews.
-    if ('story' in button.dataset) startNewGame();
-    else if (button.dataset.mission) startMission(button.dataset.mission);
-    else playDialoguePreview(button.dataset.dialogue);
+    startNewGame(); // the story for real, from the opening
   });
 });
 
-// Jumps straight to Level 2 for playtesting, skipping Level 1. Primes
-// storyProgress through the same calls the real flow makes (Ribbit done)
-// and then runs the real mission from its actual first beat — Kaufmo
-// hurrying past in the Dorm Hall — rather than faking any later state.
-document.getElementById('btn-level2').addEventListener('click', (event) => {
-  event.stopPropagation();
-  openingCompleted = false;
-  resetObjectiveSession(true);
-  itemState.reset();
-  resetMazeAttempt();
-  objectives.activate('find-ribbit');
-  storyProgress.finishRibbit(4);
-  titleScreen.hide();
-  selectRoom('dorm', { onReady: () => playKaufmoHallway() });
-});
+// --- Developer jumps ----------------------------------------------------
+// Every level, and every cutscene between them, from its own start, so any
+// one can be tested without playing what comes before. A jump is a story
+// checkpoint, just like a save (see loadGame): the objectives done by then,
+// Ribbit's points, the photos, the keepsakes. Most then begin the way the
+// story does on arriving in that room (Caine's arrival timer, the Jax
+// scenes). `start` is for beats that begin with an action instead (a
+// knock, a conversation, a cutscene): it runs as the player clicks in, so
+// nothing plays behind the Click to Play screen.
+const STORY_ORDER = ['find-caine', 'find-ribbit', 'find-kaufmo', 'collect-photos', 'check-kaufmo', 'find-jax', 'follow-jax', 'enter-maze'];
+const ALL_PHOTOS = Object.keys(PHOTO_URLS);
 
-// Jumps straight to Level 3 for playtesting, skipping Levels 1-2. Primes
-// storyProgress/itemState through the same calls the real flow makes
-// (Ribbit done, Kaufmo introduced, all photos collected and handed in,
-// the one-time "Level 2 Complete" stall already consumed) then runs the
-// real mission from its actual first beat: Jax bolting past Kaufmo's open
-// door, same as finishing the photo search for real triggers. The raw
-// "Maze" room-picker button still exists for jumping straight into the
-// maze room itself with no intro, which is a different, narrower thing.
-document.getElementById('btn-level3').addEventListener('click', (event) => {
-  event.stopPropagation();
-  openingCompleted = false;
-  resetObjectiveSession(true);
-  itemState.reset();
-  resetMazeAttempt();
-  objectives.activate('find-ribbit');
-  storyProgress.finishRibbit(4);
-  storyProgress.finishKaufmoIntro();
-  // Carrying all five: talking to him hands them in and plays the real
-  // success scene, then the Level 2 card, Jax bolting through the Dorm Hall,
-  // his corner of the Lobby and the door into the maze.
-  for (let i = 0; i < PHOTO_COUNT; i++) itemState.collect(`dev-level3-priming-${i}`);
-  titleScreen.hide();
-  selectRoom('kaufmo', { onReady: (room) => talkToKaufmo(room.kaufmoApi, loadToken) });
+/** The checkpoint for the story with `active` the current objective. */
+function storyAt(active, { room, from = null, story = {}, items, maze } = {}) {
+  const completed = STORY_ORDER.slice(0, STORY_ORDER.indexOf(active));
+  const done = (id) => completed.includes(id);
+  return {
+    room, from,
+    objectives: { active, completed },
+    story: {
+      ribbitPoints: done('find-ribbit') ? 4 : null,
+      hallwaySeen: done('find-kaufmo'),
+      kaufmoIntroduced: done('find-kaufmo'),
+      ...story,
+    },
+    // Handing photos in moves them from collected (in her hands) to presented.
+    items: items ?? (done('collect-photos') ? { collected: [], presented: ALL_PHOTOS, done: true } : {}),
+    maze: maze ?? {},
+    mazeHints: {},
+    escape: { ...(done('find-ribbit') && { level1: 4 }), ...(done('collect-photos') && { level2: ALL_PHOTOS.length }) },
+    morningDialoguePending: false,
+  };
+}
+
+const knockOnRibbitsDoor = () => interactables.find((interactable) => interactable.storyKnock)?.interact();
+const talkToKaufmoNow = () => currentRoomInfo?.kaufmoApi && talkToKaufmo(currentRoomInfo.kaufmoApi, loadToken);
+
+const DEV_JUMPS = {
+  // Pre-story: the morning is the very start (New Game); Caine's arrival comes next.
+  caine: { checkpoint: storyAt('find-caine', { room: 'dorm', from: 'pomni' }) },
+  // Level 1: Ribbit, from her door.
+  level1: { checkpoint: storyAt('find-ribbit', { room: 'dorm', from: 'ribbit' }), start: knockOnRibbitsDoor },
+  // Level 1 -> 2: Kaufmo hurrying past in the hall, then on into his room.
+  kaufmoHallway: { checkpoint: storyAt('find-kaufmo', { room: 'dorm' }), start: () => playKaufmoHallway() },
+  // Level 2: his introduction, the search on its own, and the hand-in scene.
+  level2Intro: { checkpoint: storyAt('find-kaufmo', { room: 'kaufmo', from: 'dorm', story: { hallwaySeen: true } }), start: talkToKaufmoNow },
+  level2Search: { checkpoint: storyAt('collect-photos', { room: 'tadc' }) },
+  level2HandIn: { checkpoint: storyAt('collect-photos', { room: 'kaufmo', from: 'dorm', items: { collected: ALL_PHOTOS } }), start: talkToKaufmoNow },
+  // Level 2 -> 3: Jax bolting down the hall, then his corner of the Lobby and the maze door.
+  jaxHallway: { checkpoint: storyAt('find-jax', { room: 'dorm', from: 'kaufmo' }) },
+  jaxLobby: { checkpoint: storyAt('follow-jax', { room: 'tadc', from: 'dorm' }) },
+  // Level 3: the maze from its start, and its last act with both keepsakes found.
+  level3: { checkpoint: storyAt('enter-maze', { room: 'maze', from: 'tadc' }) },
+  level3LastAct: { checkpoint: storyAt('enter-maze', { room: 'maze', from: 'tadc', maze: { collected: MAZE_FINDABLES.map(({ id }) => id) } }) },
+};
+
+let pendingJumpStart = null; // { room, start }: run once she's in that room and clicks in
+
+function devJump(key) {
+  const jump = DEV_JUMPS[key];
+  if (!jump) return;
+  loadGame(jump.checkpoint);
+  pendingJumpStart = jump.start ? { room: jump.checkpoint.room, start: jump.start } : null;
+}
+
+function runPendingJumpStart() {
+  if (!pendingJumpStart || currentRoomKey !== pendingJumpStart.room || !readyToPlay) return;
+  const { start } = pendingJumpStart;
+  pendingJumpStart = null;
+  start();
+}
+
+dialoguePicker.querySelectorAll('button[data-jump]').forEach((button) => {
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    devJump(button.dataset.jump);
+  });
 });
 
 btnResume.addEventListener('click', (event) => {
@@ -653,7 +688,7 @@ titleScreen.ready
 function showRoomPicker() {
   overlay.classList.remove('hidden');
   overlay.classList.remove('loading');
-  overlayTitle.textContent = 'Choose a room';
+  overlayTitle.textContent = 'Jump in';
   overlaySubtitle.textContent = 'WASD / Arrow keys to move, mouse to look, Shift to sprint, E to interact — Esc to release the mouse';
   roomPicker.hidden = false;
   dialoguePicker.hidden = false;
@@ -670,6 +705,7 @@ function showRoomPicker() {
  * hatch below, which can fire before any room's ever been picked).
  */
 function returnToHome({ toRoomPicker = false } = {}) {
+  pendingJumpStart = null;
   mazeHints.hide();
   mazeItemsCounter.hidden = true;
   mazeSearchTimer.hidden = true;
@@ -828,7 +864,7 @@ function pauseOpening(value) {
   cinematicSkip.hidden = value || !(cinematic.skippable ?? cinematic.phase === 'playing');
   overlay.classList.toggle('hidden', !value);
   overlayTitle.textContent = 'Paused';
-  overlaySubtitle.textContent = 'Resume the opening or return to the title screen';
+  overlaySubtitle.textContent = pauseCaption.textContent = 'Resume the opening or return to the title screen';
   pauseMenu.hidden = !value;
   if (value) showPauseMemory();
   else pauseMemoryJoke.hidden = true;
@@ -2754,7 +2790,7 @@ function pauseRoomForMenu() {
   ambience.setPaused(true);
   overlay.classList.remove('hidden');
   overlayTitle.textContent = 'Paused';
-  overlaySubtitle.textContent = 'Press Esc or click Resume to continue';
+  overlaySubtitle.textContent = pauseCaption.textContent = 'The show will resume when you’re ready.';
   roomPicker.hidden = true;
   dialoguePicker.hidden = true;
   btnTitle.hidden = true;
@@ -2778,6 +2814,7 @@ document.addEventListener('pointerlockchange', () => {
     if (paused) dialogueUI.setPaused(false);
     ambience.setPaused(false);
     paused = false;
+    runPendingJumpStart();
     return;
   }
   lastUnlockMs = performance.now();

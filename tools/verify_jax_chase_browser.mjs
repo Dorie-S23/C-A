@@ -115,8 +115,8 @@ try {
   await page.goto(`http://127.0.0.1:${port}/`);
   await until(() => chase(() => Boolean(window.__chase)), 'the game');
 
-  // Level 2's hand-in for real, from the Level 3 playtest button.
-  await chase(() => document.getElementById('btn-level3').click());
+  // Level 2's hand-in for real, from its developer jump (it starts as she clicks in).
+  await chase(() => document.querySelector('[data-jump="level2HandIn"]').click());
   await readyRoom('kaufmo');
   await chase(() => window.__chase.openingDone());
   await chase(() => window.__chase.lock());

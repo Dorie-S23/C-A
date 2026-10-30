@@ -80,6 +80,8 @@ export function createCaineApproachCutscene({
   let elapsed = 0;
   const APPROACH_DURATION = 2.2;
   const EXIT_DURATION = 1.6;
+  // His aside to the camera: turn first, then the eye roll once he's facing it.
+  const ASIDE_EYE_ROLL_DELAY = 0.55;
 
   const targetSpot = new THREE.Vector3();
   const startSpot = new THREE.Vector3();
@@ -190,6 +192,12 @@ export function createCaineApproachCutscene({
             if (node.speaker === 'caine') {
               caineApi.setSpeaking(true);
               caineApi.setPose(node.mood || 'happy');
+              // An aside to the player: he turns to the camera and, a beat
+              // in, rolls his eyes at her.
+              if (node.action === 'asideToCamera') {
+                caineApi.turnTowards(camera.position.clone().setY(caineApi.caine.position.y));
+                caineApi.rollEyes({ delay: ASIDE_EYE_ROLL_DELAY });
+              }
             } else {
               caineApi.setSpeaking(false);
               caineApi.setPose(node.mood === 'annoyed' ? 'worried' : 'happy');
@@ -197,6 +205,7 @@ export function createCaineApproachCutscene({
           },
           onComplete: () => {
             // Cutscene exit flourish
+            caineApi.turnTowards(null);
             phase = 'exiting';
             elapsed = 0;
             caineApi.setPose('happy');
