@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import fs from 'node:fs';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { createAbstractions, keepBody, FORM_HEIGHT } from '../src/characters/abstractedForm.js';
+import { createAbstractions, prepareForm, FORM_HEIGHT } from '../src/characters/abstractedForm.js';
 import { loadJax } from '../src/characters/jax.js';
 
 globalThis.ProgressEvent ??= class {};
@@ -74,11 +74,20 @@ test('with no usable form they only go to the void, and a retry still brings the
   done.undo(); assert.equal(character.visible, true);
 });
 
-test('the real form: just its body (the eyes in this export are skinned at the wrong scale), risen to about '+FORM_HEIGHT+' m', async () => {
+test('the real form: its body, its eyes put back on their bones (the export scatters them), risen to about '+FORM_HEIGHT+' m', async () => {
   const gltf = await new GLTFLoader().loadAsync(encodeURI('./models/characters/abstracted form/abstracted_kaufmo.glb'));
-  assert.equal(keepBody(gltf), true);
-  const meshes = []; gltf.scene.traverse(o => { if (o.isMesh) meshes.push(o); });
-  assert.equal(meshes.length, 1, 'only the body');
+  assert.equal(prepareForm(gltf), true);
+  const skinned = [], eyes = [];
+  gltf.scene.traverse(o => { if (o.isSkinnedMesh) skinned.push(o); else if (o.isMesh) eyes.push(o); });
+  assert.equal(skinned.length, 1, 'the body is the one skinned mesh left');
+  assert.ok(eyes.length > 50, `its eyes are kept (${eyes.length} pieces)`);
+  assert.ok(eyes.every(eye => eye.parent.isBone && /^Eye/.test(eye.parent.name)), 'each fixed to an eye bone');
+  // On the body now, not metres off it.
+  gltf.scene.updateMatrixWorld(true);
+  skinned[0].skeleton.update();
+  const bodyBox = new THREE.Box3().setFromObject(skinned[0], true).expandByScalar(2);
+  const at = new THREE.Vector3();
+  assert.ok(eyes.every(eye => bodyBox.containsPoint(eye.getWorldPosition(at))), 'every eye on the body');
   const room = new THREE.Group(), character = new THREE.Group(); room.add(character); character.position.set(2, 0, 1);
   const abstractions = createAbstractions();
   const { done } = await run(abstractions, abstractions.transform(character, { parent: room, form: Promise.resolve(gltf), voidSeconds: .2 }));
@@ -88,6 +97,6 @@ test('the real form: just its body (the eyes in this export are skinned at the w
   done.form.traverse(o => { if (o.isSkinnedMesh) o.skeleton.update(); });
   const box = new THREE.Box3().setFromObject(done.form, true);
   assert.ok(Math.abs(box.min.y) < .25, `on the floor (${box.min.y.toFixed(2)})`);
-  assert.ok(box.max.y > 1.8 && box.max.y < 3.2, `standing about ${FORM_HEIGHT} m (${box.max.y.toFixed(2)})`);
+  assert.ok(box.max.y > FORM_HEIGHT * 0.7 && box.max.y < FORM_HEIGHT * 1.25, `standing about ${FORM_HEIGHT} m (${box.max.y.toFixed(2)})`);
   assert.ok(Math.hypot((box.min.x + box.max.x) / 2 - 2, (box.min.z + box.max.z) / 2 - 1) < 1.2, 'where they stood');
 });
