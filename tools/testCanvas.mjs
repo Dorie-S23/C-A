@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 
 // Node geometry checks use stand-ins for canvas and image decoding. The image
 // loader still verifies that each portrait asset exists; Chromium checks its
@@ -34,4 +35,13 @@ globalThis.document.createElementNS ??= (_namespace, tag) => {
     },
   };
   return image;
+};
+
+FBXLoader.prototype.load = function (url, onLoad, _progress, onError) {
+  try {
+    const file = new URL(url.replace(/^\.\//, ''), new URL('../public/', import.meta.url));
+    const bytes = fs.readFileSync(file);
+    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    onLoad(this.parse(buffer, file.href));
+  } catch (error) { onError(error); }
 };

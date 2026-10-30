@@ -66,10 +66,9 @@ const PHOTO_OPEN_MIN = 28;
 const STAGE_STEPS_SPOT = { x: 2, y: 2.24, z: 8.6 };
 
 // Level 3's way into the maze (lobbyMazeDoor.js): one of the bedroom doors
-// on the long wall that runs south from the Dorm Hall arch, a different
-// one each time the game runs, out of the five round the middle of the
-// row (z -6 to 28; the row's 18 ground-floor doors run from z -48 to 94).
-const MAZE_DOORS = ['Plane119', 'Plane120', 'Plane122', 'Plane123', 'Plane124'];
+// along the wall, chosen each run. Plane119 is the north-end door nearest
+// the Dorm Hall curtain, so leave it as an ordinary bedroom door.
+const MAZE_DOORS = ['Plane120', 'Plane122', 'Plane123', 'Plane124'];
 const MAZE_DOOR = MAZE_DOORS[Math.floor(Math.random() * MAZE_DOORS.length)];
 // Where Pomni finds Jax (levels/level3Lobby.js): alone in the corner the
 // toy blocks make with that wall's north end, a few steps from the arch,

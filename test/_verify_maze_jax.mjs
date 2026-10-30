@@ -20,6 +20,15 @@ GLTFLoader.prototype.load = function (url, onLoad, _progress, onError) {
 };
 
 const player = new THREE.Vector3(0, 1.6, 0);
+function findBone(root, prefix) {
+  let found = null;
+  root.traverse((object) => {
+    if (found || !object.isBone) return;
+    const normalized = object.name.toLowerCase().replace(/[^a-z]/g, '');
+    if (normalized.startsWith(prefix)) found = object;
+  });
+  return found;
+}
 
 test('Jax is in his first hideout as soon as she arrives in the maze', async () => {
   const room = await loadMazeRoom(null, { seed: 42, mazeItems: createMazeItems() });
@@ -41,12 +50,24 @@ test('he stands in a dead end facing its back wall, pacing side to side and glit
     const { jaxApi: { jax } } = room;
     room.spawnJax();
     const { cell, wayIn } = room.hideouts[room.jaxStop];
+    const leftElbow = findBone(jax, 'lowerarml');
+    const rightElbow = findBone(jax, 'lowerarmr');
+    assert.ok(leftElbow && rightElbow, 'Jax has both elbow joints');
+    room.update(1 / 60, player);
+    const elbowPose = [leftElbow.quaternion.clone(), rightElbow.quaternion.clone()];
     assert.equal(Object.values(cell.walls).filter(wall => !wall).length, 1, `seed ${seed}: a dead end`);
     const facing = new THREE.Vector3(Math.sin(jax.rotation.y), 0, Math.cos(jax.rotation.y));
     assert.ok(facing.dot(wayIn) < -.99, `seed ${seed}: back to the way in, facing the wall`);
     const model = jax.children.find(child => !child.isLight);
     const offsets = [];
-    for (let i = 0; i < 300; i++) { room.update(1 / 60, player); offsets.push(model.position.x); }
+    let maxElbowChange = 0;
+    for (let i = 0; i < 300; i++) {
+      room.update(1 / 60, player);
+      offsets.push(model.position.x);
+      maxElbowChange = Math.max(maxElbowChange,
+        leftElbow.quaternion.angleTo(elbowPose[0]), rightElbow.quaternion.angleTo(elbowPose[1]));
+    }
+    assert.ok(maxElbowChange < 1e-6, `hands stay still instead of wringing (${maxElbowChange})`);
     assert.ok(Math.max(...offsets) > .2 && Math.min(...offsets) < -.2, `seed ${seed}: shuffles both ways`);
     assert.ok(Math.max(...offsets.map(Math.abs)) < .5, `seed ${seed}: but stays on his mark`);
     assert.ok(room.jaxGlitch.uniforms.uGlitchTime.value > 4.9, 'the glitch shader runs');
