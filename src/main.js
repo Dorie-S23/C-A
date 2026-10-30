@@ -2614,6 +2614,21 @@ const ENDING_PARTS = {
 };
 
 /**
+ * The end of the game for `variant` (ENDING_VARIANTS): on hold while a new
+ * design for the ending is merged in — for now, just the "Level 3 Complete"
+ * card. The real cutscene is playEndingCutscene below, untouched and still
+ * called from here; swap the body back to `return playEndingCutscene(variant);`
+ * once the new design is ready.
+ */
+async function playEnding(variant) {
+  const token = loadToken;
+  sceneFade.classList.add('on');
+  const done = await showLevelComplete('Level 3 Complete', '', { resume: false, buttonLabel: 'Back to title' });
+  if (!done || token !== loadToken) return;
+  returnToHome();
+}
+
+/**
  * The end of the game for `variant` (ENDING_VARIANTS), in two scenes
  * (cutscenes/endingCutscene.js): the Circus Lobby just outside the maze
  * door, where Pomni comes out to the others and they talk until Kaufmo
@@ -2622,7 +2637,7 @@ const ENDING_PARTS = {
  * Then the card, then the title screen.
  * Escape skips what's left; developer cutscene skipping skips it all.
  */
-async function playEnding(variant) {
+async function playEndingCutscene(variant) {
   const loadingToken = loadToken;
   sceneFade.classList.add('on');
   overlay.classList.add('hidden'); // the dev menu, when it's jumped here from there
