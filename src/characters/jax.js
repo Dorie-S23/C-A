@@ -79,14 +79,13 @@ const ARM_OUT = 0.12; // radians
 // Running, the Mixamo swing brings his hands right across his chest: more.
 const RUN_ARM_OUT = 0.32;
 // His rig's fingers rest spread flat (a T-pose hand), and nothing animates
-// them: curled this much at every knuckle toward the palm (see relaxHands),
-// standing and running, his hands hang relaxed, loosely closed. The thumb
-// a little, in toward the palm too.
-const FINGER_CURL = THREE.MathUtils.degToRad(35);
-const THUMB_CURL = THREE.MathUtils.degToRad(15);
+// them. They're left straight (no curl at the knuckles; raise these to
+// close his hands, toward the palm: see relaxHands), just drawn together.
+const FINGER_CURL = 0;
+const THUMB_CURL = 0;
 const FINGERS = ['index', 'middle', 'ring'];
-// They rest fanned wide apart too: the outer two are drawn this much of
-// the way in toward the middle one, in the palm's plane, before curling.
+// They rest fanned wide apart: the outer two are drawn this much of the
+// way in toward the middle one, in the palm's plane.
 const FINGER_CLOSE = 0.7;
 const KNUCKLES = ['proximal', 'intermediate', 'distal'];
 // Distressed (the maze nook's final talk): standing the same, head hung a
@@ -124,9 +123,10 @@ function findBone(root, prefix) {
 }
 
 /**
- * Curls his fingers toward his palms (FINGER_CURL, THUMB_CURL), and makes
- * his gait clips, which would otherwise hold them at the rig's flat, spread
- * rest, keep them curled.
+ * Draws his fingers together (FINGER_CLOSE), curls them toward his palms
+ * as far as FINGER_CURL and THUMB_CURL say (none, as set), and makes his
+ * gait clips, which would otherwise hold them at the rig's spread rest,
+ * keep them that way.
  *
  * The bones' own axes aren't the same from hand to hand (one hand mirrors
  * the other), so the way each finger closes is worked out from the hand
